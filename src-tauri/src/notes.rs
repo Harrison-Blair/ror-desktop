@@ -4,11 +4,13 @@
 //! frontend only ever sees paths relative to it, so commands can never be
 //! pointed outside the notes folder.
 
+use std::fs;
 use std::path::{Path, PathBuf};
 use std::sync::Mutex;
 
 use serde::Serialize;
 use tauri::{AppHandle, State};
+use tauri_plugin_dialog::DialogExt;
 
 /// The notes folder the user opened, if any.
 #[derive(Default)]
@@ -21,7 +23,6 @@ pub struct NotesRoot(pub Mutex<Option<PathBuf>>);
 /// `TreeNode` in `src/api/notes.ts`.
 #[derive(Debug, PartialEq, Serialize)]
 #[serde(tag = "kind", rename_all = "lowercase")]
-#[expect(dead_code, reason = "remove once build_tree constructs nodes")]
 pub enum TreeNode {
     Folder {
         name: String,
@@ -41,10 +42,20 @@ pub async fn pick_folder(
     app: AppHandle,
     root: State<'_, NotesRoot>,
 ) -> Result<Option<String>, String> {
-    // TODO(human): Show the folder picker, store the choice in `root`, and
-    // return the folder's display name (never its absolute path).
-    let _ = (app, root);
-    todo!()
+    let Some(folder_path) = app.dialog().file().blocking_pick_folder() else {
+        return Ok(None);
+    };
+
+    let path = folder_path.into_path().map_err(|e| e.to_string())?;
+    let name = path
+        .file_name()
+        .unwrap_or(path.as_os_str())
+        .to_string_lossy()
+        .into_owned();
+
+    *root.0.lock().unwrap() = Some(path);
+
+    Ok(Some(name))
 }
 
 /// Returns the tree of folders and Markdown files in the open notes folder.
@@ -62,10 +73,47 @@ pub fn list_tree(root: State<'_, NotesRoot>) -> Result<Vec<TreeNode>, String> {
 /// Walks `root` and builds the sidebar tree: folders and `.md` files, hidden
 /// entries skipped, folders before files, names compared case-insensitively.
 pub fn build_tree(root: &Path) -> Result<Vec<TreeNode>, String> {
-    // TODO(human): Recursively read `root` and build the tree the tests below
-    // describe.
-    let _ = root;
-    todo!()
+    walk(root, "")
+}
+
+fn walk(dir: &Path, rel: &str) -> Result<Vec<TreeNode>, String> {
+    let mut entries = Vec::new();
+    for entry in fs::read_dir(dir).map_err(|e| e.to_string())? {
+        let entry = entry.map_err(|e| e.to_string())?;
+        let name = entry.file_name().to_string_lossy().into_owned();
+        if name.starts_with('.') {
+            continue;
+        }
+        let is_dir = entry.file_type().map_err(|e| e.to_string())?.is_dir();
+        if !is_dir && !name.ends_with(".md") {
+            continue;
+        }
+        entries.push((is_dir, name));
+    }
+
+    // `false < true`, so keying on `!is_dir` puts folders before files.
+    entries.sort_by_key(|(is_dir, name)| (!is_dir, name.to_lowercase()));
+
+    entries
+        .into_iter()
+        .map(|(is_dir, name)| {
+            let path = if rel.is_empty() {
+                name.clone()
+            } else {
+                format!("{rel}/{name}")
+            };
+            Ok(if is_dir {
+                let children = walk(&dir.join(&name), &path)?;
+                TreeNode::Folder {
+                    name,
+                    path,
+                    children,
+                }
+            } else {
+                TreeNode::File { name, path }
+            })
+        })
+        .collect()
 }
 
 #[cfg(test)]
