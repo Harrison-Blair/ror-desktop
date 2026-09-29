@@ -5,7 +5,7 @@
 //! pointed outside the notes folder.
 
 use std::fs;
-use std::path::{Path, PathBuf};
+use std::path::{Component, Path, PathBuf};
 use std::sync::Mutex;
 
 use serde::Serialize;
@@ -68,6 +68,58 @@ pub fn list_tree(root: State<'_, NotesRoot>) -> Result<Vec<TreeNode>, String> {
         .clone()
         .ok_or("no notes folder is open")?;
     build_tree(&root)
+}
+
+/// Returns the contents of the note at `path` (relative to the notes root).
+#[tauri::command]
+pub async fn read_note(root: State<'_, NotesRoot>, path: String) -> Result<String, String> {
+    let root = root
+        .0
+        .lock()
+        .unwrap()
+        .clone()
+        .ok_or("no notes folder is open")?;
+
+    let note_path = resolve(&root, &path)?;
+
+    fs::read_to_string(note_path).map_err(|e| e.to_string())
+}
+
+/// Replaces the contents of the note at `path` (relative to the notes root).
+#[tauri::command]
+pub async fn write_note(
+    root: State<'_, NotesRoot>,
+    path: String,
+    content: String,
+) -> Result<(), String> {
+    let root = root
+        .0
+        .lock()
+        .unwrap()
+        .clone()
+        .ok_or("no notes folder is open")?;
+
+    let note_path = resolve(&root, &path)?;
+
+    fs::write(note_path, content).map_err(|e| e.to_string())
+}
+
+/// Turns a path from the frontend into an absolute path inside `root`, or an
+/// error if it could point anywhere else.
+pub fn resolve(root: &Path, rel: &str) -> Result<PathBuf, String> {
+    if rel.is_empty() {
+        return Err("note path is empty".to_string());
+    }
+
+    let mut path = root.to_path_buf();
+    for component in Path::new(rel).components() {
+        match component {
+            Component::Normal(name) => path.push(name),
+            _ => return Err(format!("invalid node path: {rel}")),
+        }
+    }
+
+    Ok(path)
 }
 
 /// Walks `root` and builds the sidebar tree: folders and `.md` files, hidden
@@ -201,5 +253,31 @@ mod tests {
     fn errors_when_root_does_not_exist() {
         let dir = tempfile::tempdir().unwrap();
         assert!(build_tree(&dir.path().join("missing")).is_err());
+    }
+
+    #[test]
+    fn resolve_joins_relative_paths_under_root() {
+        let root = Path::new("/notes");
+        assert_eq!(
+            resolve(root, "campaign/overview.md").unwrap(),
+            root.join("campaign").join("overview.md")
+        );
+    }
+
+    #[test]
+    fn resolve_rejects_parent_components() {
+        let root = Path::new("/notes");
+        assert!(resolve(root, "../secret.md").is_err());
+        assert!(resolve(root, "campaign/../../secret.md").is_err());
+    }
+
+    #[test]
+    fn resolve_rejects_absolute_paths() {
+        assert!(resolve(Path::new("/notes"), "/etc/passwd").is_err());
+    }
+
+    #[test]
+    fn resolve_rejects_empty_path() {
+        assert!(resolve(Path::new("/notes"), "").is_err());
     }
 }

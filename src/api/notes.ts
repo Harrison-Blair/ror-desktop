@@ -13,3 +13,13 @@ export function pickFolder(): Promise<string | null> {
 export function listTree(): Promise<TreeNode[]> {
   return invoke("list_tree");
 }
+
+/** Reads a note. `path` is relative to the notes folder, as in `TreeNode`. */
+export function readNote(path: string): Promise<string> {
+  return invoke("read_note", { path });
+}
+
+/** Replaces a note's contents on disk. */
+export function writeNote(path: string, content: string): Promise<void> {
+  return invoke("write_note", { path, content });
+}

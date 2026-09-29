@@ -7,7 +7,9 @@ pub fn run() {
         .manage(notes::NotesRoot::default())
         .invoke_handler(tauri::generate_handler![
             notes::pick_folder,
-            notes::list_tree
+            notes::list_tree,
+            notes::read_note,
+            notes::write_note
         ])
         .run(tauri::generate_context!())
         .expect("error while running tauri application");

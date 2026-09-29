@@ -27,11 +27,14 @@
 }
 
 .editorPane {
-  display: grid;
-  place-items: center;
-  overflow: auto;
+  min-width: 0;
+  overflow: hidden;
 }
 
 .empty {
+  display: grid;
+  place-items: center;
+  height: 100%;
+  margin: 0;
   opacity: 0.6;
 }
