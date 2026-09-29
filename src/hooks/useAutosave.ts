@@ -1,3 +1,5 @@
+import { useCallback, useRef } from "react";
+
 export type Autosave = {
   /** Call on every edit. Saves once edits have paused for `delayMs`. */
   change: (path: string, content: string) => void;
@@ -17,12 +19,35 @@ export function useAutosave(
   onError: (error: unknown) => void,
   delayMs = 500,
 ): Autosave {
-  // TODO(human): Remember the latest pending (path, content) and a timer.
-  // `change` replaces the pending edit and restarts the timer; when it fires,
-  // save. `flush` cancels the timer and saves now if anything is pending.
-  // Return the same `change`/`flush` functions on every render.
-  void save;
-  void onError;
-  void delayMs;
-  return { change: () => {}, flush: async () => {} };
+  const pending = useRef<{ path: string; content: string } | null>(null);
+  const timer = useRef<ReturnType<typeof setTimeout> | null>(null);
+
+  const flush = useCallback(async () => {
+    if (timer.current !== null) {
+      clearTimeout(timer.current);
+      timer.current = null;
+    }
+
+    const edit = pending.current;
+    if (edit === null) return;
+    pending.current = null;
+
+    await save(edit.path, edit.content);
+  }, [save]);
+
+  const change = useCallback(
+    (path: string, content: string) => {
+      pending.current = { path, content };
+
+      if (timer.current !== null) {
+        clearTimeout(timer.current);
+      }
+      timer.current = setTimeout(() => {
+        flush().catch(onError);
+      }, delayMs);
+    },
+    [flush, onError, delayMs],
+  );
+
+  return { change, flush };
 }
