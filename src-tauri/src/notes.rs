@@ -16,6 +16,18 @@ use tauri_plugin_dialog::DialogExt;
 #[derive(Default)]
 pub struct NotesRoot(pub Mutex<Option<PathBuf>>);
 
+impl NotesRoot {
+    /// A copy of the open folder's path, so the lock is released right away
+    /// instead of being held during file I/O.
+    fn current(&self) -> Result<PathBuf, String> {
+        self.0
+            .lock()
+            .unwrap()
+            .clone()
+            .ok_or_else(|| "no notes folder is open".to_string())
+    }
+}
+
 /// One entry in the sidebar tree.
 ///
 /// `path` is relative to the notes root and always uses `/` separators, on
@@ -61,24 +73,14 @@ pub async fn pick_folder(
 /// Returns the tree of folders and Markdown files in the open notes folder.
 #[tauri::command]
 pub fn list_tree(root: State<'_, NotesRoot>) -> Result<Vec<TreeNode>, String> {
-    let root = root
-        .0
-        .lock()
-        .unwrap()
-        .clone()
-        .ok_or("no notes folder is open")?;
+    let root = root.current()?;
     build_tree(&root)
 }
 
 /// Returns the contents of the note at `path` (relative to the notes root).
 #[tauri::command]
 pub async fn read_note(root: State<'_, NotesRoot>, path: String) -> Result<String, String> {
-    let root = root
-        .0
-        .lock()
-        .unwrap()
-        .clone()
-        .ok_or("no notes folder is open")?;
+    let root = root.current()?;
 
     let note_path = resolve(&root, &path)?;
 
@@ -92,12 +94,7 @@ pub async fn write_note(
     path: String,
     content: String,
 ) -> Result<(), String> {
-    let root = root
-        .0
-        .lock()
-        .unwrap()
-        .clone()
-        .ok_or("no notes folder is open")?;
+    let root = root.current()?;
 
     let note_path = resolve(&root, &path)?;
 
