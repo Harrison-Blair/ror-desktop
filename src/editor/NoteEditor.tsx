@@ -171,8 +171,23 @@ export function NoteEditor(props: Props) {
         ],
       }),
     });
+    const focusBelowContent = (event: MouseEvent) => {
+      if (event.button !== 0 || event.target !== editor.scrollDOM) return;
+      const content = editor.contentDOM.getBoundingClientRect();
+      if (
+        event.clientY < content.bottom ||
+        event.clientX < content.left ||
+        event.clientX > content.right
+      )
+        return;
+      event.preventDefault();
+      editor.dispatch({ selection: { anchor: editor.state.doc.length } });
+      editor.focus();
+    };
+    editor.scrollDOM.addEventListener("mousedown", focusBelowContent);
     view.current = editor;
     return () => {
+      editor.scrollDOM.removeEventListener("mousedown", focusBelowContent);
       view.current = null;
       editor.destroy();
     };

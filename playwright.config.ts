@@ -9,8 +9,8 @@ export default defineConfig({
     screenshot: "only-on-failure",
   },
   webServer: {
-    command: "npm run dev -- --port 1428 --host 127.0.0.1",
+    command: "npm run dev -- --port 1428 --host 127.0.0.1 --strictPort",
     url: "http://127.0.0.1:1428/e2e/fixture.html",
-    reuseExistingServer: !process.env.CI,
+    reuseExistingServer: false,
   },
 });

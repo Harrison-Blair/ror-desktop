@@ -212,7 +212,9 @@ const api: WorkspaceApi = {
 const closeHost = {
   onCloseRequested: async (callback: typeof fixture.closeRequested) => {
     fixture.closeRequested = callback;
-    return () => {};
+    return () => {
+      fixture.closeRequested = () => {};
+    };
   },
   close: async () => {
     fixture.closeCount++;

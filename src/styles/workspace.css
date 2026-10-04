@@ -312,6 +312,10 @@ button svg {
   background: var(--error-soft);
   color: var(--error);
 }
+.save-banner .retry {
+  flex-shrink: 0;
+  white-space: nowrap;
+}
 .message-banner {
   background: var(--accent-soft);
 }
@@ -533,6 +537,7 @@ button svg {
 }
 .note-editor .cm-content {
   padding: var(--editor-padding-top) 0 60px;
+  min-height: 0;
   min-width: 0;
   width: calc(100% - 64px);
   max-width: var(--editor-max-width);
@@ -573,7 +578,7 @@ button svg {
   background: var(--selection);
 }
 .inline-preview {
-  margin: var(--inline-image-margin-top) 0 var(--inline-image-margin-bottom);
+  padding: var(--inline-image-margin-top) 0 var(--inline-image-margin-bottom);
   max-width: 100%;
   font-family: var(--font-ui);
   line-height: 1.5;

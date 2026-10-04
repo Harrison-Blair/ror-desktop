@@ -19,6 +19,7 @@ test.beforeEach(async ({ page }) => {
   pageErrors.set(page, errors);
   page.on("pageerror", (error) => errors.push(error.message));
   await page.goto("/e2e/fixture.html");
+  await page.waitForFunction(() => !!window.fixture);
 });
 test.afterEach(({ page }) => {
   expect(pageErrors.get(page)).toEqual([]);
@@ -312,4 +313,97 @@ test("ancestor rename rebases relative previews and image rename and trash inval
     "title",
     "chapters/week-3.md",
   );
+});
+
+test("failed-save banner keeps Retry on one line in a narrow pane", async ({
+  page,
+}) => {
+  await page.setViewportSize({ width: 720, height: 480 });
+  await page.getByRole("treeitem", { name: "week-3.md", exact: true }).click();
+  const resize = page.getByRole("separator", { name: "Sidebar width" });
+  for (let step = 0; step < 22; step++) await resize.press("ArrowRight");
+  await expect(resize).toHaveAttribute("aria-valuenow", "480");
+  await page.evaluate(() => {
+    window.fixture.failWrites = true;
+  });
+  const editor = page.getByRole("textbox", { name: "Note source" });
+  await editor.click();
+  await editor.press("Control+End");
+  await page.keyboard.insertText(" retained draft");
+  await page.getByRole("treeitem", { name: "README.md", exact: true }).click();
+  const retry = page.locator(".save-banner button");
+  await expect(retry).toBeVisible();
+  const lines = await retry.evaluate((button) => {
+    const range = document.createRange();
+    range.selectNodeContents(button);
+    return range.getClientRects().length;
+  });
+  expect(lines).toBe(1);
+  const rect = await bounds(retry);
+  expect(rect.x).toBeGreaterThanOrEqual(480);
+  expect(rect.x + rect.width).toBeLessThanOrEqual(720);
+  await page.screenshot({ path: ".fledge/tmp/minimum-save-banner.png" });
+});
+
+test("line numbers align with source after inline image previews load", async ({
+  page,
+}) => {
+  await page.evaluate(() => {
+    window.fixture.notes["week-3.md"] =
+      "# Alignment\n![one](images/small.png)\nAfter one\n![two](images/small.png)\nAfter two";
+  });
+  await page.getByRole("treeitem", { name: "week-3.md", exact: true }).click();
+  await page.getByRole("button", { name: "Line numbers" }).click();
+  await expect(page.locator(".inline-preview img")).toHaveCount(2);
+  await expect
+    .poll(() =>
+      page
+        .locator(".inline-preview img")
+        .evaluateAll((images) =>
+          images.every(
+            (image) =>
+              (image as HTMLImageElement).complete &&
+              (image as HTMLImageElement).naturalWidth > 0,
+          ),
+        ),
+    )
+    .toBe(true);
+  await expect
+    .poll(async () => {
+      const lines = await page
+        .locator(".cm-line")
+        .evaluateAll((nodes) =>
+          nodes.map((node) => node.getBoundingClientRect().top),
+        );
+      const numbers = await page
+        .locator(".cm-lineNumbers .cm-gutterElement")
+        .evaluateAll((nodes) =>
+          nodes
+            .filter((node) => node.getBoundingClientRect().height > 0)
+            .map((node) => node.getBoundingClientRect().top),
+        );
+      return Math.max(
+        ...lines.map((top, index) => Math.abs(top - numbers[index])),
+      );
+    })
+    .toBeLessThan(1);
+});
+
+test("clicking blank space below a short note still edits at its end", async ({
+  page,
+}) => {
+  await page.getByRole("treeitem", { name: "week-3.md", exact: true }).click();
+  const scroller = await bounds(page.locator(".cm-scroller"));
+  await page.getByRole("button", { name: "Line numbers" }).click();
+  await page.mouse.click(
+    scroller.x + scroller.width / 2,
+    scroller.y + scroller.height - 20,
+  );
+  await page.keyboard.insertText(" appended below");
+  await expect(
+    page.getByRole("textbox", { name: "Note source" }),
+  ).toContainText("discussion. appended below");
+  await expect
+    .poll(() => page.evaluate(() => window.fixture.notes["week-3.md"]))
+    .toContain("discussion. appended below");
 });

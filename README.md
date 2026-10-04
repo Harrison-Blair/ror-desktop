@@ -49,6 +49,20 @@ Markdown notes use a source editor with optional line numbers and local PNG/JPEG
 
 Edits autosave after 500ms. Switching files/folders, renaming or trashing the open note or an ancestor, and closing the native window wait for the latest draft. A failed save retains the draft with Retry. Refreshing a dirty note offers Cancel, Discard and Reload, or Save and Refresh. The sidebar and line-number preferences persist through native preference patches.
 
+There is no filesystem watcher: use Refresh after changes in another program. Refresh reloads the tree, selected file and image previews, including images replaced at the same path. Save and Refresh writes your draft over external note changes; Discard and Reload drops your draft after any active save finishes. A failed save blocks navigation and window closing until the draft can be saved. Note writes replace file contents directly; they are not crash-atomic saves.
+
+Both `.md` and `.markdown` notes are supported. Inline images keep their Markdown source editable:
+
+```md
+![Cover](images/cover.png)
+![Shared photo](../images/photo.JPG)
+![Name with spaces](images/cover%20photo.webp)
+```
+
+Paths resolve relative to the note and must stay within the opened folder, including after following symlinks. PNG, JPG, JPEG, GIF and WebP extensions are case insensitive. Destinations are URL-decoded once. Absolute paths, remote URLs, `file:` and `data:` URLs are rejected. The editor displays Markdown source and inline image previews. Reference-style images, Obsidian embeds and full Markdown previews are outside its scope.
+
+Move to Trash asks for confirmation and uses the system Trash only, without permanent deletion fallback. The opened root cannot be renamed or trashed. Symlink folders are listed without traversal, and mutations through them are rejected. Renaming allows full filename and extension changes, including case-only changes, and leaves Markdown links unchanged.
+
 ## Frontend foundation
 
 The approved interface decisions are preserved in [docs/design/HANDOFF.md](docs/design/HANDOFF.md). The light and dark palettes and approved dimensions live in `src/styles/tokens.css`. The baseline follows the system colour scheme. JetBrains Mono (400, 600, 700 plus 400 italic) and Nunito (500, 600, 700) are bundled locally through Fontsource; runtime font loading needs no external service.
@@ -65,6 +79,8 @@ npm run build
 npm run lint:frontend
 npm test
 npm run lint
+cargo test --manifest-path src-tauri/Cargo.toml
+npm run tauri build -- --debug --no-bundle
 ```
 
 `npm run lint` checks both the frontend and Rust host. `npm test` runs Vitest in jsdom, with React Testing Library cleanup and jest-dom matchers configured in `src/test/setup.ts`. Tests belong in `src/**/*.test.ts` or `src/**/*.test.tsx`; import test functions from `vitest`. `npm run test:watch` runs the same suite in watch mode.
@@ -79,3 +95,9 @@ npm run test:e2e
 ```
 
 Browser binaries require a separate installation on each development/CI machine. The suite serves `e2e/fixture.html` with an injected in-memory `WorkspaceApi`, exercises the real CodeMirror editor, and checks both themes, narrow layouts, image cleanup and save/close flows. It writes screenshots and results to `.fledge/tmp/`. This fixture is separate from the production entry point and does not exercise native filesystem access; native IPC must also be verified in Tauri.
+
+Browser tests start their own server on port 1428 and fail if that port is occupied, so another checkout's development server cannot silently supply the tested code.
+
+The debug host is `src-tauri/target/debug/ror-desktop` (`ror-desktop.exe` on Windows). Native preferences are stored as `preferences.json` in the OS app configuration directory; on Linux this is `$XDG_CONFIG_HOME/com.ror.desktop` (normally `~/.config/com.ror.desktop`). For isolated native testing, set `XDG_CONFIG_HOME` and `XDG_DATA_HOME` to disposable directories and use a disposable workspace on the same filesystem so system Trash operations stay isolated. Never use personal notes or preferences as test fixtures.
+
+Native runtime verification on this development host uses Linux WebKitGTK with tauri-driver and WebKitWebDriver. Windows/macOS execution and native case-insensitive filesystem behavior require verification on those platforms. Rust tests cover case-only rename rollback and Trash failure preservation through injected operation boundaries. Canonical path checks do not defend against a hostile external process swapping filesystem entries between OS calls.
