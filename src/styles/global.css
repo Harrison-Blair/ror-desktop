@@ -1,0 +1,27 @@
+* {
+  box-sizing: border-box;
+}
+
+html,
+body,
+#root {
+  min-height: 100%;
+}
+
+body {
+  margin: 0;
+  background: var(--bg);
+  color: var(--text);
+  font-family: var(--font-ui);
+  font-weight: 500;
+}
+
+button,
+input {
+  font: inherit;
+}
+
+::selection {
+  background: var(--selection);
+  color: var(--text);
+}
