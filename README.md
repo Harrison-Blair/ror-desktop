@@ -65,7 +65,7 @@ Move to Trash asks for confirmation and uses the system Trash only, without perm
 
 ## Frontend foundation
 
-The approved interface decisions are preserved in [docs/design/HANDOFF.md](docs/design/HANDOFF.md). The light and dark palettes and approved dimensions live in `src/styles/tokens.css`. The baseline follows the system colour scheme. JetBrains Mono (400, 600, 700 plus 400 italic) and Nunito (500, 600, 700) are bundled locally through Fontsource; runtime font loading needs no external service.
+The earlier approved interface decisions are preserved in [docs/design/archive/HANDOFF.md](docs/design/archive/HANDOFF.md); the redesign specs live in [docs/design](docs/design/README.md). The light and dark palettes and approved dimensions live in `src/styles/tokens.css`. The baseline follows the system colour scheme. JetBrains Mono (400, 600, 700 plus 400 italic) and Nunito (500, 600, 700) are bundled locally through Fontsource; runtime font loading needs no external service.
 
 CodeMirror 6 state, view, language, Markdown, commands and Lezer highlighting packages provide the editor foundation. Lucide React provides interface icons. The React workspace controller coordinates those components with the native API. `App` accepts an optional `api` prop for isolated frontend tests; production defaults to the native adapter.
 
