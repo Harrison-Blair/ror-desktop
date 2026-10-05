@@ -153,7 +153,7 @@ test("folder A/B/A sessions and refresh preserve Dice; cancellation/error retain
   };
   await pick();
   await expect(page.getByText("B · Session history")).toBeVisible();
-  await expect(input).toHaveValue("1d20");
+  await expect(input).toHaveValue("1d100");
   await input.fill("d1+5");
   await input.press("Enter");
   await pick();

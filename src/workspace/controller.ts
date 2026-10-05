@@ -47,7 +47,7 @@ export type DiceContext = {
 };
 const temporaryDiceContext = Symbol("temporary dice session");
 const emptyDiceContext = (): DiceContext => ({
-  input: "1d20",
+  input: "1d100",
   latest: null,
   history: [],
   error: null,

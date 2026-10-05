@@ -33,7 +33,7 @@ it("exposes disabled startup rail then standalone Dice and direct bottom picker"
   await userEvent.click(screen.getByRole("button", { name: "Dice" }));
   expect(screen.getByText("Temporary session")).toBeInTheDocument();
   expect(screen.getByRole("textbox", { name: "Roll expression" })).toHaveValue(
-    "1d20",
+    "1d100",
   );
   expect(screen.getByText("Your rolls will appear here.")).toBeInTheDocument();
   await userEvent.click(
