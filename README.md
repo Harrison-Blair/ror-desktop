@@ -73,6 +73,10 @@ The typed Tauri adapter and mockable `WorkspaceApi` type are exported from `src/
 
 ## Checks and tests
 
+GitHub Actions runs six blocking jobs on pushes to `main` and `dev` and on all pull requests: frontend build, Biome and Vitest; Chromium browser tests; and Rust formatting, Clippy, Rust tests and a debug Tauri build without bundling. Each group runs on both Ubuntu 24.04 and Windows 2022 with Node.js 24 and Rust stable. Pull requests test the merge commit. CI builds the native host but does not exercise its GUI or produce installers or releases.
+
+Find failed commands in the run's job logs. Failed browser jobs upload `.fledge/tmp/`, including screenshots and Playwright results, as `browser-diagnostics-<platform>` artifacts retained for seven days. Superseded runs are cancelled. The workflow also supports manual dispatch; GitHub's **Run workflow** button becomes available after the workflow reaches the default branch, `main`.
+
 ```sh
 npm ci
 npm run build

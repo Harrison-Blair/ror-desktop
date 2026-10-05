@@ -42,7 +42,7 @@ for (const colorScheme of ["light", "dark"] as const)
     await expect(page.locator(".dice-history tbody tr")).toHaveCount(3);
     await expect(page.getByRole("alert")).toHaveCount(0);
     await page.screenshot({
-      path: `/tmp/ror-dice-implementation/dice-${colorScheme}.png`,
+      path: `.fledge/tmp/dice-${colorScheme}.png`,
       fullPage: true,
     });
     await page.getByRole("button", { name: "Clear history" }).click();
@@ -62,7 +62,7 @@ for (const colorScheme of ["light", "dark"] as const)
     await input.fill("2d6 + 1d8 + 3");
     await input.press("Enter");
     await page.screenshot({
-      path: `/tmp/ror-dice-implementation/dice-preview-${colorScheme}.png`,
+      path: `.fledge/tmp/dice-preview-${colorScheme}.png`,
       fullPage: true,
     });
   });
@@ -97,12 +97,12 @@ test("100 dice and seven digit custom faces fit a narrow page", async ({
     .evaluate((element) => element.scrollWidth <= element.clientWidth);
   expect(fits).toBe(true);
   await page.screenshot({
-    path: "/tmp/ror-dice-implementation/dice-narrow-100.png",
+    path: ".fledge/tmp/dice-narrow-100.png",
     fullPage: true,
   });
   await page.locator(".dice-face-item").first().scrollIntoViewIfNeeded();
   await page.screenshot({
-    path: "/tmp/ror-dice-implementation/dice-narrow-faces.png",
+    path: ".fledge/tmp/dice-narrow-faces.png",
     fullPage: true,
   });
   await page.locator(".dice-history").scrollIntoViewIfNeeded();
