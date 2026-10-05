@@ -103,5 +103,18 @@ jobs:
           workspaces: src-tauri -> target
       - run: cargo fmt --check --manifest-path src-tauri/Cargo.toml
       - run: cargo clippy --manifest-path src-tauri/Cargo.toml --locked -- -D warnings
-      - run: cargo test --manifest-path src-tauri/Cargo.toml --locked
+      - name: Run Rust tests on Linux
+        if: runner.os == 'Linux'
+        run: cargo test --manifest-path src-tauri/Cargo.toml --locked
+      - name: Run Rust tests on Windows
+        if: runner.os == 'Windows'
+        shell: pwsh
+        # Tauri's app manifest does not reach Cargo's test executables. RFD needs
+        # Common Controls v6 for TaskDialogIndirect before the tests can start.
+        run: |
+          $env:CARGO_ENCODED_RUSTFLAGS = @(
+            '-C', 'link-arg=/MANIFEST:EMBED',
+            '-C', "link-arg=/MANIFESTDEPENDENCY:type='win32' name='Microsoft.Windows.Common-Controls' version='6.0.0.0' processorArchitecture='*' publicKeyToken='6595b64144ccf1df' language='*'"
+          ) -join [char]31
+          cargo test --manifest-path src-tauri/Cargo.toml --locked
       - run: npm run tauri build -- --debug --no-bundle -- --locked
