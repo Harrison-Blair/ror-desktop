@@ -10,6 +10,11 @@ const parse = (doc: string) =>
     extensions: [markdown({ base: markdownLanguage })],
   });
 describe("Markdown formatting", () => {
+  it("renders escaped pipes inside inline code without the escape slash", () => {
+    const source = tableSources(parse("| A |\n| - |\n| `a\\|b` |"))[0];
+    const dom = new TableWidget(source).toDOM();
+    expect(dom.querySelector("code")?.textContent).toBe("a|b");
+  });
   it("recognizes all heading levels and Setext but ignores fenced syntax", () => {
     const state = parse(
       "# one\n## two\n### three\n#### four\n##### five\n###### six\n\nTitle\n=====\n\nSubtitle\n-----\n\n```md\n# ignored\n```",

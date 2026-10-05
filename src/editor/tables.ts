@@ -13,9 +13,17 @@ function appendInline(parent: HTMLElement, raw: string, node: Node) {
           ? "code"
           : null;
   const target = tag ? document.createElement(tag) : parent;
+  const appendText = (from: number, to: number) => {
+    const text = raw.slice(from, to);
+    target.append(
+      document.createTextNode(
+        tag === "code" ? text.replace(/\\\|/g, "|") : text,
+      ),
+    );
+  };
   let cursor = node.from;
   for (let child = node.firstChild; child; child = child.nextSibling) {
-    target.append(document.createTextNode(raw.slice(cursor, child.from)));
+    appendText(cursor, child.from);
     if (child.name === "Escape")
       target.append(
         document.createTextNode(raw.slice(child.from + 1, child.to)),
@@ -24,7 +32,7 @@ function appendInline(parent: HTMLElement, raw: string, node: Node) {
       appendInline(target, raw, child);
     cursor = child.to;
   }
-  target.append(document.createTextNode(raw.slice(cursor, node.to)));
+  appendText(cursor, node.to);
   if (tag) parent.append(target);
 }
 export class TableWidget extends WidgetType {
