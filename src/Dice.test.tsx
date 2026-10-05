@@ -105,9 +105,7 @@ it("keeps a live region before first roll and updates it once for identical outc
   fireEvent.change(screen.getByRole("textbox", { name: "Roll expression" }), {
     target: { value: "d1" },
   });
-  await userEvent.click(
-    screen.getByRole("button", { name: "Roll", exact: true }),
-  );
+  await userEvent.click(screen.getByRole("button", { name: /^Roll$/ }));
   expect(screen.getByRole("status")).toBe(status);
   expect(status).toHaveTextContent("Roll 1: 1d1 (1) = 1");
   await userEvent.click(screen.getByRole("button", { name: "Roll again" }));
@@ -142,7 +140,7 @@ it("announces a successful roll only once across the cosmetic animation", async 
     fireEvent.change(screen.getByRole("textbox", { name: "Roll expression" }), {
       target: { value: "d1" },
     });
-    fireEvent.click(screen.getByRole("button", { name: "Roll", exact: true }));
+    fireEvent.click(screen.getByRole("button", { name: /^Roll$/ }));
     await act(async () => {
       await Promise.resolve();
     });

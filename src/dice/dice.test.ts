@@ -65,7 +65,7 @@ describe("strict dice notation", () => {
 it.each([null, undefined, 3, [], { expression: "d6" }])(
   "rejects wrong-shaped input %s",
   (input) => {
-    expect(() => parseDiceExpression(input as string)).toThrow(
+    expect(() => parseDiceExpression(input as unknown as string)).toThrow(
       "Use a dice expression",
     );
   },
