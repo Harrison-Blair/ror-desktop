@@ -97,6 +97,45 @@ pub enum EntryKind {
     Folder,
 }
 
+const METADATA_LIMIT: usize = 1024 * 1024;
+const DESCRIPTION_LIMIT: usize = 5 * 1024 * 1024;
+const PHOTO_LIMIT: usize = 20 * 1024 * 1024;
+
+#[derive(Clone, Debug, PartialEq, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase", deny_unknown_fields)]
+pub struct PlayerStat {
+    pub label: String,
+    pub value: String,
+}
+
+#[derive(Clone, Debug, PartialEq, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase", deny_unknown_fields)]
+pub struct PlayerProfile {
+    pub version: u32,
+    pub name: String,
+    #[serde(deserialize_with = "Option::deserialize")]
+    pub photo_path: Option<String>,
+    pub stats: Vec<PlayerStat>,
+}
+impl Default for PlayerProfile {
+    fn default() -> Self {
+        Self {
+            version: 1,
+            name: String::new(),
+            photo_path: None,
+            stats: Vec::new(),
+        }
+    }
+}
+#[derive(Debug, Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct PlayerSnapshot {
+    pub profile: PlayerProfile,
+    pub description: String,
+    pub metadata_exists: bool,
+    pub description_exists: bool,
+}
+
 pub struct WorkspaceStore {
     config: PathBuf,
     preferences: Preferences,
@@ -188,9 +227,107 @@ impl WorkspaceStore {
         snapshot(self.root(generation)?, generation)
     }
 
+    pub fn read_player(&self, generation: u64) -> Result<PlayerSnapshot> {
+        let root = self.root(generation)?;
+        let metadata = read_player_file(&root.join("player.json"), METADATA_LIMIT)?;
+        let description = read_player_file(&root.join("player.md"), DESCRIPTION_LIMIT)?;
+        let profile = match metadata.as_ref() {
+            Some(bytes) => serde_json::from_slice(bytes)
+                .map_err(|e| format!("Invalid player metadata: {e}"))?,
+            None => PlayerProfile::default(),
+        };
+        validate_profile(&profile)?;
+        Ok(PlayerSnapshot {
+            profile,
+            metadata_exists: metadata.is_some(),
+            description_exists: description.is_some(),
+            description: String::from_utf8(description.unwrap_or_default())
+                .map_err(|e| format!("Invalid player description: {e}"))?,
+        })
+    }
+
+    pub fn write_player(
+        &self,
+        generation: u64,
+        profile: PlayerProfile,
+        create_if_missing: bool,
+    ) -> Result<()> {
+        let root = self.root(generation)?;
+        validate_profile(&profile)?;
+        if !create_if_missing {
+            let existing = read_player_file(&root.join("player.json"), METADATA_LIMIT)?
+                .ok_or("Player file was deleted; reload before saving")?;
+            let existing: PlayerProfile = serde_json::from_slice(&existing)
+                .map_err(|e| format!("Invalid player metadata: {e}"))?;
+            validate_profile(&existing)?;
+        }
+        let bytes = serde_json::to_vec_pretty(&profile).map_err(|e| e.to_string())?;
+        write_player_file(
+            root,
+            "player.json",
+            &bytes,
+            METADATA_LIMIT,
+            create_if_missing,
+        )
+    }
+
+    pub fn write_player_description(
+        &self,
+        generation: u64,
+        content: &str,
+        create_if_missing: bool,
+    ) -> Result<()> {
+        write_player_file(
+            self.root(generation)?,
+            "player.md",
+            content.as_bytes(),
+            DESCRIPTION_LIMIT,
+            create_if_missing,
+        )
+    }
+
+    pub fn import_player_photo(
+        &self,
+        generation: u64,
+        selected: Option<PathBuf>,
+    ) -> Result<Option<String>> {
+        let root = self.root(generation)?;
+        let Some(selected) = selected else {
+            return Ok(None);
+        };
+        let extension = selected
+            .extension()
+            .and_then(|e| e.to_str())
+            .unwrap_or("")
+            .to_ascii_lowercase();
+        require_kind(&format!("photo.{extension}"), FileKind::Image)?;
+        let bytes = read_player_photo(&selected)?;
+        let mut temporary = at(root, tempfile::NamedTempFile::new_in(root))?;
+        at(root, temporary.write_all(&bytes))?;
+        at(root, temporary.as_file().sync_all())?;
+        let id = temporary
+            .path()
+            .file_name()
+            .and_then(|n| n.to_str())
+            .ok_or("Invalid temporary filename")?
+            .trim_start_matches('.');
+        let name = format!("player-photo-{id}.{extension}");
+        temporary
+            .persist_noclobber(root.join(&name))
+            .map_err(|e| format!("Could not import photo: {e}"))?;
+        Ok(Some(name))
+    }
+
     pub fn read_note(&self, generation: u64, path: &str) -> Result<String> {
         let root = self.root(generation)?;
         require_kind(path, FileKind::Note)?;
+        if path.eq_ignore_ascii_case("player.md") {
+            return String::from_utf8(
+                read_player_file(&root.join(path), DESCRIPTION_LIMIT)?
+                    .ok_or("Player description is missing")?,
+            )
+            .map_err(|e| e.to_string());
+        }
         let resolved = contained_file(root, &relative(path, false)?)?;
         let mut file = at(&resolved, File::open(&resolved))?;
         let mut content = String::new();
@@ -201,6 +338,9 @@ impl WorkspaceStore {
     pub fn write_note(&self, generation: u64, path: &str, content: &str) -> Result<()> {
         let root = self.root(generation)?;
         require_kind(path, FileKind::Note)?;
+        if path.eq_ignore_ascii_case("player.md") {
+            return write_player_file(root, path, content.as_bytes(), DESCRIPTION_LIMIT, false);
+        }
         let relative = relative(path, false)?;
         mutation_parent(root, relative.parent().unwrap_or(Path::new("")))?;
         let resolved = contained_file(root, &relative)?;
@@ -250,6 +390,7 @@ impl WorkspaceStore {
     ) -> Result<Workspace> {
         let root = self.root(generation)?;
         validate_name(name)?;
+        reject_reserved(&relative(parent, true)?.join(name))?;
         let parent = mutation_parent(root, &relative(parent, true)?)?;
         let target = parent.join(name);
         match kind {
@@ -271,7 +412,9 @@ impl WorkspaceStore {
         let root = self.root(generation)?;
         validate_name(name)?;
         let relative = relative(path, false)?;
+        reject_reserved(&relative)?;
         let parent_relative = relative.parent().unwrap_or(Path::new(""));
+        reject_reserved(&parent_relative.join(name))?;
         let parent = mutation_parent(root, parent_relative)?;
         let source = parent.join(
             relative
@@ -325,6 +468,7 @@ impl WorkspaceStore {
     ) -> Result<Workspace> {
         let root = self.root(generation)?;
         let relative = relative(path, false)?;
+        reject_reserved(&relative)?;
         let parent = mutation_parent(root, relative.parent().unwrap_or(Path::new("")))?;
         // Resolve the parent, preserving the final symlink entry for the OS trash API.
         let entry = parent.join(
@@ -371,6 +515,94 @@ impl WorkspaceStore {
             .map_err(|e| format!("Could not save preferences: {e}"))?;
         Ok(())
     }
+}
+
+fn reject_reserved(path: &Path) -> Result<()> {
+    if path.components().count() == 1
+        && path.to_str().is_some_and(|s| {
+            s.eq_ignore_ascii_case("player.json") || s.eq_ignore_ascii_case("player.md")
+        })
+    {
+        return Err("Player profile files cannot be created, renamed, or trashed here".into());
+    }
+    Ok(())
+}
+fn validate_profile(profile: &PlayerProfile) -> Result<()> {
+    if profile.version != 1 {
+        return Err("Unsupported player metadata version".into());
+    }
+    if let Some(path) = &profile.photo_path {
+        relative(path, false)?;
+        require_kind(path, FileKind::Image)?;
+    }
+    Ok(())
+}
+// lstat before open avoids blocking on devices/FIFOs; bounded reads also handle growth.
+fn read_player_file(path: &Path, limit: usize) -> Result<Option<Vec<u8>>> {
+    let metadata = match fs::symlink_metadata(path) {
+        Ok(metadata) => metadata,
+        Err(e) if e.kind() == std::io::ErrorKind::NotFound => return Ok(None),
+        Err(e) => return Err(format!("{}: {e}", path.display())),
+    };
+    if !metadata.is_file() || metadata.is_symlink() {
+        return Err("Player files must be regular files without links".into());
+    }
+    if metadata.len() > limit as u64 {
+        return Err("Player file exceeds the size limit".into());
+    }
+    let mut options = OpenOptions::new();
+    options.read(true);
+    #[cfg(unix)]
+    {
+        use std::os::unix::fs::OpenOptionsExt;
+        options.custom_flags(libc::O_NOFOLLOW | libc::O_NONBLOCK);
+    }
+    #[cfg(windows)]
+    {
+        use std::os::windows::fs::OpenOptionsExt;
+        options.custom_flags(0x00200000); // FILE_FLAG_OPEN_REPARSE_POINT
+    }
+    let file = at(path, options.open(path))?;
+    if !at(path, file.metadata())?.is_file() {
+        return Err("Player files must be regular files".into());
+    }
+    let mut bytes = Vec::new();
+    at(path, file.take(limit as u64 + 1).read_to_end(&mut bytes))?;
+    if bytes.len() > limit {
+        return Err("Player file exceeds the size limit".into());
+    }
+    Ok(Some(bytes))
+}
+fn read_player_photo(path: &Path) -> Result<Vec<u8>> {
+    read_player_file(path, PHOTO_LIMIT)?.ok_or_else(|| "Selected photo is missing".into())
+}
+fn write_player_file(
+    root: &Path,
+    name: &str,
+    bytes: &[u8],
+    limit: usize,
+    create: bool,
+) -> Result<()> {
+    if bytes.len() > limit {
+        return Err("Player file exceeds the size limit".into());
+    }
+    let path = root.join(name);
+    if !create && read_player_file(&path, limit)?.is_none() {
+        return Err("Player file was deleted; reload before saving".into());
+    }
+    let mut temporary = at(root, tempfile::NamedTempFile::new_in(root))?;
+    at(&path, temporary.write_all(bytes))?;
+    at(&path, temporary.as_file().sync_all())?;
+    if create {
+        temporary
+            .persist_noclobber(&path)
+            .map_err(|e| format!("Could not create player file: {e}"))?;
+    } else {
+        temporary
+            .persist(&path)
+            .map_err(|e| format!("Could not save player file: {e}"))?;
+    }
+    Ok(())
 }
 
 fn at<T>(path: &Path, result: std::io::Result<T>) -> Result<T> {

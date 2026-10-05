@@ -478,3 +478,179 @@ fn unreadable_subtrees_return_scan_error() {
     fs::set_permissions(&blocked, fs::Permissions::from_mode(0o700)).unwrap();
     assert!(scan.is_err());
 }
+
+#[test]
+fn player_persistence_and_boundaries() {
+    let (_temp, store, ws) = fixture();
+    let g = ws.generation;
+    let root = Path::new(&ws.display_path);
+    let initial = store.read_player(g).unwrap();
+    assert_eq!(initial.profile, PlayerProfile::default());
+    assert!(!initial.metadata_exists && !initial.description_exists);
+    assert!(!root.join("player.json").exists());
+    let profile = PlayerProfile {
+        name: "Éowyn #?%&;+\n\"".into(),
+        stats: vec![PlayerStat {
+            label: "__proto__".into(),
+            value: "17".into(),
+        }],
+        ..Default::default()
+    };
+    store.write_player(g, profile.clone(), true).unwrap();
+    assert!(store
+        .write_player(g, PlayerProfile::default(), true)
+        .is_err());
+    assert_eq!(store.read_player(g).unwrap().profile, profile);
+    store.write_player_description(g, "# Player", true).unwrap();
+    assert!(store
+        .write_player_description(g, "collision", true)
+        .is_err());
+    assert_eq!(store.read_note(g, "player.md").unwrap(), "# Player");
+    store.write_note(g, "player.md", "changed").unwrap();
+    assert_eq!(store.read_player(g).unwrap().description, "changed");
+    assert!(store
+        .write_note(g, "player.md", &"x".repeat(DESCRIPTION_LIMIT + 1))
+        .is_err());
+    assert_eq!(store.read_note(g, "player.md").unwrap(), "changed");
+    fs::remove_file(root.join("player.md")).unwrap();
+    assert!(store.write_player_description(g, "lost", false).is_err());
+    assert!(!root.join("player.md").exists());
+    assert!(store.read_player(g + 1).is_err());
+    assert!(store
+        .write_player(g + 1, PlayerProfile::default(), true)
+        .is_err());
+    assert!(store
+        .write_player_description(g + 1, "stale", true)
+        .is_err());
+    assert!(store.import_player_photo(g + 1, None).is_err());
+    for invalid in [
+        r#"{}"#,
+        r#"{"version":2,"name":"","photoPath":null,"stats":[]}"#,
+        r#"{"version":1,"name":"","stats":[]}"#,
+        r#"{"version":1,"name":"","photoPath":null,"stats":[],"extra":1}"#,
+        "null",
+        "[]",
+    ] {
+        fs::write(root.join("player.json"), invalid).unwrap();
+        assert!(store.read_player(g).is_err(), "{invalid}");
+        assert!(store
+            .write_player(g, PlayerProfile::default(), false)
+            .is_err());
+        assert_eq!(
+            fs::read_to_string(root.join("player.json")).unwrap(),
+            invalid
+        );
+    }
+    let mut invalid = PlayerProfile::default();
+    invalid.photo_path = Some("../outside.png".into());
+    assert!(store.write_player(g, invalid, false).is_err());
+}
+
+#[test]
+fn player_reserved_names_and_nested_exceptions() {
+    let (_temp, store, ws) = fixture();
+    let g = ws.generation;
+    let root = Path::new(&ws.display_path);
+    fs::write(root.join("ordinary.md"), "keep").unwrap();
+    for name in ["player.md", "PLAYER.MD", "player.json", "Player.JSON"] {
+        assert!(store.create(g, "", name, EntryKind::Note).is_err());
+        assert!(store.create(g, "", name, EntryKind::Folder).is_err());
+        assert!(store.rename(g, "ordinary.md", name).is_err());
+        fs::write(root.join(name), "keep").unwrap();
+        assert!(store.rename(g, name, "other.md").is_err());
+        assert!(store
+            .trash_with(g, name, |_| panic!("must not invoke trash"))
+            .is_err());
+    }
+    store.create(g, "", "nested", EntryKind::Folder).unwrap();
+    store
+        .create(g, "nested", "player.md", EntryKind::Note)
+        .unwrap();
+    store.rename(g, "nested/player.md", "player.json").unwrap();
+    store
+        .trash_with(g, "nested/player.json", |p| {
+            fs::remove_file(p).map_err(|e| e.to_string())
+        })
+        .unwrap();
+}
+
+#[test]
+fn player_bounded_files_and_photo_import() {
+    let (temp, store, ws) = fixture();
+    let g = ws.generation;
+    let root = Path::new(&ws.display_path);
+    for size in [
+        DESCRIPTION_LIMIT - 1,
+        DESCRIPTION_LIMIT,
+        DESCRIPTION_LIMIT + 1,
+    ] {
+        let content = "x".repeat(size);
+        let result = store.write_player_description(g, &content, !root.join("player.md").exists());
+        assert_eq!(result.is_ok(), size <= DESCRIPTION_LIMIT);
+        fs::write(root.join("player.md"), &content).unwrap();
+        assert_eq!(
+            store.read_note(g, "player.md").is_ok(),
+            size <= DESCRIPTION_LIMIT
+        );
+    }
+    let oversized_profile = PlayerProfile {
+        name: "x".repeat(METADATA_LIMIT),
+        ..Default::default()
+    };
+    assert!(store.write_player(g, oversized_profile, true).is_err());
+    assert!(!root.join("player.json").exists());
+    for size in [METADATA_LIMIT - 1, METADATA_LIMIT, METADATA_LIMIT + 1] {
+        let path = root.join("bounded");
+        fs::write(&path, vec![b'x'; size]).unwrap();
+        assert_eq!(
+            read_player_file(&path, METADATA_LIMIT).is_ok(),
+            size <= METADATA_LIMIT
+        );
+    }
+    let before = fs::read_dir(root).unwrap().count();
+    assert_eq!(store.import_player_photo(g, None).unwrap(), None);
+    assert_eq!(fs::read_dir(root).unwrap().count(), before);
+    let source = temp.path().join("original.PNG");
+    fs::write(&source, b"photo").unwrap();
+    let first = store
+        .import_player_photo(g, Some(source.clone()))
+        .unwrap()
+        .unwrap();
+    let second = store
+        .import_player_photo(g, Some(source.clone()))
+        .unwrap()
+        .unwrap();
+    assert_ne!(first, second);
+    assert!(first.starts_with("player-photo-"));
+    assert_eq!(fs::read(root.join(first)).unwrap(), b"photo");
+    assert_eq!(fs::read(&source).unwrap(), b"photo");
+    for size in [PHOTO_LIMIT - 1, PHOTO_LIMIT, PHOTO_LIMIT + 1] {
+        fs::write(&source, vec![0; size]).unwrap();
+        assert_eq!(read_player_photo(&source).is_ok(), size <= PHOTO_LIMIT);
+    }
+    assert!(store
+        .import_player_photo(g, Some(temp.path().join("missing.png")))
+        .is_err());
+    assert!(store
+        .import_player_photo(g, Some(temp.path().join("bad.txt")))
+        .is_err());
+    fs::remove_file(root.join("player.md")).unwrap();
+    fs::create_dir(root.join("player.md")).unwrap();
+    assert!(store.read_player(g).is_err());
+    assert!(store.write_player_description(g, "keep", false).is_err());
+    #[cfg(unix)]
+    {
+        use std::os::unix::fs::symlink;
+        fs::remove_dir(root.join("player.md")).unwrap();
+        symlink(&source, root.join("player.md")).unwrap();
+        assert!(store.read_note(g, "player.md").is_err());
+        assert!(store.write_note(g, "player.md", "keep").is_err());
+        assert!(read_player_photo(&root.join("player.md")).is_err());
+        fs::remove_file(root.join("player.md")).unwrap();
+        symlink("/dev/zero", root.join("player.md")).unwrap();
+        assert!(read_player_photo(&root.join("player.md")).is_err());
+        fs::remove_file(root.join("player.md")).unwrap();
+        symlink("missing", root.join("player.md")).unwrap();
+        assert!(store.read_player(g).is_err());
+    }
+}

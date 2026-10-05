@@ -58,6 +58,38 @@ fn ipc_contract_uses_camel_case_args_and_binary_image_response() {
         .unwrap()
         .deserialize::<Value>()
         .unwrap();
+    let player = invoke("read_player", json!({"generation":generation}))
+        .unwrap()
+        .deserialize::<Value>()
+        .unwrap();
+    assert_eq!(player["profile"]["version"], 1);
+    assert_eq!(player["metadataExists"], false);
+    assert_eq!(player["descriptionExists"], false);
+    let profile =
+        json!({"version":1,"name":"Player","photoPath":null,"stats":[{"label":"HP","value":"12"}]});
+    invoke(
+        "write_player",
+        json!({"generation":generation,"profile":profile,"createIfMissing":true}),
+    )
+    .unwrap();
+    assert!(invoke(
+        "write_player",
+        json!({"generation":generation,"profile":profile,"createIfMissing":true})
+    )
+    .is_err());
+    invoke(
+        "write_player_description",
+        json!({"generation":generation,"content":"# Player","createIfMissing":true}),
+    )
+    .unwrap();
+    let player = invoke("read_player", json!({"generation":generation}))
+        .unwrap()
+        .deserialize::<Value>()
+        .unwrap();
+    assert_eq!(player["profile"], profile);
+    assert_eq!(player["description"], "# Player");
+    assert_eq!(player["metadataExists"], true);
+    assert_eq!(player["descriptionExists"], true);
     assert_eq!(bootstrap["preferences"]["sidebarWidth"], 260.0);
     assert_eq!(bootstrap["workspace"]["generation"], generation);
     invoke(

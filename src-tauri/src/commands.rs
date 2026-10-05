@@ -1,5 +1,6 @@
 use crate::workspace::{
-    Bootstrap, EntryKind, Preferences, PreferencesPatch, RenameResult, Workspace, WorkspaceStore,
+    Bootstrap, EntryKind, PlayerProfile, PlayerSnapshot, Preferences, PreferencesPatch,
+    RenameResult, Workspace, WorkspaceStore,
 };
 use std::{
     path::PathBuf,
@@ -25,6 +26,10 @@ pub fn register<R: tauri::Runtime>(builder: tauri::Builder<R>) -> tauri::Builder
         initialize_workspace,
         pick_workspace,
         refresh_workspace,
+        read_player,
+        write_player,
+        write_player_description,
+        import_player_photo,
         read_note,
         write_note,
         read_image,
@@ -92,6 +97,75 @@ async fn refresh_workspace(
         store.refresh(generation)
     })
     .await
+}
+
+#[tauri::command]
+async fn read_player(
+    state: State<'_, ManagedWorkspace>,
+    generation: u64,
+) -> Result<PlayerSnapshot> {
+    with_store(state.inner().clone(), move |store| {
+        store.read_player(generation)
+    })
+    .await
+}
+#[tauri::command]
+async fn write_player(
+    state: State<'_, ManagedWorkspace>,
+    generation: u64,
+    profile: PlayerProfile,
+    create_if_missing: bool,
+) -> Result<()> {
+    with_store(state.inner().clone(), move |store| {
+        store.write_player(generation, profile, create_if_missing)
+    })
+    .await
+}
+#[tauri::command]
+async fn write_player_description(
+    state: State<'_, ManagedWorkspace>,
+    generation: u64,
+    content: String,
+    create_if_missing: bool,
+) -> Result<()> {
+    with_store(state.inner().clone(), move |store| {
+        store.write_player_description(generation, &content, create_if_missing)
+    })
+    .await
+}
+#[tauri::command]
+async fn import_player_photo<R: tauri::Runtime>(
+    app: tauri::AppHandle<R>,
+    state: State<'_, ManagedWorkspace>,
+    generation: u64,
+) -> Result<Option<String>> {
+    #[cfg(desktop)]
+    {
+        with_store(state.inner().clone(), move |store| {
+            store.refresh(generation).map(|_| ())
+        })
+        .await?;
+        let selected = tauri::async_runtime::spawn_blocking(move || {
+            app.dialog()
+                .file()
+                .set_title("Choose player photo")
+                .add_filter("Images", &["png", "jpg", "jpeg", "gif", "webp"])
+                .blocking_pick_file()
+                .map(|path| path.into_path().map_err(|e| e.to_string()))
+                .transpose()
+        })
+        .await
+        .map_err(|e| format!("Photo picker failed: {e}"))??;
+        with_store(state.inner().clone(), move |store| {
+            store.import_player_photo(generation, selected)
+        })
+        .await
+    }
+    #[cfg(not(desktop))]
+    {
+        let _ = (app, state, generation);
+        Err("Photo selection is supported on desktop only".into())
+    }
 }
 
 #[tauri::command]
