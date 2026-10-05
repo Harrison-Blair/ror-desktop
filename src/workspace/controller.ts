@@ -7,6 +7,12 @@ import type {
   Workspace,
   WorkspaceApi,
 } from "../api/workspace";
+import {
+  type DiceResult,
+  parseDiceExpression,
+  type RandomSource,
+  rollDice,
+} from "../dice/dice";
 import { SaveSession } from "./save-session";
 
 export type NamingTarget =
@@ -31,8 +37,26 @@ export type PlayerState = {
 };
 export const reservedProfilePath = (path: string) =>
   /^(player\.json|player\.md)$/i.test(path);
+export type DiceContext = {
+  input: string;
+  latest: DiceResult | null;
+  history: DiceResult[];
+  error: string | null;
+  rolling: boolean;
+  rollNumber: number;
+};
+const temporaryDiceContext = Symbol("temporary dice session");
+const emptyDiceContext = (): DiceContext => ({
+  input: "1d20",
+  latest: null,
+  history: [],
+  error: null,
+  rolling: false,
+  rollNumber: 0,
+});
 export type WorkspaceState = {
-  activeFunction: "player" | "notes";
+  activeFunction: "player" | "notes" | "dice";
+  dice: DiceContext;
   player: PlayerState;
   revealPath: string | null;
   workspace: Workspace | null;
@@ -73,6 +97,7 @@ export const nameError = (name: string) =>
 export class WorkspaceController {
   state: WorkspaceState = {
     activeFunction: "player",
+    dice: emptyDiceContext(),
     player: {},
     revealPath: null,
     workspace: null,
@@ -100,7 +125,101 @@ export class WorkspaceController {
   private disposed = false;
   private namingCommit?: Promise<boolean>;
   private preferencesQueue: Promise<void> = Promise.resolve();
-  constructor(readonly api: WorkspaceApi) {}
+  private diceContexts = new Map<string | symbol, DiceContext>([
+    [temporaryDiceContext, this.state.dice],
+  ]);
+  private diceTimers = new Map<
+    string | symbol,
+    ReturnType<typeof setTimeout>
+  >();
+  constructor(
+    readonly api: WorkspaceApi,
+    private diceOptions: {
+      random?: RandomSource | null;
+      reducedMotion?: () => boolean;
+    } = {},
+  ) {}
+  private diceKey() {
+    return this.state.workspace?.displayPath ?? temporaryDiceContext;
+  }
+  private diceContext(workspace: Workspace | null) {
+    const key = workspace?.displayPath ?? temporaryDiceContext;
+    let context = this.diceContexts.get(key);
+    if (!context) {
+      context = emptyDiceContext();
+      this.diceContexts.set(key, context);
+    }
+    return context;
+  }
+  private updateDice(key: string | symbol, patch: Partial<DiceContext>) {
+    const context = this.diceContexts.get(key);
+    if (!context || this.disposed) return;
+    const next = { ...context, ...patch };
+    this.diceContexts.set(key, next);
+    if (this.diceKey() === key) this.update({ dice: next });
+  }
+  editDice(input: string) {
+    if (!this.disposed) this.updateDice(this.diceKey(), { input });
+  }
+  submitDice(expression = this.state.dice.input) {
+    if (
+      this.disposed ||
+      this.state.initializing ||
+      this.state.opening ||
+      this.state.busy ||
+      this.state.dialog ||
+      this.state.activeFunction !== "dice" ||
+      this.state.dice.rolling
+    )
+      return;
+    const key = this.diceKey();
+    try {
+      const result = rollDice(
+        parseDiceExpression(expression),
+        this.diceOptions.random,
+      );
+      const rolling = !(
+        this.diceOptions.reducedMotion?.() ??
+        globalThis.matchMedia?.("(prefers-reduced-motion: reduce)").matches ??
+        false
+      );
+      this.updateDice(key, {
+        latest: result,
+        rollNumber: this.state.dice.rollNumber + 1,
+        history: [result, ...this.state.dice.history].slice(0, 50),
+        error: null,
+        rolling,
+      });
+      if (rolling)
+        this.diceTimers.set(
+          key,
+          setTimeout(() => {
+            this.diceTimers.delete(key);
+            this.updateDice(key, { rolling: false });
+          }, 600),
+        );
+    } catch (error) {
+      this.updateDice(key, {
+        error:
+          error instanceof Error
+            ? error.message
+            : "Couldn't roll. Please try again.",
+      });
+    }
+  }
+  rerollDice() {
+    if (this.state.dice.latest)
+      this.submitDice(this.state.dice.latest.spec.expression);
+  }
+  clearDiceHistory() {
+    if (
+      !this.disposed &&
+      !this.state.dice.rolling &&
+      !this.state.busy &&
+      !this.state.dialog
+    )
+      this.updateDice(this.diceKey(), { history: [] });
+  }
   subscribe = (listener: () => void) => {
     this.listeners.add(listener);
     return () => {
@@ -122,7 +241,11 @@ export class WorkspaceController {
     try {
       const result = await this.api.initializeWorkspace();
       if (request === this.request) {
-        this.update({ ...result, initializing: false });
+        this.update({
+          ...result,
+          dice: this.diceContext(result.workspace),
+          initializing: false,
+        });
         if (result.workspace) await this.loadPlayer(result.workspace);
       }
     } catch (error) {
@@ -131,6 +254,8 @@ export class WorkspaceController {
     }
   }
   dispose() {
+    for (const timer of this.diceTimers.values()) clearTimeout(timer);
+    this.diceTimers.clear();
     this.disposed = true;
     this.request++;
     this.playerRequest++;
@@ -257,8 +382,13 @@ export class WorkspaceController {
     if (!this.state.busy && !this.state.dialog)
       this.state.player.description?.edit(content);
   }
-  async switchFunction(activeFunction: "player" | "notes") {
-    if (!(await this.commitNaming()) || this.state.busy || this.state.dialog)
+  async switchFunction(activeFunction: WorkspaceState["activeFunction"]) {
+    if (
+      this.state.initializing ||
+      !(await this.commitNaming()) ||
+      this.state.busy ||
+      this.state.dialog
+    )
       return;
     this.update({ busy: true });
     if (await this.save()) this.update({ activeFunction });
@@ -374,7 +504,12 @@ export class WorkspaceController {
     }
   }
   async pickFolder() {
-    if (!(await this.commitNaming()) || this.state.busy || this.state.dialog)
+    if (
+      this.state.initializing ||
+      !(await this.commitNaming()) ||
+      this.state.busy ||
+      this.state.dialog
+    )
       return;
     this.update({ busy: true });
     if (!(await this.save())) {
@@ -389,7 +524,9 @@ export class WorkspaceController {
         ++this.request;
         for (const session of this.sessions()) session.dispose();
         this.update({
-          activeFunction: "player",
+          activeFunction:
+            this.state.activeFunction === "dice" ? "dice" : "player",
+          dice: this.diceContext(workspace),
           player: {},
           revealPath: null,
           workspace,

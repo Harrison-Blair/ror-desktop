@@ -4,6 +4,7 @@ import {
   AlertCircle,
   Check,
   Circle,
+  Dices,
   FileQuestion,
   FolderOpen,
   ListOrdered,
@@ -15,6 +16,7 @@ import {
 } from "lucide-react";
 import { useEffect, useMemo, useState, useSyncExternalStore } from "react";
 import { api as nativeApi, type WorkspaceApi } from "./api/workspace";
+import { Dice } from "./components/Dice";
 import { ImageViewer } from "./components/ImageViewer";
 import { Dialog } from "./components/Overlays";
 import { Player } from "./components/Player";
@@ -94,52 +96,66 @@ function App({ api = nativeApi, closeHost }: Props) {
   );
   return (
     <main className="workspace-app" inert={!!dialog}>
-      {workspace && (
-        <nav className="function-rail" aria-label="App functions">
+      <nav className="function-rail" aria-label="App functions">
+        <IconButton
+          label="Player"
+          aria-pressed={state.activeFunction === "player"}
+          disabled={loading || state.busy}
+          onClick={() => void controller.switchFunction("player")}
+        >
+          <UserRound />
+        </IconButton>
+        <IconButton
+          label="Notes"
+          aria-pressed={state.activeFunction === "notes"}
+          disabled={loading || state.busy}
+          onClick={() => void controller.switchFunction("notes")}
+        >
+          <Notebook />
+        </IconButton>
+        <IconButton
+          label="Dice"
+          aria-pressed={state.activeFunction === "dice"}
+          disabled={loading || state.busy}
+          onClick={() => void controller.switchFunction("dice")}
+        >
+          <Dices />
+        </IconButton>
+        <div className="rail-folder">
           <IconButton
-            label="Player"
-            aria-pressed={state.activeFunction === "player"}
-            disabled={state.busy}
-            onClick={() => void controller.switchFunction("player")}
+            label="Workspace folder"
+            title={
+              workspace
+                ? `${workspace.name} — ${workspace.displayPath}`
+                : "Open folder"
+            }
+            disabled={loading || state.busy}
+            onClick={() =>
+              workspace
+                ? setFolderMenu(!folderMenu)
+                : void controller.pickFolder()
+            }
           >
-            <UserRound />
+            <FolderOpen />
           </IconButton>
-          <IconButton
-            label="Notes"
-            aria-pressed={state.activeFunction === "notes"}
-            disabled={state.busy}
-            onClick={() => void controller.switchFunction("notes")}
-          >
-            <Notebook />
-          </IconButton>
-          <div className="rail-folder">
-            <IconButton
-              label="Workspace folder"
-              title={`${workspace.name} — ${workspace.displayPath}`}
-              disabled={state.busy}
-              onClick={() => setFolderMenu(!folderMenu)}
-            >
-              <FolderOpen />
-            </IconButton>
-            {folderMenu && (
-              <div className="folder-popover">
-                <strong>{workspace.name}</strong>
-                <code>{workspace.displayPath}</code>
-                <button
-                  type="button"
-                  className="pill"
-                  onClick={() => {
-                    setFolderMenu(false);
-                    void controller.pickFolder();
-                  }}
-                >
-                  Open folder…
-                </button>
-              </div>
-            )}
-          </div>
-        </nav>
-      )}
+          {folderMenu && workspace && (
+            <div className="folder-popover">
+              <strong>{workspace.name}</strong>
+              <code>{workspace.displayPath}</code>
+              <button
+                type="button"
+                className="pill"
+                onClick={() => {
+                  setFolderMenu(false);
+                  void controller.pickFolder();
+                }}
+              >
+                Open folder…
+              </button>
+            </div>
+          )}
+        </div>
+      </nav>
       {workspace && state.activeFunction === "notes" && (
         <Sidebar
           key={workspace.generation}
@@ -152,7 +168,7 @@ function App({ api = nativeApi, closeHost }: Props) {
         aria-label="File pane"
         aria-busy={loading || selection?.loading || state.busy}
       >
-        {workspace && !loading && (
+        {workspace && !loading && state.activeFunction !== "dice" && (
           <header className="file-header">
             {state.activeFunction === "player"
               ? saveChip
@@ -207,6 +223,8 @@ function App({ api = nativeApi, closeHost }: Props) {
               {workspace ? `Opening ${workspace.name}…` : "Opening folder…"}
             </p>
           </div>
+        ) : state.activeFunction === "dice" ? (
+          <Dice controller={controller} state={state} />
         ) : !workspace ? (
           <div className="empty-state">
             <div className="empty-icon">

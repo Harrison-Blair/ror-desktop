@@ -105,3 +105,12 @@ Native runtime verification on this development host uses Linux WebKitGTK with t
 The left rail opens **Player** by default and switches to **Notes**. The folder picker remains at the bottom of that rail. A folder holds one player's name, photo, custom stats, Markdown description, and notes under `player-notes/`. Player edits autosave after 500ms; failed writes retain drafts and block navigation until Retry succeeds. Player and Notes share the same description draft. Refresh offers Cancel, Discard and Reload, or Save and Refresh when anything is dirty.
 
 The interface follows system light/dark mode using black, white, and neutral grays; imported photos retain their colors.
+
+Dice is available from the function rail with or without a folder. Quick rolls
+leave the notation field unchanged; Roll again repeats the latest successful
+roll. Notation accepts signed dice and modifiers, such as `2d6 + 1d8 - 3` or
+`d20 - d4`, with at most 100 dice, 1,000,000 sides per die, and 200 characters.
+Rolls use secure, unbiased browser randomness. The latest result and up to 50
+recent rolls belong to the current folder's session (or a temporary session
+without a folder). Switching folders and refreshing preserve those sessions;
+closing the app clears them. Dice never writes files or preferences.
