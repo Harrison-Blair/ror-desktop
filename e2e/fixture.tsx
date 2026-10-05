@@ -9,6 +9,7 @@ import "../src/styles/global.css";
 import { createRoot } from "react-dom/client";
 import App from "../src/App";
 import type {
+  PlayerProfile,
   Preferences,
   TreeNode,
   Workspace,
@@ -53,6 +54,21 @@ const fixture = {
         isSymlink: false,
         children: [file("notes/week-3.md")],
       },
+      {
+        kind: "folder",
+        path: "player-notes",
+        name: "player-notes",
+        isSymlink: false,
+        children: [
+          {
+            kind: "folder",
+            path: "player-notes/history",
+            name: "history",
+            isSymlink: false,
+            children: [file("player-notes/history/background.md")],
+          },
+        ],
+      },
       file("README.md"),
       file("week-3.md"),
       file(".hidden.md"),
@@ -68,6 +84,7 @@ const fixture = {
     "week-3.md": "# Week three\n\nNotes for the next discussion.",
     "notes/week-3.md": "![parent-relative](../images/cover.png)",
     ".hidden.md": "A hidden note.",
+    "player-notes/history/background.md": "Player background",
   } as Record<string, string>,
   writes: [] as { path: string; content: string }[],
   imageReads: [] as { path: string; notePath?: string | null }[],
@@ -97,7 +114,7 @@ canvas.width = 640;
 canvas.height = 400;
 const context = canvas.getContext("2d");
 if (context) {
-  context.fillStyle = "#e8def8";
+  context.fillStyle = "#dedede";
   context.fillRect(0, 0, 640, 400);
   context.fillStyle = "#8b6fd6";
   context.fillRect(55, 65, 200, 270);
@@ -139,7 +156,38 @@ const walk = (
         ]
       : [];
   });
+let profile: PlayerProfile = {
+  version: 1,
+  name: "",
+  photoPath: null,
+  stats: [],
+};
+let metadataExists = false;
+let descriptionExists = false;
 const api: WorkspaceApi = {
+  readPlayer: async () => ({
+    profile,
+    description: fixture.notes["player.md"] ?? "",
+    metadataExists,
+    descriptionExists,
+  }),
+  writePlayer: async (_generation, value, create) => {
+    if (fixture.failWrites) throw new Error("Permission denied");
+    if (create === metadataExists) throw new Error("File presence changed");
+    profile = value;
+    metadataExists = true;
+    if (!fixture.workspace.nodes.some((node) => node.path === "player.json"))
+      fixture.workspace.nodes.push(file("player.json"));
+  },
+  writePlayerDescription: async (_generation, content, create) => {
+    if (fixture.failWrites) throw new Error("Permission denied");
+    if (create === descriptionExists) throw new Error("File presence changed");
+    fixture.notes["player.md"] = content;
+    descriptionExists = true;
+    if (!fixture.workspace.nodes.some((node) => node.path === "player.md"))
+      fixture.workspace.nodes.push(file("player.md"));
+  },
+  importPlayerPhoto: async () => null,
   initializeWorkspace: async () => ({
     preferences: fixture.preferences,
     workspace: fixture.workspace,

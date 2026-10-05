@@ -8,13 +8,16 @@ import {
   FolderOpen,
   ListOrdered,
   LoaderCircle,
+  Notebook,
   RefreshCw,
   Trash2,
+  UserRound,
 } from "lucide-react";
-import { useEffect, useMemo, useSyncExternalStore } from "react";
+import { useEffect, useMemo, useState, useSyncExternalStore } from "react";
 import { api as nativeApi, type WorkspaceApi } from "./api/workspace";
 import { ImageViewer } from "./components/ImageViewer";
 import { Dialog } from "./components/Overlays";
+import { Player } from "./components/Player";
 import { EntryIcon, IconButton, Sidebar } from "./components/Sidebar";
 import { NoteEditor } from "./editor/NoteEditor";
 import { type CloseHost, closeGuard } from "./workspace/close-guard";
@@ -40,7 +43,17 @@ function App({ api = nativeApi, closeHost }: Props) {
       );
   }, [controller, closeHost]);
   const { workspace, selection, dialog } = state;
-  const session = selection?.session;
+  const [folderMenu, setFolderMenu] = useState(false);
+  const session =
+    state.activeFunction === "player"
+      ? ([state.player.metadata, state.player.description].find(
+          (item) => item?.status === "failed",
+        ) ??
+        [state.player.metadata, state.player.description].find(
+          (item) => item?.dirty,
+        ) ??
+        state.player.metadata)
+      : selection?.session;
   const loading = state.initializing || state.opening;
   const status = session?.status;
   const saveChip = session && (
@@ -82,6 +95,52 @@ function App({ api = nativeApi, closeHost }: Props) {
   return (
     <main className="workspace-app" inert={!!dialog}>
       {workspace && (
+        <nav className="function-rail" aria-label="App functions">
+          <IconButton
+            label="Player"
+            aria-pressed={state.activeFunction === "player"}
+            disabled={state.busy}
+            onClick={() => void controller.switchFunction("player")}
+          >
+            <UserRound />
+          </IconButton>
+          <IconButton
+            label="Notes"
+            aria-pressed={state.activeFunction === "notes"}
+            disabled={state.busy}
+            onClick={() => void controller.switchFunction("notes")}
+          >
+            <Notebook />
+          </IconButton>
+          <div className="rail-folder">
+            <IconButton
+              label="Workspace folder"
+              title={`${workspace.name} — ${workspace.displayPath}`}
+              disabled={state.busy}
+              onClick={() => setFolderMenu(!folderMenu)}
+            >
+              <FolderOpen />
+            </IconButton>
+            {folderMenu && (
+              <div className="folder-popover">
+                <strong>{workspace.name}</strong>
+                <code>{workspace.displayPath}</code>
+                <button
+                  type="button"
+                  className="pill"
+                  onClick={() => {
+                    setFolderMenu(false);
+                    void controller.pickFolder();
+                  }}
+                >
+                  Open folder…
+                </button>
+              </div>
+            )}
+          </div>
+        </nav>
+      )}
+      {workspace && state.activeFunction === "notes" && (
         <Sidebar
           key={workspace.generation}
           controller={controller}
@@ -95,28 +154,30 @@ function App({ api = nativeApi, closeHost }: Props) {
       >
         {workspace && !loading && (
           <header className="file-header">
-            {selection && (
-              <>
-                <div className="file-title" title={selection.node.path}>
-                  <EntryIcon node={selection.node} />
-                  <span>{selection.node.name}</span>
-                </div>
-                {session && (
-                  <IconButton
-                    label="Line numbers"
-                    aria-pressed={state.preferences.lineNumbers}
-                    onClick={() => {
-                      void controller.patchPreferences({
-                        lineNumbers: !state.preferences.lineNumbers,
-                      });
-                    }}
-                  >
-                    <ListOrdered />
-                  </IconButton>
+            {state.activeFunction === "player"
+              ? saveChip
+              : selection && (
+                  <>
+                    <div className="file-title" title={selection.node.path}>
+                      <EntryIcon node={selection.node} />
+                      <span>{selection.node.name}</span>
+                    </div>
+                    {session && (
+                      <IconButton
+                        label="Line numbers"
+                        aria-pressed={state.preferences.lineNumbers}
+                        onClick={() => {
+                          void controller.patchPreferences({
+                            lineNumbers: !state.preferences.lineNumbers,
+                          });
+                        }}
+                      >
+                        <ListOrdered />
+                      </IconButton>
+                    )}
+                    {saveChip}
+                  </>
                 )}
-                {saveChip}
-              </>
-            )}
           </header>
         )}
         {state.banner && (
@@ -192,6 +253,8 @@ function App({ api = nativeApi, closeHost }: Props) {
               </>
             )}
           </div>
+        ) : state.activeFunction === "player" ? (
+          <Player controller={controller} state={state} />
         ) : !selection ? (
           <div className="empty-state">
             <div className="empty-icon">
@@ -252,7 +315,7 @@ function App({ api = nativeApi, closeHost }: Props) {
       </section>
       {dialog?.kind === "refresh" && (
         <Dialog
-          title={`${selection?.node.name} has unsaved changes`}
+          title="Workspace has unsaved changes"
           icon={<RefreshCw />}
           onCancel={() => controller.dismissDialog()}
           actions={
@@ -288,7 +351,9 @@ function App({ api = nativeApi, closeHost }: Props) {
             </>
           }
         >
-          <p>Refreshing reloads the folder and this note from disk.</p>
+          <p>
+            Refreshing reloads the folder, player, and selected note from disk.
+          </p>
           <p className="dialog-note">
             Save and Refresh writes your version over any changes made to{" "}
             {selection?.node.name} in other apps.

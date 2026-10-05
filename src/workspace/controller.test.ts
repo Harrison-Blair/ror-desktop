@@ -63,7 +63,7 @@ describe("workspace transitions", () => {
     await c.openFile(file("one.md"));
     expect(c.state.selection?.node.path).toBe("two.md");
     expect(c.state.selection?.session?.content).toBe("keep me");
-    expect(c.state.banner).toContain("staying on this note");
+    expect(c.state.banner).toContain("staying here");
     await c.retrySave();
     expect(c.state.selection?.node.path).toBe("two.md");
     expect(c.state.selection?.session?.dirty).toBe(false);

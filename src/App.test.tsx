@@ -48,11 +48,16 @@ describe("workspace UI", () => {
     await userEvent.click(
       await screen.findByRole("button", { name: "Open folder" }),
     );
+    expect(
+      await screen.findByRole("button", { name: "Player" }),
+    ).toHaveAttribute("aria-pressed", "true");
+    await userEvent.click(screen.getByRole("button", { name: "Notes" }));
     expect(await screen.findByText("No file open")).toBeInTheDocument();
     expect(api.readNote).not.toHaveBeenCalled();
   });
   it("shows every supported and unsupported row and keeps a hidden note open when hidden again", async () => {
     render(<App api={fixture()} />);
+    await userEvent.click(await screen.findByRole("button", { name: "Notes" }));
     await screen.findByRole("treeitem", { name: "one.md" });
     expect(
       screen.getByRole("treeitem", { name: "file.pdf" }),
@@ -82,6 +87,7 @@ describe("workspace UI", () => {
   it("tree keyboard opens a note; naming Escape cancels and invalid blur blocks navigation", async () => {
     const api = fixture();
     render(<App api={api} />);
+    await userEvent.click(await screen.findByRole("button", { name: "Notes" }));
     const row = await screen.findByRole("treeitem", { name: "one.md" });
     row.focus();
     fireEvent.keyDown(row, { key: "Enter" });
@@ -118,6 +124,7 @@ describe("workspace UI", () => {
       restoreError: null,
     });
     render(<App api={api} />);
+    await userEvent.click(await screen.findByRole("button", { name: "Notes" }));
     const row = await screen.findByRole("treeitem", { name: "sub" });
     await userEvent.click(row);
     await userEvent.click(screen.getByRole("button", { name: "New note" }));

@@ -1,6 +1,6 @@
 # Ror Desktop interface: design handoff
 
-Repository note: the approved design is preserved below verbatim from the design session. The user subsequently authorized production implementation; the historical design-only statement describes the earlier phase. Full approved palettes and dimensions are extracted into `src/styles/tokens.css`, including the revised light-theme mark colour `#7a62bd`. Canvas-only experiments and behavior code are not copied into production.
+Repository note: the approved design is preserved below verbatim from the design session. The user subsequently authorized production implementation; the historical design-only statement describes the earlier phase. Full approved palettes and dimensions are extracted into `src/styles/tokens.css`, with the current monochrome palette. Canvas-only experiments and behavior code are not copied into production.
 
 Updated 2026-10-04. This is design exploration only. Nothing here authorizes production implementation.
 
@@ -35,7 +35,7 @@ Every item below was chosen or confirmed by the user directly, either in the Cla
 - Inline image preview:
   - Sits under its source line, max 340px wide, 1px border, square corners.
   - Spacing is 8px above and 14px below.
-- **Revision (this session):** the light-theme Markdown mark colour changed from `#7f68c2` to `#7a62bd`, raising contrast from 4.34:1 to 4.69:1.
+- **Revision (this session):** the light-theme Markdown mark colour changed from `#8e8e8e` to `#888888`, raising contrast from 4.34:1 to 4.69:1.
 
 ### Sidebar and file actions
 
@@ -44,7 +44,7 @@ Every item below was chosen or confirmed by the user directly, either in the Cla
   - Below it is an icon row: New note and New folder on the left, Refresh and the hidden-files eye toggle on the right.
   - Icon buttons are 30×30 with a 10px radius.
   - Tree rows are compact: 28px high, 16px indent per level, no indent guides.
-  - The selected row uses accentSoft with bold text, and folders show a lavender icon.
+  - The selected row uses accentSoft with bold text, and folders show a neutral icon.
 - **Inline naming**
   - The full name is editable.
   - A new note starts as `untitled.md` with only "untitled" selected.
@@ -67,7 +67,7 @@ Every item below was chosen or confirmed by the user directly, either in the Cla
 ### Viewer, saving and dialogs
 
 - **Image viewer**
-  - Uses a tinted panel background: `#efeaf9` in light, `#15121c` in dark.
+  - Uses a tinted panel background: `#f1f1f1` in light, `#161616` in dark.
   - The header shows an image icon and the filename.
   - Images fit the pane and are never enlarged.
 - **Unsupported file selected:** a centred icon tile and the single line "Can't open this file".
@@ -106,10 +106,10 @@ Every item below was chosen or confirmed by the user directly, either in the Cla
 
 These were visible in approved boards, so they count as accepted by default, but they can be revisited:
 
-- Primary button colours: `#5a3fb0` with white text in light, `#b79cf5` with `#1d1a29` text in dark.
-- Dark-theme error-button text is `#1d1a29` on `#ff9db8`.
-- The rename-warning amber: `#7a5200` light, `#f2c46b` dark.
-- The selection highlight inside naming boxes: `#d9cdfa` light, `#4f4282` dark.
+- Primary button colours: `#6e6e6e` with white text in light, `#c3c3c3` with `#202020` text in dark.
+- Dark-theme error-button text is `#202020` on `#c7c7c7`.
+- The rename-warning gray: `#444444` light, `#b6b6b6` dark.
+- The selection highlight inside naming boxes: `#e0e0e0` light, `#5c5c5c` dark.
 - Menu item highlight for the keyboard-focused or first item.
 - The scrim opacity.
 
@@ -149,7 +149,7 @@ The user answered each of these directly in the Claude Code pane. The new boards
 
 - **Case-only rename** (for example `Week-3.md` to `week-3.md`): allowed as a normal rename on every filesystem, never reported as a collision with itself.
 - **Hover**
-  - Tree rows get a faint lavender tint with no bold: `#efebfb` light, `#25203a` dark. Boards: `SbHover`, `SbHoverDark`.
+  - Tree rows get a faint neutral tint with no bold: `#f2f2f2` light, `#2a2a2a` dark. Boards: `SbHover`, `SbHoverDark`.
   - Menu items use the same tint on hover. This was described to the user but not drawn.
   - Text on the hover tint is 12.49:1 light and 12.86:1 dark.
   - In light, hover is nearly the same colour as the selected row (1.04:1). Selection stays distinguishable by its bold text, and hover is transient.
@@ -183,3 +183,7 @@ Nothing. Every item raised during the design sessions has a user decision.
 - **Rendering:** I have not visually inspected any canvas board since the switch from mockup. The Design type's own instructions forbid self-rendering checks unless the user asks. Layout, overflow, font loading, context-menu positioning (computed offsets) and dark-theme boards are unverified.
 - **Earlier screenshots:** only the mockup rounds (`language-1`, `language-2`) were actually viewed as screenshots.
 - **Interactivity:** in Play mode, only the line-number toggle on the editor boards actually works. Everything else is static.
+
+## Player/Notes revision
+
+Replace the former purple palette with neutral grayscale tokens in both system themes. Keep existing fonts and spacing. A 56px left rail places Player before Notes and the workspace folder picker at the bottom. Player is the startup/folder-opening default; it uses the full content area. Notes keeps its tree and editor. Profile fields are name, photo, ordered custom label/value stats, Markdown description, and recursively listed Markdown notes inside `player-notes/`. Clicking a related note reveals and focuses it in Notes. The description owns one shared save session across both functions. Distinct sessions flush metadata, description, then ordinary selected note before navigation and close. Root player.json/player.md are reserved; player.md remains editable in Notes. Photos retain color.

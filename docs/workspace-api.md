@@ -54,3 +54,9 @@ External and absolute references, including `file:`, `data:` and HTTP URLs, are 
 ## Verification boundaries
 
 The frontend foundation provides types and direct IPC wrappers only. Native command validation is covered by the native implementation; later frontend tests can inject a `WorkspaceApi` mock to exercise user-visible behavior. No speculative error taxonomy or feature state is introduced here.
+
+## Player profile
+
+The opened folder contains `player.json` (`{version:1,name,photoPath,stats:[{label,value}]}`) and the Markdown description `player.md`. Missing files are not created until edited. `read_player(generation)` returns `{profile,description,metadataExists,descriptionExists}`. `write_player(generation,profile,createIfMissing)` and `write_player_description(generation,content,createIfMissing)` create exclusively on the first save and require an existing regular file thereafter. Malformed or unsupported metadata is rejected without overwriting it; `player.md` can still be edited through Notes.
+
+Metadata is bounded to 1MiB, descriptions to 5MiB, and selected photos to 20MiB. New readers reject symlinks and nonregular files. `import_player_photo(generation)` returns a copied workspace-relative image path or null on cancellation. Copies use unique `player-photo-<id>.<extension>` names; originals and previous copies are retained. Root profile names, including case aliases, are protected from ordinary create, rename, and Trash operations.

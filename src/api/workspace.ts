@@ -46,7 +46,39 @@ export type RenameResult = {
   path: string;
 };
 
+export type PlayerProfile = {
+  version: 1;
+  name: string;
+  photoPath: string | null;
+  stats: { label: string; value: string }[];
+};
+export type PlayerSnapshot = {
+  profile: PlayerProfile;
+  description: string;
+  metadataExists: boolean;
+  descriptionExists: boolean;
+};
+
 export const api = {
+  readPlayer: (generation: number) =>
+    invoke<PlayerSnapshot>("read_player", { generation }),
+  writePlayer: (
+    generation: number,
+    profile: PlayerProfile,
+    createIfMissing: boolean,
+  ) => invoke<void>("write_player", { generation, profile, createIfMissing }),
+  writePlayerDescription: (
+    generation: number,
+    content: string,
+    createIfMissing: boolean,
+  ) =>
+    invoke<void>("write_player_description", {
+      generation,
+      content,
+      createIfMissing,
+    }),
+  importPlayerPhoto: (generation: number) =>
+    invoke<string | null>("import_player_photo", { generation }),
   initializeWorkspace: () => invoke<Bootstrap>("initialize_workspace"),
   pickWorkspace: () => invoke<Workspace | null>("pick_workspace"),
   refreshWorkspace: (generation: number) =>

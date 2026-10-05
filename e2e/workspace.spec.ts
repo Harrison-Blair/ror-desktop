@@ -19,6 +19,7 @@ test.beforeEach(async ({ page }) => {
   pageErrors.set(page, errors);
   page.on("pageerror", (error) => errors.push(error.message));
   await page.goto("/e2e/fixture.html");
+  await page.getByRole("button", { name: "Notes", exact: true }).click();
   await page.waitForFunction(() => !!window.fixture);
 });
 test.afterEach(({ page }) => {
@@ -97,7 +98,7 @@ test("real CodeMirror edits autosave, failed navigation retains draft, retry nev
   });
   await page.keyboard.insertText(" retained after failure");
   await page.getByRole("treeitem", { name: "README.md", exact: true }).click();
-  await expect(page.getByRole("alert")).toContainText("staying on this note");
+  await expect(page.getByRole("alert")).toContainText("staying here");
   await expect(editor).toContainText("retained after failure");
   await page.evaluate(() => {
     window.fixture.failWrites = false;
@@ -229,7 +230,7 @@ test("long note previews appear after scrolling and parsing; minimum pane preser
   await page.mouse.up();
   await expect
     .poll(() => page.evaluate(() => window.fixture.preferences.sidebarWidth))
-    .toBe(480);
+    .toBe(424);
   const before = await bounds(page.locator(".cm-line").first());
   await page.getByRole("button", { name: "Line numbers" }).click();
   const after = await bounds(page.locator(".cm-line").first());
@@ -322,7 +323,7 @@ test("failed-save banner keeps Retry on one line in a narrow pane", async ({
   await page.getByRole("treeitem", { name: "week-3.md", exact: true }).click();
   const resize = page.getByRole("separator", { name: "Sidebar width" });
   for (let step = 0; step < 22; step++) await resize.press("ArrowRight");
-  await expect(resize).toHaveAttribute("aria-valuenow", "480");
+  await expect(resize).toHaveAttribute("aria-valuenow", "424");
   await page.evaluate(() => {
     window.fixture.failWrites = true;
   });

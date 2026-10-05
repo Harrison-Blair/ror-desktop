@@ -36,7 +36,7 @@ button svg {
   background: var(--sidebar);
   border-right: 1px solid var(--border);
   min-width: 180px;
-  max-width: min(480px, calc(100vw - 240px));
+  max-width: min(480px, calc(100vw - 296px));
 }
 .sidebar-header {
   height: 56px;
@@ -629,4 +629,103 @@ button svg {
   .message-banner {
     padding-inline: 16px;
   }
+}
+
+.function-rail {
+  width: 56px;
+  flex-shrink: 0;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 12px;
+  padding: 16px 0;
+  border-right: 1px solid var(--border);
+  background: var(--sidebar);
+}
+.rail-folder {
+  margin-top: auto;
+  position: relative;
+}
+.folder-popover {
+  position: absolute;
+  bottom: 0;
+  left: 42px;
+  z-index: 20;
+  width: 280px;
+  padding: 16px;
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+  border: 1px solid var(--border);
+  background: var(--surface);
+  border-radius: 12px;
+  box-shadow: var(--menu-shadow);
+}
+.folder-popover code {
+  overflow-wrap: anywhere;
+}
+.player-page {
+  overflow: auto;
+  padding: 24px 32px;
+  flex: 1;
+}
+.player-heading {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+}
+.player-page h1 {
+  font-size: 28px;
+}
+.player-page h2 {
+  font-size: 18px;
+  margin: 24px 0 12px;
+}
+.player-field {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  max-width: 440px;
+}
+.player-page input {
+  color: var(--text);
+  background: var(--surface);
+  border: 1px solid var(--border);
+  border-radius: 6px;
+  padding: 8px;
+  min-width: 0;
+}
+.stat-row {
+  display: flex;
+  gap: 8px;
+  margin-bottom: 8px;
+}
+.stat-row input {
+  flex: 1;
+  width: 0;
+}
+.player-photo {
+  margin-top: 16px;
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+}
+.player-photo .image-viewer {
+  width: 100%;
+  height: 240px;
+  flex: none;
+}
+.player-description {
+  height: 280px;
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  overflow: hidden;
+}
+.related-note {
+  display: block;
+  border: 0;
+  background: transparent;
+  text-decoration: underline;
+  padding: 6px 0;
+  text-align: left;
 }

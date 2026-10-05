@@ -1,6 +1,7 @@
 import { vi } from "vitest";
 import type {
   Bootstrap,
+  PlayerProfile,
   Preferences,
   TreeNode,
   Workspace,
@@ -37,7 +38,38 @@ export const workspace: Workspace = {
 };
 export function fixture() {
   let prefs = { ...preferences };
+  let profile: PlayerProfile = {
+    version: 1,
+    name: "",
+    photoPath: null,
+    stats: [],
+  };
+  let description = "";
+  let metadataExists = false;
+  let descriptionExists = false;
   const api = {
+    readPlayer: vi.fn(async () => ({
+      profile,
+      description,
+      metadataExists,
+      descriptionExists,
+    })),
+    writePlayer: vi.fn(
+      async (_generation: number, value: PlayerProfile, create: boolean) => {
+        if (create === metadataExists) throw new Error("File presence changed");
+        profile = value;
+        metadataExists = true;
+      },
+    ),
+    writePlayerDescription: vi.fn(
+      async (_generation: number, content: string, create: boolean) => {
+        if (create === descriptionExists)
+          throw new Error("File presence changed");
+        description = content;
+        descriptionExists = true;
+      },
+    ),
+    importPlayerPhoto: vi.fn(async (): Promise<string | null> => null),
     initializeWorkspace: vi.fn(
       async (): Promise<Bootstrap> => ({
         preferences: prefs,

@@ -1,7 +1,6 @@
 import {
   ChevronDown,
   ChevronRight,
-  ChevronsUpDown,
   Eye,
   File,
   FilePlus2,
@@ -26,6 +25,7 @@ import type { TreeNode } from "../api/workspace";
 import {
   type NamingTarget,
   parentPath,
+  reservedProfilePath,
   type WorkspaceController,
   type WorkspaceState,
 } from "../workspace/controller";
@@ -167,7 +167,7 @@ export function Sidebar({
           Math.max(
             180,
             Math.min(
-              480,
+              Math.min(480, window.innerWidth - 296),
               resize.current.width + event.clientX - resize.current.start,
             ),
           ),
@@ -192,6 +192,30 @@ export function Sidebar({
       document.body.classList.remove("resizing");
     };
   }, [controller]);
+  useEffect(() => {
+    if (!state.revealPath) return;
+    const ancestors = state.revealPath
+      .split("/")
+      .slice(0, -1)
+      .map((_, index, parts) => parts.slice(0, index + 1).join("/"));
+    setExpanded((previous) => new Set([...previous, ...ancestors]));
+    setFocused(state.revealPath);
+  }, [state.revealPath]);
+  useEffect(() => {
+    if (!state.revealPath) return;
+    const parent = parentPath(state.revealPath);
+    if (parent && !expanded.has(parent)) return;
+    const frame = requestAnimationFrame(() => {
+      const rows = tree.current?.querySelectorAll<HTMLElement>("[data-path]");
+      rows?.forEach((row) => {
+        if (row.dataset.path === state.revealPath) {
+          row.focus();
+          row.scrollIntoView({ block: "nearest" });
+        }
+      });
+    });
+    return () => cancelAnimationFrame(frame);
+  }, [state.revealPath, expanded]);
   if (!workspace) return null;
   const toggleFolder = (node: TreeNode, open?: boolean) => {
     setExpanded((previous) => {
@@ -224,18 +248,22 @@ export function Sidebar({
               },
             ]
           : []),
-        {
-          label: "Rename",
-          divider: node.kind === "folder",
-          action: () => name({ kind: "rename", node }),
-        },
-        {
-          label: "Move to Trash",
-          danger: true,
-          action: () => {
-            void controller.requestTrash(node);
-          },
-        },
+        ...(!reservedProfilePath(node.path)
+          ? [
+              {
+                label: "Rename",
+                divider: node.kind === "folder",
+                action: () => name({ kind: "rename", node }),
+              },
+              {
+                label: "Move to Trash",
+                danger: true,
+                action: () => {
+                  void controller.requestTrash(node);
+                },
+              },
+            ]
+          : []),
       ],
     });
   };
@@ -412,31 +440,7 @@ export function Sidebar({
       aria-label="Workspace"
     >
       <div className="sidebar-header">
-        <button
-          type="button"
-          className="folder-picker"
-          title={workspace.displayPath}
-          disabled={state.busy}
-          onClick={(event) => {
-            const rect = event.currentTarget.getBoundingClientRect();
-            setMenu({
-              x: rect.left,
-              y: rect.bottom + 4,
-              items: [
-                {
-                  label: "Open folder…",
-                  action: () => {
-                    void controller.pickFolder();
-                  },
-                },
-              ],
-            });
-          }}
-        >
-          <Folder />
-          <span>{workspace.name}</span>
-          <ChevronsUpDown />
-        </button>
+        <strong className="toolbar-spacer">Notes</strong>
         <IconButton
           label="Collapse sidebar"
           onClick={() => {
@@ -496,7 +500,7 @@ export function Sidebar({
         aria-label="Sidebar width"
         aria-orientation="vertical"
         aria-valuemin={180}
-        aria-valuemax={480}
+        aria-valuemax={Math.min(480, window.innerWidth - 296)}
         aria-valuenow={state.preferences.sidebarWidth}
         tabIndex={0}
         className="resize-handle"
@@ -515,7 +519,7 @@ export function Sidebar({
               sidebarWidth: Math.max(
                 180,
                 Math.min(
-                  480,
+                  Math.min(480, window.innerWidth - 296),
                   state.preferences.sidebarWidth +
                     (event.key === "ArrowRight" ? 10 : -10),
                 ),
