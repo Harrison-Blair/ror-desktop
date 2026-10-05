@@ -70,3 +70,83 @@ for (const colorScheme of ["light", "dark"] as const)
     const pane = await page.locator(".main-pane").boundingBox();
     expect(pane?.width).toBeGreaterThanOrEqual(240);
   });
+
+async function injectApi(
+  page: import("@playwright/test").Page,
+  injection: string,
+) {
+  await page.route("**/e2e/fixture.tsx", async (route) => {
+    const response = await route.fetch();
+    const body = (await response.text()).replace(
+      "Object.assign(window, { fixture });",
+      `Object.assign(window, { fixture }); ${injection}`,
+    );
+    await route.fulfill({ response, body });
+  });
+}
+test("late Player snapshot preserves description edited in Notes", async ({
+  page,
+}) => {
+  await injectApi(
+    page,
+    `fixture.notes['player.md']='disk description';descriptionExists=true;fixture.workspace.nodes.push(file('player.md'));const read=api.readPlayer;api.readPlayer=async(...args)=>{const snapshot=await read(...args);return new Promise(resolve=>window.releasePlayerLoad=()=>resolve(snapshot))};`,
+  );
+  await page.goto("/e2e/fixture.html");
+  await expect(page.getByText("Loading player…")).toBeVisible();
+  await page.getByRole("button", { name: "Notes", exact: true }).click();
+  await page.getByRole("treeitem", { name: "player.md", exact: true }).click();
+  await page
+    .getByRole("textbox", { name: "Note source" })
+    .fill("Latest Notes description");
+  await page.evaluate("window.releasePlayerLoad()");
+  await page.getByRole("button", { name: "Player", exact: true }).click();
+  await expect(page.getByRole("textbox", { name: "Note source" })).toHaveText(
+    "Latest Notes description",
+  );
+  expect(await page.evaluate(() => window.fixture.notes["player.md"])).toBe(
+    "Latest Notes description",
+  );
+});
+test("failed profile Refresh keeps drafts and Cancel resumes editing", async ({
+  page,
+}) => {
+  await injectApi(
+    page,
+    `const read=api.readPlayer;let calls=0;api.readPlayer=(...args)=>++calls===1?read(...args):Promise.reject(new Error('Permission denied reading player.json'));`,
+  );
+  await page.goto("/e2e/fixture.html");
+  await expect(
+    page.getByRole("textbox", { name: "Player name" }),
+  ).toBeVisible();
+  await page.evaluate(() => {
+    window.fixture.failWrites = true;
+  });
+  await page
+    .getByRole("textbox", { name: "Player name" })
+    .fill("Retained name");
+  await page
+    .getByRole("textbox", { name: "Note source" })
+    .fill("Retained description");
+  await page.getByRole("button", { name: "Refresh", exact: true }).click();
+  await page.getByRole("button", { name: "Discard and Reload" }).click();
+  await expect(page.getByRole("dialog")).toBeVisible();
+  await expect(page.getByRole("dialog").getByRole("alert")).toContainText(
+    "Permission denied",
+  );
+  await expect(page.getByRole("textbox", { name: "Player name" })).toHaveValue(
+    "Retained name",
+  );
+  await expect(page.getByRole("textbox", { name: "Note source" })).toHaveText(
+    "Retained description",
+  );
+  await page.getByRole("button", { name: "Cancel", exact: true }).click();
+  await page.evaluate(() => {
+    window.fixture.failWrites = false;
+  });
+  await page
+    .getByRole("textbox", { name: "Player name" })
+    .fill("Recovered name");
+  await expect
+    .poll(() => page.evaluate(() => window.fixture.notes["player.md"]))
+    .toBe("Retained description");
+});

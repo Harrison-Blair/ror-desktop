@@ -96,6 +96,7 @@ export class WorkspaceController {
   };
   private listeners = new Set<() => void>();
   private request = 0;
+  private playerRequest = 0;
   private disposed = false;
   private namingCommit?: Promise<boolean>;
   private preferencesQueue: Promise<void> = Promise.resolve();
@@ -132,6 +133,7 @@ export class WorkspaceController {
   dispose() {
     this.disposed = true;
     this.request++;
+    this.playerRequest++;
     for (const session of this.sessions()) session.dispose();
   }
   private makeSession(content: string, workspace: Workspace, path: string) {
@@ -171,6 +173,7 @@ export class WorkspaceController {
   private installPlayer(
     snapshot: PlayerSnapshot,
     workspace: Workspace,
+    description?: SaveSession,
   ): PlayerState {
     let metadataExists = snapshot.metadataExists;
     let descriptionExists = snapshot.descriptionExists;
@@ -190,22 +193,24 @@ export class WorkspaceController {
         },
         () => this.update({}),
       ),
-      description: new SaveSession(
-        snapshot.description,
-        async (content) => {
-          await this.api.writePlayerDescription(
-            workspace.generation,
-            content,
-            !descriptionExists,
-          );
-          if (!descriptionExists) {
-            descriptionExists = true;
-            this.update({ imageRevision: this.state.imageRevision + 1 });
-            await this.refreshTree(workspace);
-          }
-        },
-        () => this.update({}),
-      ),
+      description:
+        description ??
+        new SaveSession(
+          snapshot.description,
+          async (content) => {
+            await this.api.writePlayerDescription(
+              workspace.generation,
+              content,
+              !descriptionExists,
+            );
+            if (!descriptionExists) {
+              descriptionExists = true;
+              this.update({ imageRevision: this.state.imageRevision + 1 });
+              await this.refreshTree(workspace);
+            }
+          },
+          () => this.update({}),
+        ),
     };
   }
   private async refreshTree(workspace: Workspace) {
@@ -214,17 +219,34 @@ export class WorkspaceController {
       this.update({ workspace: refreshed });
   }
   private async loadPlayer(workspace: Workspace) {
+    const request = ++this.playerRequest;
     this.update({ player: { loading: true } });
     try {
       const snapshot = await this.api.readPlayer(workspace.generation);
       if (
+        request === this.playerRequest &&
         this.state.workspace?.generation === workspace.generation &&
         !this.disposed
       )
-        this.update({ player: this.installPlayer(snapshot, workspace) });
+        this.update({
+          player: this.installPlayer(
+            snapshot,
+            workspace,
+            this.state.player.description,
+          ),
+        });
     } catch (error) {
-      if (this.state.workspace?.generation === workspace.generation)
-        this.update({ player: { error: String(error) } });
+      if (
+        request === this.playerRequest &&
+        !this.disposed &&
+        this.state.workspace?.generation === workspace.generation
+      )
+        this.update({
+          player: {
+            error: String(error),
+            description: this.state.player.description,
+          },
+        });
     }
   }
   editPlayer(profile: PlayerProfile) {
@@ -318,11 +340,13 @@ export class WorkspaceController {
     });
     if (node.fileKind !== "note") return;
     try {
-      const shared =
+      let shared =
         node.path === "player.md" ? this.state.player.description : undefined;
       const content =
         shared?.content ??
         (await this.api.readNote(workspace.generation, node.path));
+      if (request !== this.request || this.disposed) return;
+      if (node.path === "player.md") shared = this.state.player.description;
       let session = shared ?? this.makeSession(content, workspace, node.path);
       if (node.path === "player.md" && !shared) {
         session.dispose();
@@ -652,6 +676,7 @@ export class WorkspaceController {
     this.update({ busy: true });
     const selection = this.state.selection;
     ++this.request;
+    ++this.playerRequest;
     try {
       const result = await this.api.refreshWorkspace(workspace.generation);
       const node = selection && findNode(result.nodes, selection.node.path);
@@ -659,24 +684,9 @@ export class WorkspaceController {
         node?.kind === "file" && node.fileKind === "note"
           ? await this.api.readNote(result.generation, node.path)
           : undefined;
-      let snapshot: PlayerSnapshot | undefined;
-      let playerError: string | undefined;
-      try {
-        snapshot = await this.api.readPlayer(result.generation);
-      } catch (error) {
-        playerError = String(error);
-      }
+      const snapshot = await this.api.readPlayer(result.generation);
       for (const session of this.sessions()) session.dispose();
-      const player: PlayerState = snapshot
-        ? this.installPlayer(snapshot, result)
-        : { error: playerError };
-      if (!snapshot && node?.path === "player.md" && content !== undefined)
-        player.description = new SaveSession(
-          content,
-          (draft) =>
-            this.api.writePlayerDescription(result.generation, draft, false),
-          () => this.update({}),
-        );
+      const player = this.installPlayer(snapshot, result);
       this.update({
         player,
         workspace: result,
