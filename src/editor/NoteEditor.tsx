@@ -1,5 +1,5 @@
 import { defaultKeymap, history, historyKeymap } from "@codemirror/commands";
-import { markdown } from "@codemirror/lang-markdown";
+import { markdown, markdownLanguage } from "@codemirror/lang-markdown";
 import {
   HighlightStyle,
   syntaxHighlighting,
@@ -17,8 +17,11 @@ import {
 import { tags } from "@lezer/highlight";
 import { useEffect, useRef } from "react";
 import type { WorkspaceApi } from "../api/workspace";
+import "../styles/markdown.css";
 import { loadImage } from "./image-resource";
 import { type ImageSource, imageSources } from "./images";
+import { headingLines, tableSources } from "./markdown";
+import { TableWidget } from "./tables";
 
 class ImageWidget extends WidgetType {
   private dispose?: () => void;
@@ -104,13 +107,25 @@ function previews(
 ) {
   const build = (state: EditorState) =>
     Decoration.set(
-      imageSources(state).map((source) =>
-        Decoration.widget({
-          widget: new ImageWidget(source, api, generation, path, revision),
-          block: true,
-          side: 1,
-        }).range(source.end),
-      ),
+      [
+        ...headingLines(state).map(({ from, level }) =>
+          Decoration.line({ class: `markdown-heading-${level}` }).range(from),
+        ),
+        ...tableSources(state).map((source) =>
+          Decoration.widget({
+            widget: new TableWidget(source),
+            block: true,
+            side: 1,
+          }).range(source.end),
+        ),
+        ...imageSources(state).map((source) =>
+          Decoration.widget({
+            widget: new ImageWidget(source, api, generation, path, revision),
+            block: true,
+            side: 1,
+          }).range(source.end),
+        ),
+      ],
       true,
     );
   return StateField.define<DecorationSet>({
@@ -152,7 +167,7 @@ export function NoteEditor(props: Props) {
       state: EditorState.create({
         doc: initial.current,
         extensions: [
-          markdown(),
+          markdown({ base: markdownLanguage }),
           history(),
           keymap.of([...defaultKeymap, ...historyKeymap]),
           syntaxHighlighting(highlighting),

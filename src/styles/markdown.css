@@ -1,0 +1,44 @@
+.cm-line.markdown-heading-1 {
+  font-size: 32px;
+}
+.cm-line.markdown-heading-2 {
+  font-size: 28px;
+}
+.cm-line.markdown-heading-3 {
+  font-size: 24px;
+}
+.cm-line.markdown-heading-4 {
+  font-size: 21px;
+}
+.cm-line.markdown-heading-5 {
+  font-size: 18px;
+}
+.cm-line.markdown-heading-6 {
+  font-size: 16px;
+}
+.cm-line[class*="markdown-heading-"] {
+  line-height: 1.4;
+}
+.markdown-table-preview {
+  max-width: 100%;
+  overflow-x: auto;
+  margin: 8px 0 16px;
+}
+.markdown-table-preview table {
+  border-collapse: collapse;
+  width: max-content;
+  min-width: 100%;
+}
+.markdown-table-preview th,
+.markdown-table-preview td {
+  border: 1px solid var(--border);
+  padding: 8px 12px;
+}
+.markdown-table-preview th {
+  font-weight: 700;
+  color: var(--heading);
+}
+.markdown-table-preview code {
+  font-family: inherit;
+  color: var(--mark);
+}
