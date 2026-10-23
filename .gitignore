@@ -1,28 +1,17 @@
-# Logs
-logs
-*.log
-npm-debug.log*
-yarn-debug.log*
-yarn-error.log*
-pnpm-debug.log*
-lerna-debug.log*
+# Ignore all root entries by default.
+/*
 
-node_modules
-dist
-dist-ssr
-*.local
+# Allow repository metadata.
+!/.gitignore
+!/LICENSE
+!/AGENTS.md
+!/README.md
 
-# Editor directories and files
-.vscode/*
-!.vscode/extensions.json
-!.vscode/settings.json
-.idea
-.DS_Store
-*.suo
-*.ntvs*
-*.njsproj
-*.sln
-*.sw?
+# Allow project directories recursively.
+!/client/
+!/server/
 
-# Local browser verification artifacts
-.fledge/tmp/
+# Allow GitHub workflows.
+!/.github/
+/.github/*
+!/.github/workflows/
