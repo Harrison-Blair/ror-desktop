@@ -1,15 +1,15 @@
 import { render, screen } from "@testing-library/react";
 import { describe, expect, it } from "vitest";
-import { NavMenu } from "@/components/NavMenu/NavMenu";
 import { Rail } from "@/components/Rail/Rail";
+import { RailPanel } from "@/components/RailPanel/RailPanel";
 import { SidePanel } from "@/components/SidePanel/SidePanel";
 
 describe("frame components", () => {
-  it("NavMenu shows children in place of item buttons", () => {
+  it("RailPanel shows children in place of item buttons", () => {
     render(
-      <NavMenu title="Notes" items={[{ id: "a", label: "Item A" }]}>
+      <RailPanel title="Notes" items={[{ id: "a", label: "Item A" }]}>
         <p>Custom body</p>
-      </NavMenu>,
+      </RailPanel>,
     );
     const menu = screen.getByRole("region", { name: "Notes menu" });
 
@@ -35,9 +35,13 @@ describe("frame components", () => {
     ).not.toBeInTheDocument();
   });
 
-  it("NavMenu renders nothing when closed", () => {
+  it("RailPanel renders nothing when closed", () => {
     const { container } = render(
-      <NavMenu title="Notes" open={false} items={[{ id: "a", label: "A" }]} />,
+      <RailPanel
+        title="Notes"
+        open={false}
+        items={[{ id: "a", label: "A" }]}
+      />,
     );
 
     expect(container).toBeEmptyDOMElement();

@@ -1,15 +1,15 @@
 import type { ReactNode } from "react";
-import styles from "./NavMenu.module.css";
+import styles from "./RailPanel.module.css";
 
-export type NavMenuItem = {
+export type RailPanelItem = {
   id: string;
   label: string;
 };
 
-type NavMenuProps = {
+type RailPanelProps = {
   title: string;
   open?: boolean;
-  items?: NavMenuItem[];
+  items?: RailPanelItem[];
   activeId?: string;
   onSelect?: (id: string) => void;
   children?: ReactNode;
@@ -17,7 +17,7 @@ type NavMenuProps = {
   resizeHandle?: ReactNode;
 };
 
-export function NavMenu({
+export function RailPanel({
   title,
   open = true,
   items,
@@ -26,7 +26,7 @@ export function NavMenu({
   children,
   width,
   resizeHandle,
-}: NavMenuProps) {
+}: RailPanelProps) {
   if (!open) return null;
 
   return (

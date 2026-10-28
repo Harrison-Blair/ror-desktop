@@ -1,9 +1,9 @@
 import { useEffect, useState } from "react";
 import styles from "@/App.module.css";
 import { MainPanel } from "@/components/MainPanel/MainPanel";
-import { NavMenu } from "@/components/NavMenu/NavMenu";
 import { Placeholder } from "@/components/Placeholder/Placeholder";
 import { Rail, type RailItem } from "@/components/Rail/Rail";
+import { RailPanel } from "@/components/RailPanel/RailPanel";
 import { ResizeHandle } from "@/components/ResizeHandle/ResizeHandle";
 import { SidePanel } from "@/components/SidePanel/SidePanel";
 
@@ -75,7 +75,7 @@ export default function App() {
         menuOpen={menuOpen}
         onToggleMenu={() => setMenuOpen((open) => !open)}
       />
-      <NavMenu
+      <RailPanel
         title={activeItem?.label ?? ""}
         open={menuOpen}
         items={menuItems}
