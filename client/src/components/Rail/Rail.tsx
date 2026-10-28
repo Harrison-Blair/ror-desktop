@@ -10,6 +10,9 @@ export type RailItem = {
   id: string;
   label: string;
   icon?: LucideIcon;
+  // Bottom items only: they act on their own instead of selecting a tab.
+  pressed?: boolean;
+  onClick?: () => void;
 };
 
 type RailProps = {
@@ -32,17 +35,19 @@ export function Rail({
   label = "Main",
 }: RailProps) {
   const ToggleIcon = railPanelOpen ? PanelLeftClose : PanelLeftOpen;
-  const renderItem = (item: RailItem) => {
+  // Bottom items are not tabs: they are never selected, and show as pressed
+  // only when they set pressed.
+  const renderItem = (item: RailItem, selectable: boolean) => {
     const Icon = item.icon ?? Square;
-    const active = item.id === activeId;
+    const pressed = selectable ? item.id === activeId : item.pressed;
     return (
       <button
         key={item.id}
         type="button"
-        className={active ? `${styles.item} ${styles.active}` : styles.item}
+        className={pressed ? `${styles.item} ${styles.active}` : styles.item}
         aria-label={item.label}
-        aria-pressed={active}
-        onClick={() => onSelect?.(item.id)}
+        aria-pressed={pressed}
+        onClick={selectable ? () => onSelect?.(item.id) : item.onClick}
       >
         <Icon size={20} strokeWidth={1.75} aria-hidden />
         <span className={styles.tip} aria-hidden>
@@ -65,10 +70,12 @@ export function Rail({
           <ToggleIcon size={20} strokeWidth={1.75} aria-hidden />
         </button>
       )}
-      <div className={styles.group}>{items.map(renderItem)}</div>
+      <div className={styles.group}>
+        {items.map((item) => renderItem(item, true))}
+      </div>
       {bottomItems && (
         <div className={`${styles.group} ${styles.end}`}>
-          {bottomItems.map(renderItem)}
+          {bottomItems.map((item) => renderItem(item, false))}
         </div>
       )}
     </nav>
