@@ -1,3 +1,4 @@
+import { Dices, Globe, NotebookPen, Settings, Users } from "lucide-react";
 import { useEffect, useState } from "react";
 import styles from "@/App.module.css";
 import { MainPanel } from "@/components/MainPanel/MainPanel";
@@ -6,15 +7,11 @@ import { RailPanel } from "@/components/RailPanel/RailPanel";
 import { ResizeHandle } from "@/components/ResizeHandle/ResizeHandle";
 import { SidePanel } from "@/components/SidePanel/SidePanel";
 
-const railItems: RailItem[] = [1, 2, 3, 4, 5].map((n) => ({
-  id: `top${n}`,
-  label: `Nav item ${n}`,
-}));
-
-const bottomItems: RailItem[] = [1, 2].map((n) => ({
-  id: `bottom${n}`,
-  label: `Bottom item ${n}`,
-}));
+const railItems: RailItem[] = [
+  { id: "session", label: "Session", icon: Users },
+  { id: "world", label: "World", icon: Globe },
+  { id: "notes", label: "Notes", icon: NotebookPen },
+];
 
 const railPanelItems = [1, 2, 3, 4, 5, 6].map((n) => ({
   id: `p${n}`,
@@ -27,7 +24,7 @@ const PANEL_WIDTH = { default: 360, min: 280 };
 const RAIL_WIDTH = 52;
 
 export default function App() {
-  const [activeId, setActiveId] = useState("top1");
+  const [activeId, setActiveId] = useState("session");
   const [railPanelOpen, setRailPanelOpen] = useState(true);
   const [railPanelItemId, setRailPanelItemId] = useState("p1");
   const [panelOpen, setPanelOpen] = useState(true);
@@ -52,9 +49,19 @@ export default function App() {
   const drawnRailPanelWidth = clampWidth(railPanelWidth, RAIL_PANEL_WIDTH.min);
   const drawnPanelWidth = clampWidth(panelWidth, PANEL_WIDTH.min);
 
-  const activeItem = [...railItems, ...bottomItems].find(
-    (item) => item.id === activeId,
-  );
+  // Settings does nothing yet.
+  const bottomItems: RailItem[] = [
+    {
+      id: "dice",
+      label: "Dice",
+      icon: Dices,
+      pressed: panelOpen,
+      onClick: () => setPanelOpen((open) => !open),
+    },
+    { id: "settings", label: "Settings", icon: Settings },
+  ];
+
+  const activeItem = railItems.find((item) => item.id === activeId);
 
   const selectRailItem = (id: string) => {
     if (id === activeId) {
