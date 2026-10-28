@@ -11,7 +11,7 @@ import { Rail, type RailItem } from "@/components/Rail/Rail";
 import { RailPanel } from "@/components/RailPanel/RailPanel";
 import { ResizeHandle } from "@/components/ResizeHandle/ResizeHandle";
 import { SidePanel } from "@/components/SidePanel/SidePanel";
-import { ToastProvider } from "@/components/Toast/Toast";
+import { ToastProvider, useToast } from "@/components/Toast/Toast";
 import type { DiceResult } from "@/lib/dice";
 
 const railItems: RailItem[] = [
@@ -31,6 +31,16 @@ const PANEL_WIDTH = { default: 360, min: 280 };
 const RAIL_WIDTH = 52;
 
 export default function App() {
+  return (
+    <ToastProvider>
+      <Shell />
+    </ToastProvider>
+  );
+}
+
+// Inside the ToastProvider so it can raise toasts.
+function Shell() {
+  const notify = useToast();
   const [activeId, setActiveId] = useState("session");
   const [railPanelOpen, setRailPanelOpen] = useState(true);
   const [railPanelItemId, setRailPanelItemId] = useState("p1");
@@ -60,7 +70,6 @@ export default function App() {
   const drawnRailPanelWidth = clampWidth(railPanelWidth, RAIL_PANEL_WIDTH.min);
   const drawnPanelWidth = clampWidth(panelWidth, PANEL_WIDTH.min);
 
-  // Settings does nothing yet.
   const bottomItems: RailItem[] = [
     {
       id: "dice",
@@ -69,7 +78,13 @@ export default function App() {
       pressed: panelOpen,
       onClick: () => setPanelOpen((open) => !open),
     },
-    { id: "settings", label: "Settings", icon: Settings },
+    {
+      id: "settings",
+      label: "Settings",
+      icon: Settings,
+      onClick: () =>
+        notify({ kind: "error", message: "Settings is not implemented yet." }),
+    },
   ];
 
   const activeItem = railItems.find((item) => item.id === activeId);
@@ -91,62 +106,60 @@ export default function App() {
   };
 
   return (
-    <ToastProvider>
-      <div className={styles.shell}>
-        <Rail
-          items={railItems}
-          bottomItems={bottomItems}
-          activeId={activeId}
-          onSelect={selectRailItem}
-          railPanelOpen={railPanelOpen}
-          onToggleRailPanel={() => setRailPanelOpen((open) => !open)}
-        />
-        <RailPanel
-          title={activeItem?.label ?? ""}
-          open={railPanelOpen}
-          items={railPanelItems}
-          activeId={railPanelItemId}
-          onSelect={setRailPanelItemId}
-          width={drawnRailPanelWidth}
-          resizeHandle={
-            <ResizeHandle
-              label="Resize rail panel"
-              edge="right"
-              width={drawnRailPanelWidth}
-              onResize={(width) =>
-                setRailPanelWidth(clampWidth(width, RAIL_PANEL_WIDTH.min))
-              }
-              onReset={() => setRailPanelWidth(RAIL_PANEL_WIDTH.default)}
-            />
-          }
-        />
-        <MainPanel />
-        <SidePanel
-          open={panelOpen}
-          onClose={() => setPanelOpen(false)}
-          label="Dice"
-          title="Dice"
-          width={drawnPanelWidth}
-          resizeHandle={
-            <ResizeHandle
-              label="Resize side panel"
-              edge="left"
-              width={drawnPanelWidth}
-              onResize={(width) =>
-                setPanelWidth(clampWidth(width, PANEL_WIDTH.min))
-              }
-              onReset={() => setPanelWidth(PANEL_WIDTH.default)}
-            />
-          }
-        >
-          <DicePanel
-            rolls={rolls}
-            latest={latestRoll}
-            onRoll={addRoll}
-            onClearHistory={() => setRolls([])}
+    <div className={styles.shell}>
+      <Rail
+        items={railItems}
+        bottomItems={bottomItems}
+        activeId={activeId}
+        onSelect={selectRailItem}
+        railPanelOpen={railPanelOpen}
+        onToggleRailPanel={() => setRailPanelOpen((open) => !open)}
+      />
+      <RailPanel
+        title={activeItem?.label ?? ""}
+        open={railPanelOpen}
+        items={railPanelItems}
+        activeId={railPanelItemId}
+        onSelect={setRailPanelItemId}
+        width={drawnRailPanelWidth}
+        resizeHandle={
+          <ResizeHandle
+            label="Resize rail panel"
+            edge="right"
+            width={drawnRailPanelWidth}
+            onResize={(width) =>
+              setRailPanelWidth(clampWidth(width, RAIL_PANEL_WIDTH.min))
+            }
+            onReset={() => setRailPanelWidth(RAIL_PANEL_WIDTH.default)}
           />
-        </SidePanel>
-      </div>
-    </ToastProvider>
+        }
+      />
+      <MainPanel />
+      <SidePanel
+        open={panelOpen}
+        onClose={() => setPanelOpen(false)}
+        label="Dice"
+        title="Dice"
+        width={drawnPanelWidth}
+        resizeHandle={
+          <ResizeHandle
+            label="Resize side panel"
+            edge="left"
+            width={drawnPanelWidth}
+            onResize={(width) =>
+              setPanelWidth(clampWidth(width, PANEL_WIDTH.min))
+            }
+            onReset={() => setPanelWidth(PANEL_WIDTH.default)}
+          />
+        }
+      >
+        <DicePanel
+          rolls={rolls}
+          latest={latestRoll}
+          onRoll={addRoll}
+          onClearHistory={() => setRolls([])}
+        />
+      </SidePanel>
+    </div>
   );
 }

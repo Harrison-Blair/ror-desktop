@@ -26,13 +26,18 @@ describe("App frame", () => {
     ]);
   });
 
-  it("Settings is not a tab and clicking it changes nothing", async () => {
+  it("Settings is not a tab and clicking it shows a not-implemented error", async () => {
     const user = renderApp();
     const settings = screen.getByRole("button", { name: "Settings" });
     expect(settings).not.toHaveAttribute("aria-pressed");
 
     await user.click(settings);
 
+    expect(
+      within(screen.getByRole("region", { name: "Notifications" })).getByRole(
+        "alert",
+      ),
+    ).toHaveTextContent("Settings is not implemented yet.");
     expect(
       screen.getByRole("button", { name: "Session", pressed: true }),
     ).toBeInTheDocument();
