@@ -11,7 +11,7 @@ export type DiceResult = {
 export type RandomSource = (values: Uint32Array<ArrayBuffer>) => void;
 
 export function parseDiceExpression(input: string): DiceSpec {
-  if (typeof input !== "string" || input.length > 200)
+  if (input.length > 200)
     throw new Error("Use a dice expression of at most 200 characters.");
   const whitespace = /^[\t\n\v\f\r ]*/;
   let rest = input.replace(whitespace, "");
@@ -54,18 +54,14 @@ export function parseDiceExpression(input: string): DiceSpec {
 }
 
 const secureRandom: RandomSource = (values) => {
-  if (!globalThis.crypto?.getRandomValues)
-    throw new Error(
-      "Secure randomness is unavailable. Try restarting the app.",
-    );
   globalThis.crypto.getRandomValues(values);
 };
 
 export function rollDice(
   spec: DiceSpec,
-  random: RandomSource | null = secureRandom,
+  random: RandomSource = secureRandom,
 ): DiceResult {
-  if (!random)
+  if (random === secureRandom && !globalThis.crypto?.getRandomValues)
     throw new Error(
       "Secure randomness is unavailable. Try restarting the app.",
     );
@@ -76,10 +72,6 @@ export function rollDice(
       try {
         random(word);
       } catch {
-        if (random === secureRandom && !globalThis.crypto?.getRandomValues)
-          throw new Error(
-            "Secure randomness is unavailable. Try restarting the app.",
-          );
         throw new Error("Couldn't generate a secure roll. Please try again.");
       }
       if (word[0] < limit) return (word[0] % sides) + 1;

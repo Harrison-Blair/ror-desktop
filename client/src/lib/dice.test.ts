@@ -62,14 +62,6 @@ describe("strict dice notation", () => {
     expect(() => parseDiceExpression(`${"9".repeat(180)}d6`)).toThrow();
   });
 });
-it.each([null, undefined, 3, [], { expression: "d6" }])(
-  "rejects wrong-shaped input %s",
-  (input) => {
-    expect(() => parseDiceExpression(input as unknown as string)).toThrow(
-      "Use a dice expression",
-    );
-  },
-);
 it("bounds a burst of malformed expressions without calling randomness", () => {
   for (let index = 0; index < 500; index++)
     expect(() => parseDiceExpression("d6;constructor")).toThrow();
@@ -100,9 +92,6 @@ describe("crypto roller", () => {
   });
   it("reports unavailable, throwing and nonsettling random sources plainly", () => {
     const spec = parseDiceExpression("d6");
-    expect(() => rollDice(spec, null)).toThrow(
-      "Secure randomness is unavailable",
-    );
     expect(() =>
       rollDice(spec, () => {
         throw new Error("secret stack");

@@ -131,4 +131,64 @@ describe("Dice panel", () => {
     expect(historyRows()).toHaveLength(0);
     expect(screen.getByText("Rolls will appear here.")).toBeInTheDocument();
   });
+
+  it("Clear history keeps the latest roll", async () => {
+    const user = await openDice();
+    await user.click(screen.getByRole("button", { name: /Roll d100/ }));
+
+    await user.click(screen.getByRole("button", { name: "Clear history" }));
+
+    expect(latest()).toHaveTextContent("1d100 (49) = 49");
+    expect(historyRows()).toHaveLength(0);
+  });
+
+  it("a failed quick roll shows a toast and leaves the custom field valid", async () => {
+    vi.mocked(globalThis.crypto.getRandomValues).mockImplementation(() => {
+      throw new Error("no entropy");
+    });
+    const user = await openDice();
+    const field = screen.getByRole("textbox", { name: "Custom roll" });
+
+    await user.click(screen.getByRole("button", { name: "Roll d20" }));
+
+    expect(field).not.toHaveAttribute("aria-invalid", "true");
+    expect(
+      within(field.closest("form") as HTMLFormElement).queryByRole("alert"),
+    ).not.toBeInTheDocument();
+    expect(
+      within(screen.getByRole("region", { name: "Notifications" })).getByRole(
+        "alert",
+      ),
+    ).toHaveTextContent("Error: Couldn't generate a secure roll");
+  });
+
+  it("a successful quick roll keeps the notation error until the field changes", async () => {
+    const user = await openDice();
+    const field = screen.getByRole("textbox", { name: "Custom roll" });
+
+    await user.type(field, "abc{Enter}");
+    await user.click(screen.getByRole("button", { name: "Roll d6" }));
+
+    expect(screen.getByRole("alert")).toHaveTextContent(
+      "Use notation like 2d6 + 1d8 - 3.",
+    );
+    expect(field).toHaveAttribute("aria-invalid", "true");
+
+    await user.type(field, "d");
+    expect(screen.queryByRole("alert")).not.toBeInTheDocument();
+    expect(field).toHaveAttribute("aria-invalid", "false");
+  });
+
+  it("announces a repeated notation error with a new alert", async () => {
+    const user = await openDice();
+    const field = screen.getByRole("textbox", { name: "Custom roll" });
+
+    await user.type(field, "abc{Enter}");
+    const first = screen.getByRole("alert");
+    await user.type(field, "{Enter}");
+
+    const second = screen.getByRole("alert");
+    expect(second).toHaveTextContent("Use notation like 2d6 + 1d8 - 3.");
+    expect(second).not.toBe(first);
+  });
 });

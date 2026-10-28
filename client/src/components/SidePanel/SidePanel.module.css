@@ -15,23 +15,17 @@
   overflow-y: auto;
 }
 
-/* Matches the rail panel header. */
 .head {
+  composes: head from "@/styles/panel-header.module.css";
   position: sticky;
   top: 0;
   z-index: 1;
-  display: flex;
-  align-items: center;
-  height: var(--rail-width);
   padding: 0 var(--space-2) 0 var(--space-4);
   background: var(--sunken);
 }
 
 .title {
-  margin: 0;
-  color: var(--ink-muted);
-  font: 600 16px / 20px var(--font-sans);
-  letter-spacing: 0.02em;
+  composes: title from "@/styles/panel-header.module.css";
 }
 
 .close {

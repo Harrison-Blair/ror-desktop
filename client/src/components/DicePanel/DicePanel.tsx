@@ -1,4 +1,5 @@
-import { type FormEvent, Fragment, useState } from "react";
+import { type FormEvent, Fragment, useId, useState } from "react";
+import { useToast } from "@/components/Toast/Toast";
 import { type DiceResult, parseDiceExpression, rollDice } from "@/lib/dice";
 import styles from "./DicePanel.module.css";
 
@@ -8,8 +9,11 @@ export type DiceRoll = {
   result: DiceResult;
 };
 
+export const DICE_HISTORY_LENGTH = 10;
+
 type DicePanelProps = {
   rolls: DiceRoll[];
+  latest: DiceRoll | undefined;
   onRoll: (result: DiceResult) => void;
   onClearHistory: () => void;
 };
@@ -20,23 +24,46 @@ const pad = (n: number) => String(n).padStart(2, "0");
 const formatTime = (time: Date) =>
   `${pad(time.getHours())}:${pad(time.getMinutes())}`;
 
-export function DicePanel({ rolls, onRoll, onClearHistory }: DicePanelProps) {
-  const [notation, setNotation] = useState("");
-  const [error, setError] = useState<string | null>(null);
-  const latest = rolls[0];
+type NotationError = { id: number; message: string };
 
-  const roll = (expression: string) => {
+const errorMessage = (e: unknown) =>
+  e instanceof Error ? e.message : String(e);
+
+export function DicePanel({
+  rolls,
+  latest,
+  onRoll,
+  onClearHistory,
+}: DicePanelProps) {
+  const id = useId();
+  const notify = useToast();
+  const [notation, setNotation] = useState("");
+  const [notationError, setNotationError] = useState<NotationError | null>(
+    null,
+  );
+
+  const roll = (expression: string) =>
+    onRoll(rollDice(parseDiceExpression(expression)));
+
+  const rollButton = (expression: string) => {
     try {
-      onRoll(rollDice(parseDiceExpression(expression)));
-      setError(null);
+      roll(expression);
     } catch (e) {
-      setError(e instanceof Error ? e.message : String(e));
+      notify({ kind: "error", message: errorMessage(e) });
     }
   };
 
   const rollCustom = (event: FormEvent) => {
     event.preventDefault();
-    roll(notation);
+    try {
+      roll(notation);
+      setNotationError(null);
+    } catch (e) {
+      setNotationError((previous) => ({
+        id: (previous?.id ?? 0) + 1,
+        message: errorMessage(e),
+      }));
+    }
   };
 
   return (
@@ -45,14 +72,14 @@ export function DicePanel({ rolls, onRoll, onClearHistory }: DicePanelProps) {
         <button
           type="button"
           className={styles.main}
-          onClick={() => roll("1d100")}
+          onClick={() => rollButton("1d100")}
         >
           <span className={styles.mainLabel}>Roll d100</span>
           <span className={styles.mainHint}>1 to 100</span>
         </button>
 
-        <section className={styles.group} aria-labelledby="dice-quick">
-          <h3 id="dice-quick" className={styles.heading}>
+        <section className={styles.group} aria-labelledby={`${id}-quick`}>
+          <h3 id={`${id}-quick`} className={styles.heading}>
             Quick roll · one die
           </h3>
           <div className={styles.quick}>
@@ -62,7 +89,7 @@ export function DicePanel({ rolls, onRoll, onClearHistory }: DicePanelProps) {
                 type="button"
                 className={styles.quickButton}
                 aria-label={`Roll d${sides}`}
-                onClick={() => roll(`1d${sides}`)}
+                onClick={() => rollButton(`1d${sides}`)}
               >
                 d{sides}
               </button>
@@ -71,28 +98,36 @@ export function DicePanel({ rolls, onRoll, onClearHistory }: DicePanelProps) {
         </section>
 
         <form className={styles.group} onSubmit={rollCustom}>
-          <label htmlFor="dice-notation" className={styles.heading}>
+          <label htmlFor={`${id}-notation`} className={styles.heading}>
             Custom roll
           </label>
           <div className={styles.custom}>
             <input
-              id="dice-notation"
+              id={`${id}-notation`}
               className={styles.field}
               value={notation}
               placeholder="e.g. 2d6 + 1d30 + 3"
               autoComplete="off"
               spellCheck={false}
-              aria-invalid={error !== null}
-              aria-describedby={error ? "dice-error" : undefined}
-              onChange={(event) => setNotation(event.target.value)}
+              aria-invalid={notationError !== null}
+              aria-describedby={notationError ? `${id}-error` : undefined}
+              onChange={(event) => {
+                setNotation(event.target.value);
+                setNotationError(null);
+              }}
             />
             <button type="submit" className={styles.rollButton}>
               Roll
             </button>
           </div>
-          {error && (
-            <p id="dice-error" role="alert" className={styles.error}>
-              {error}
+          {notationError && (
+            <p
+              key={notationError.id}
+              id={`${id}-error`}
+              role="alert"
+              className={styles.error}
+            >
+              {notationError.message}
             </p>
           )}
         </form>
@@ -116,10 +151,10 @@ export function DicePanel({ rolls, onRoll, onClearHistory }: DicePanelProps) {
         )}
       </section>
 
-      <section className={styles.history} aria-labelledby="dice-history">
+      <section className={styles.history} aria-labelledby={`${id}-history`}>
         <div className={styles.historyHead}>
-          <h3 id="dice-history" className={styles.heading}>
-            Last 10 rolls
+          <h3 id={`${id}-history`} className={styles.heading}>
+            Last {DICE_HISTORY_LENGTH} rolls
           </h3>
           <button
             type="button"
