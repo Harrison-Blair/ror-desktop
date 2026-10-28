@@ -17,22 +17,24 @@ const bottomItems: RailItem[] = [1, 2].map((n) => ({
   label: `Bottom item ${n}`,
 }));
 
-const menuItems = [1, 2, 3, 4, 5, 6].map((n) => ({
-  id: `m${n}`,
-  label: `Menu item ${n}`,
+const railPanelItems = [1, 2, 3, 4, 5, 6].map((n) => ({
+  id: `p${n}`,
+  label: `Panel item ${n}`,
 }));
 
-// Defaults match --menu-width, --panel-width and --rail-width in tokens.css.
-const MENU_WIDTH = { default: 220, min: 180 };
+// Defaults match --rail-panel-width, --panel-width and --rail-width in tokens.css.
+const RAIL_PANEL_WIDTH = { default: 220, min: 180 };
 const PANEL_WIDTH = { default: 360, min: 280 };
 const RAIL_WIDTH = 52;
 
 export default function App() {
   const [activeId, setActiveId] = useState("top1");
-  const [menuOpen, setMenuOpen] = useState(true);
-  const [menuItemId, setMenuItemId] = useState("m1");
+  const [railPanelOpen, setRailPanelOpen] = useState(true);
+  const [railPanelItemId, setRailPanelItemId] = useState("p1");
   const [panelOpen, setPanelOpen] = useState(true);
-  const [menuWidth, setMenuWidth] = useState(MENU_WIDTH.default);
+  const [railPanelWidth, setRailPanelWidth] = useState(
+    RAIL_PANEL_WIDTH.default,
+  );
   const [panelWidth, setPanelWidth] = useState(PANEL_WIDTH.default);
   const [windowWidth, setWindowWidth] = useState(window.innerWidth);
 
@@ -42,13 +44,13 @@ export default function App() {
     return () => window.removeEventListener("resize", updateWindowWidth);
   }, []);
 
-  // Main, the menu and the side panel each get at most one share of the
+  // Main, the rail panel and the side panel each get at most one share of the
   // space beside the rail, so main is never narrower than either panel.
-  const openAreas = 1 + Number(menuOpen) + Number(panelOpen);
+  const openAreas = 1 + Number(railPanelOpen) + Number(panelOpen);
   const share = (windowWidth - RAIL_WIDTH) / openAreas;
   const clampWidth = (width: number, min: number) =>
     Math.max(min, Math.min(width, share));
-  const drawnMenuWidth = clampWidth(menuWidth, MENU_WIDTH.min);
+  const drawnRailPanelWidth = clampWidth(railPanelWidth, RAIL_PANEL_WIDTH.min);
   const drawnPanelWidth = clampWidth(panelWidth, PANEL_WIDTH.min);
 
   const activeItem = [...railItems, ...bottomItems].find(
@@ -57,12 +59,12 @@ export default function App() {
 
   const selectRailItem = (id: string) => {
     if (id === activeId) {
-      setMenuOpen((open) => !open);
+      setRailPanelOpen((open) => !open);
       return;
     }
     setActiveId(id);
-    setMenuItemId(menuItems[0].id);
-    setMenuOpen(true);
+    setRailPanelItemId(railPanelItems[0].id);
+    setRailPanelOpen(true);
   };
 
   return (
@@ -72,25 +74,25 @@ export default function App() {
         bottomItems={bottomItems}
         activeId={activeId}
         onSelect={selectRailItem}
-        menuOpen={menuOpen}
-        onToggleMenu={() => setMenuOpen((open) => !open)}
+        railPanelOpen={railPanelOpen}
+        onToggleRailPanel={() => setRailPanelOpen((open) => !open)}
       />
       <RailPanel
         title={activeItem?.label ?? ""}
-        open={menuOpen}
-        items={menuItems}
-        activeId={menuItemId}
-        onSelect={setMenuItemId}
-        width={drawnMenuWidth}
+        open={railPanelOpen}
+        items={railPanelItems}
+        activeId={railPanelItemId}
+        onSelect={setRailPanelItemId}
+        width={drawnRailPanelWidth}
         resizeHandle={
           <ResizeHandle
-            label="Resize menu"
+            label="Resize rail panel"
             edge="right"
-            width={drawnMenuWidth}
+            width={drawnRailPanelWidth}
             onResize={(width) =>
-              setMenuWidth(clampWidth(width, MENU_WIDTH.min))
+              setRailPanelWidth(clampWidth(width, RAIL_PANEL_WIDTH.min))
             }
-            onReset={() => setMenuWidth(MENU_WIDTH.default)}
+            onReset={() => setRailPanelWidth(RAIL_PANEL_WIDTH.default)}
           />
         }
       />

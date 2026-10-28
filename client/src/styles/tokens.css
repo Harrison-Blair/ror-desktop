@@ -23,10 +23,10 @@
   --radius-1: 4px;
 
   --rail-width: 52px;
-  --menu-width: 220px;
+  --rail-panel-width: 220px;
   --panel-width: 360px;
   --nav-item-size: 40px;
-  --menu-item-height: 36px;
+  --rail-panel-item-height: 36px;
   --main-max-width: 1120px;
 
   --shadow-pop: 0 8px 24px rgba(0, 0, 0, 0.5);

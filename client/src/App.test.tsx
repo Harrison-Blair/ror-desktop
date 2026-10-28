@@ -26,10 +26,10 @@ describe("App frame", () => {
     }
   });
 
-  it("selecting another rail item activates it and opens its menu", async () => {
+  it("selecting another rail item activates it and opens its rail panel", async () => {
     const user = renderApp();
-    await user.click(screen.getByRole("button", { name: "Menu item 4" }));
-    await user.click(screen.getByRole("button", { name: "Hide menu" }));
+    await user.click(screen.getByRole("button", { name: "Panel item 4" }));
+    await user.click(screen.getByRole("button", { name: "Hide rail panel" }));
 
     await user.click(screen.getByRole("button", { name: "Nav item 3" }));
 
@@ -39,62 +39,64 @@ describe("App frame", () => {
     expect(
       screen.getByRole("button", { name: "Nav item 1", pressed: false }),
     ).toBeInTheDocument();
-    const menu = screen.getByRole("region", { name: "Nav item 3 menu" });
-    expect(menu).toHaveTextContent("Nav item 3");
+    const railPanel = screen.getByRole("region", {
+      name: "Nav item 3 rail panel",
+    });
+    expect(railPanel).toHaveTextContent("Nav item 3");
     expect(
-      screen.getByRole("button", { name: "Menu item 1", pressed: true }),
+      screen.getByRole("button", { name: "Panel item 1", pressed: true }),
     ).toBeInTheDocument();
     expect(
-      screen.getByRole("button", { name: "Menu item 4", pressed: false }),
+      screen.getByRole("button", { name: "Panel item 4", pressed: false }),
     ).toBeInTheDocument();
   });
 
-  it("selecting the active rail item hides and then shows the menu", async () => {
+  it("selecting the active rail item hides and then shows the rail panel", async () => {
     const user = renderApp();
     const active = screen.getByRole("button", { name: "Nav item 1" });
 
     await user.click(active);
     expect(
-      screen.queryByRole("region", { name: "Nav item 1 menu" }),
+      screen.queryByRole("region", { name: "Nav item 1 rail panel" }),
     ).not.toBeInTheDocument();
 
     await user.click(active);
     expect(
-      screen.getByRole("region", { name: "Nav item 1 menu" }),
+      screen.getByRole("region", { name: "Nav item 1 rail panel" }),
     ).toBeInTheDocument();
   });
 
-  it("toggle button hides and shows the menu and updates its label", async () => {
+  it("toggle button hides and shows the rail panel and updates its label", async () => {
     const user = renderApp();
 
     await user.click(
-      screen.getByRole("button", { name: "Hide menu", expanded: true }),
+      screen.getByRole("button", { name: "Hide rail panel", expanded: true }),
     );
     expect(
-      screen.queryByRole("region", { name: "Nav item 1 menu" }),
+      screen.queryByRole("region", { name: "Nav item 1 rail panel" }),
     ).not.toBeInTheDocument();
 
     await user.click(
-      screen.getByRole("button", { name: "Show menu", expanded: false }),
+      screen.getByRole("button", { name: "Show rail panel", expanded: false }),
     );
     expect(
-      screen.getByRole("region", { name: "Nav item 1 menu" }),
+      screen.getByRole("region", { name: "Nav item 1 rail panel" }),
     ).toBeInTheDocument();
     expect(
-      screen.getByRole("button", { name: "Hide menu" }),
+      screen.getByRole("button", { name: "Hide rail panel" }),
     ).toBeInTheDocument();
   });
 
-  it("selecting a menu item marks it pressed", async () => {
+  it("selecting a rail panel item marks it pressed", async () => {
     const user = renderApp();
 
-    await user.click(screen.getByRole("button", { name: "Menu item 4" }));
+    await user.click(screen.getByRole("button", { name: "Panel item 4" }));
 
     expect(
-      screen.getByRole("button", { name: "Menu item 4", pressed: true }),
+      screen.getByRole("button", { name: "Panel item 4", pressed: true }),
     ).toBeInTheDocument();
     expect(
-      screen.getByRole("button", { name: "Menu item 1", pressed: false }),
+      screen.getByRole("button", { name: "Panel item 1", pressed: false }),
     ).toBeInTheDocument();
   });
 

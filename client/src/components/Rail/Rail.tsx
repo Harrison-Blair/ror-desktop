@@ -17,8 +17,8 @@ type RailProps = {
   bottomItems?: RailItem[];
   activeId?: string;
   onSelect?: (id: string) => void;
-  menuOpen?: boolean;
-  onToggleMenu?: () => void;
+  railPanelOpen?: boolean;
+  onToggleRailPanel?: () => void;
   label?: string;
 };
 
@@ -27,11 +27,11 @@ export function Rail({
   bottomItems,
   activeId,
   onSelect,
-  menuOpen = true,
-  onToggleMenu,
+  railPanelOpen = true,
+  onToggleRailPanel,
   label = "Main",
 }: RailProps) {
-  const ToggleIcon = menuOpen ? PanelLeftClose : PanelLeftOpen;
+  const ToggleIcon = railPanelOpen ? PanelLeftClose : PanelLeftOpen;
   const renderItem = (item: RailItem) => {
     const Icon = item.icon ?? Square;
     const active = item.id === activeId;
@@ -54,13 +54,13 @@ export function Rail({
 
   return (
     <nav className={styles.rail} aria-label={label}>
-      {onToggleMenu && (
+      {onToggleRailPanel && (
         <button
           type="button"
           className={`${styles.item} ${styles.toggle}`}
-          aria-label={menuOpen ? "Hide menu" : "Show menu"}
-          aria-expanded={menuOpen}
-          onClick={onToggleMenu}
+          aria-label={railPanelOpen ? "Hide rail panel" : "Show rail panel"}
+          aria-expanded={railPanelOpen}
+          onClick={onToggleRailPanel}
         >
           <ToggleIcon size={20} strokeWidth={1.75} aria-hidden />
         </button>

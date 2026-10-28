@@ -11,9 +11,9 @@ describe("frame components", () => {
         <p>Custom body</p>
       </RailPanel>,
     );
-    const menu = screen.getByRole("region", { name: "Notes menu" });
+    const railPanel = screen.getByRole("region", { name: "Notes rail panel" });
 
-    expect(menu).toHaveTextContent("Custom body");
+    expect(railPanel).toHaveTextContent("Custom body");
     expect(screen.queryByRole("button")).not.toBeInTheDocument();
   });
 
@@ -26,12 +26,12 @@ describe("frame components", () => {
     expect(screen.queryByRole("button")).not.toBeInTheDocument();
   });
 
-  it("Rail without onToggleMenu has no menu toggle", () => {
+  it("Rail without onToggleRailPanel has no rail panel toggle", () => {
     render(<Rail items={[{ id: "a", label: "Item A" }]} />);
 
     expect(screen.getByRole("button", { name: "Item A" })).toBeInTheDocument();
     expect(
-      screen.queryByRole("button", { name: /(Hide|Show) menu/ }),
+      screen.queryByRole("button", { name: /(Hide|Show) rail panel/ }),
     ).not.toBeInTheDocument();
   });
 

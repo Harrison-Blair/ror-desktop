@@ -12,8 +12,8 @@
   touch-action: none;
 }
 
-/* Offsets start inside the panel's 1px border. The menu strip sits fully
-   outside the menu; the side panel strip sits inside the panel, starting
+/* Offsets start inside the panel's 1px border. The rail panel strip sits fully
+   outside the rail panel; the side panel strip sits inside the panel, starting
    at its border, so neither covers main's scrollbar. */
 .right {
   right: -9px;

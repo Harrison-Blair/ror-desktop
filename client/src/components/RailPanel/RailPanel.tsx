@@ -31,8 +31,8 @@ export function RailPanel({
 
   return (
     <section
-      className={styles.menu}
-      aria-label={`${title} menu`}
+      className={styles.panel}
+      aria-label={`${title} rail panel`}
       style={{ width }}
     >
       <header className={styles.head}>
