@@ -1,0 +1,33 @@
+:root {
+  --sunken: #141414;
+  --ground: #1c1c1c;
+  --raised: #262626;
+  --well: #2e2e2e;
+  --line: #333333;
+  --line-control: #6b6b6b;
+  --ink: #e6e6e6;
+  --ink-muted: #a3a3a3;
+  --focus: #e6e6e6;
+
+  --font-sans: system-ui, sans-serif;
+  --font-mono: ui-monospace, monospace;
+
+  --space-1: 4px;
+  --space-2: 8px;
+  --space-3: 12px;
+  --space-4: 16px;
+  --space-5: 24px;
+  --space-6: 32px;
+
+  --radius-0: 0;
+  --radius-1: 4px;
+
+  --rail-width: 52px;
+  --rail-panel-width: 220px;
+  --panel-width: 360px;
+  --nav-item-size: 40px;
+  --rail-panel-item-height: 36px;
+  --main-max-width: 1120px;
+
+  --shadow-pop: 0 8px 24px rgba(0, 0, 0, 0.5);
+}

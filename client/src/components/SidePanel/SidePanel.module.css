@@ -1,0 +1,47 @@
+.panel {
+  position: relative;
+  display: flex;
+  flex: none;
+  box-sizing: border-box;
+  width: var(--panel-width);
+  background: var(--sunken);
+  border-left: 1px solid var(--line);
+}
+
+/* Scrolls inside the panel so the resize handle stays on the edge. */
+.scroll {
+  flex: 1;
+  min-width: 0;
+  overflow-y: auto;
+}
+
+.close {
+  position: sticky;
+  top: var(--space-2);
+  z-index: 1;
+  display: grid;
+  place-items: center;
+  width: 32px;
+  height: 32px;
+  margin: var(--space-2) var(--space-2) 0 auto;
+  padding: 0;
+  color: var(--ink-muted);
+  background: var(--sunken);
+  border: 0;
+  border-radius: var(--radius-1);
+  cursor: pointer;
+}
+
+.close:hover {
+  color: var(--ink);
+  background: var(--well);
+}
+
+.close:focus-visible {
+  outline: 2px solid var(--focus);
+  outline-offset: 2px;
+}
+
+.body {
+  padding: var(--space-4);
+}
