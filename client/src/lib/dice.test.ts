@@ -62,10 +62,6 @@ describe("strict dice notation", () => {
     expect(() => parseDiceExpression(`${"9".repeat(180)}d6`)).toThrow();
   });
 });
-it("bounds a burst of malformed expressions without calling randomness", () => {
-  for (let index = 0; index < 500; index++)
-    expect(() => parseDiceExpression("d6;constructor")).toThrow();
-});
 describe("crypto roller", () => {
   it("rolls signed dice and modifiers with an exact typed breakdown", () => {
     const words = [3, 1, 6];

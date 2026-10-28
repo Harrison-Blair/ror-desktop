@@ -61,9 +61,11 @@ export function Toast({ kind, message, onDismiss, ...handlers }: ToastProps) {
 // Info toasts count down only while neither hovered nor focused, then hide.
 function TimedToast({
   toast,
+  onExpire,
   onDismiss,
 }: {
   toast: ToastItem;
+  onExpire: (id: number) => void;
   onDismiss: (id: number) => void;
 }) {
   const [hovered, setHovered] = useState(false);
@@ -74,12 +76,12 @@ function TimedToast({
   useEffect(() => {
     if (toast.kind !== "info" || paused) return;
     const start = Date.now();
-    const timer = setTimeout(() => onDismiss(toast.id), remaining.current);
+    const timer = setTimeout(() => onExpire(toast.id), remaining.current);
     return () => {
       clearTimeout(timer);
       remaining.current -= Date.now() - start;
     };
-  }, [toast, paused, onDismiss]);
+  }, [toast, paused, onExpire]);
 
   return (
     <Toast
@@ -100,11 +102,26 @@ function TimedToast({
 export function ToastProvider({ children }: { children: ReactNode }) {
   const [toasts, setToasts] = useState<ToastItem[]>([]);
   const nextId = useRef(1);
+  const region = useRef<HTMLElement>(null);
+  // The element that had focus before focus entered the region.
+  const returnFocus = useRef<HTMLElement | null>(null);
 
   const dismiss = useCallback(
     (id: number) => setToasts((list) => list.filter((t) => t.id !== id)),
     [],
   );
+
+  // When the dismissed toast's button has focus, moves focus so it does not
+  // drop to the page body: to the next toast, else back to where it was.
+  const dismissFromButton = (id: number) => {
+    const index = toasts.findIndex((t) => t.id === id);
+    const buttons = region.current?.querySelectorAll("button") ?? [];
+    if (buttons[index] === document.activeElement) {
+      const next = buttons[index + 1] ?? buttons[index - 1];
+      (next ?? returnFocus.current)?.focus();
+    }
+    dismiss(id);
+  };
 
   // A repeat of the same kind and message replaces the old toast with a new
   // element, so it is announced again.
@@ -119,9 +136,22 @@ export function ToastProvider({ children }: { children: ReactNode }) {
   return (
     <ToastContext.Provider value={notify}>
       {children}
-      <section className={styles.toasts} aria-label="Notifications">
+      <section
+        ref={region}
+        className={styles.toasts}
+        aria-label="Notifications"
+        onFocus={(event) => {
+          if (!event.currentTarget.contains(event.relatedTarget))
+            returnFocus.current = event.relatedTarget as HTMLElement | null;
+        }}
+      >
         {toasts.map((toast) => (
-          <TimedToast key={toast.id} toast={toast} onDismiss={dismiss} />
+          <TimedToast
+            key={toast.id}
+            toast={toast}
+            onExpire={dismiss}
+            onDismiss={dismissFromButton}
+          />
         ))}
       </section>
     </ToastContext.Provider>

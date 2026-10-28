@@ -1,4 +1,4 @@
-import { render, screen, within } from "@testing-library/react";
+import { act, render, screen, within } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import App from "@/App";
@@ -40,7 +40,7 @@ describe("Dice panel", () => {
     expect(historyRows()).toHaveLength(0);
     expect(
       screen.getByRole("button", { name: "Clear history" }),
-    ).toBeDisabled();
+    ).toHaveAttribute("aria-disabled", "true");
   });
 
   it("Roll d100 rolls one d100 and adds a timed history row", async () => {
@@ -130,6 +130,20 @@ describe("Dice panel", () => {
 
     expect(historyRows()).toHaveLength(0);
     expect(screen.getByText("Rolls will appear here.")).toBeInTheDocument();
+  });
+
+  it("Clear history keeps keyboard focus after emptying the list", async () => {
+    const user = await openDice();
+    await user.click(screen.getByRole("button", { name: /Roll d100/ }));
+    const clear = screen.getByRole("button", { name: "Clear history" });
+
+    act(() => clear.focus());
+    await user.keyboard("{Enter}");
+
+    expect(historyRows()).toHaveLength(0);
+    expect(clear).not.toBeDisabled();
+    expect(clear).toHaveAttribute("aria-disabled", "true");
+    expect(clear).toHaveFocus();
   });
 
   it("Clear history keeps the latest roll", async () => {

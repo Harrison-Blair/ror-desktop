@@ -20,6 +20,14 @@ function Notifier() {
       >
         Error
       </button>
+      <button
+        type="button"
+        onClick={() =>
+          notify({ kind: "error", message: "Could not load the map." })
+        }
+      >
+        Second error
+      </button>
     </>
   );
 }
@@ -130,5 +138,65 @@ describe("Toast", () => {
     expect(within(region()).getByRole("status")).toHaveTextContent(
       "Session saved.",
     );
+  });
+
+  it("moves focus to the next toast when a toast is dismissed", () => {
+    setup();
+
+    fireEvent.click(screen.getByRole("button", { name: "Error" }));
+    fireEvent.click(screen.getByRole("button", { name: "Second error" }));
+    const [first, second] = screen.getAllByRole("button", {
+      name: "Dismiss notification",
+    });
+    act(() => first.focus());
+    fireEvent.click(first);
+
+    expect(second).toHaveFocus();
+  });
+
+  it("moves focus to the previous toast when the last one is dismissed", () => {
+    setup();
+
+    fireEvent.click(screen.getByRole("button", { name: "Error" }));
+    fireEvent.click(screen.getByRole("button", { name: "Second error" }));
+    const [first, second] = screen.getAllByRole("button", {
+      name: "Dismiss notification",
+    });
+    act(() => second.focus());
+    fireEvent.click(second);
+
+    expect(first).toHaveFocus();
+  });
+
+  it("leaves focus alone when an unfocused toast is dismissed", () => {
+    setup();
+
+    fireEvent.click(screen.getByRole("button", { name: "Info" }));
+    fireEvent.click(screen.getByRole("button", { name: "Error" }));
+    fireEvent.click(screen.getByRole("button", { name: "Second error" }));
+    const [first, middle] = screen.getAllByRole("button", {
+      name: "Dismiss notification",
+    });
+    act(() => first.focus());
+    fireEvent.click(middle);
+
+    expect(screen.getAllByRole("alert")).toHaveLength(1);
+    expect(first).toHaveFocus();
+  });
+
+  it("returns focus to where it was when the last toast is dismissed", () => {
+    setup();
+
+    const trigger = screen.getByRole("button", { name: "Error" });
+    fireEvent.click(trigger);
+    act(() => trigger.focus());
+    const dismiss = screen.getByRole("button", {
+      name: "Dismiss notification",
+    });
+    act(() => dismiss.focus());
+    fireEvent.click(dismiss);
+
+    expect(screen.queryByRole("alert")).not.toBeInTheDocument();
+    expect(trigger).toHaveFocus();
   });
 });

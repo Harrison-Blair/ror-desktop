@@ -159,8 +159,9 @@ export function DicePanel({
           <button
             type="button"
             className={styles.textButton}
-            disabled={rolls.length === 0}
-            onClick={onClearHistory}
+            // aria-disabled, not disabled, so focus stays on the button.
+            aria-disabled={rolls.length === 0}
+            onClick={() => rolls.length > 0 && onClearHistory()}
           >
             Clear history
           </button>

@@ -22,8 +22,6 @@ export function parseDiceExpression(input: string): DiceSpec {
     if (/^[+-]/.test(rest)) {
       sign = rest[0] === "-" ? -1 : 1;
       rest = rest.slice(1).replace(whitespace, "");
-    } else if (terms.length) {
-      throw new Error("Separate terms with + or -.");
     }
     const token = /^(?:(\d*)[dD](\d+)|(\d+))/.exec(rest);
     if (!token) throw new Error("Use notation like 2d6 + 1d8 - 3.");

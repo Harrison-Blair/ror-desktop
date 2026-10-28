@@ -154,12 +154,12 @@
   cursor: pointer;
 }
 
-.textButton:hover:enabled {
+.textButton:hover:not([aria-disabled="true"]) {
   color: var(--ink);
   background: var(--raised);
 }
 
-.textButton:disabled {
+.textButton[aria-disabled="true"] {
   cursor: default;
   opacity: 0.5;
 }

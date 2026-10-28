@@ -138,7 +138,6 @@ function Shell() {
       <SidePanel
         open={panelOpen}
         onClose={() => setPanelOpen(false)}
-        label="Dice"
         title="Dice"
         width={drawnPanelWidth}
         resizeHandle={
