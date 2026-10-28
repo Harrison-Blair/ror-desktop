@@ -1,7 +1,6 @@
 import { useEffect, useState } from "react";
 import styles from "@/App.module.css";
 import { MainPanel } from "@/components/MainPanel/MainPanel";
-import { Placeholder } from "@/components/Placeholder/Placeholder";
 import { Rail, type RailItem } from "@/components/Rail/Rail";
 import { RailPanel } from "@/components/RailPanel/RailPanel";
 import { ResizeHandle } from "@/components/ResizeHandle/ResizeHandle";
@@ -96,15 +95,7 @@ export default function App() {
           />
         }
       />
-      <MainPanel>
-        <div className={styles.stack}>
-          {[1, 2, 3, 4, 5, 6].map((n) => (
-            <Placeholder key={n} minHeight={n % 2 ? 240 : 160}>
-              Content {n}
-            </Placeholder>
-          ))}
-        </div>
-      </MainPanel>
+      <MainPanel />
       <SidePanel
         open={panelOpen}
         onClose={() => setPanelOpen(false)}
@@ -120,13 +111,7 @@ export default function App() {
             onReset={() => setPanelWidth(PANEL_WIDTH.default)}
           />
         }
-      >
-        <div className={styles.stack}>
-          {[1, 2, 3, 4, 5].map((n) => (
-            <Placeholder key={n}>Panel content {n}</Placeholder>
-          ))}
-        </div>
-      </SidePanel>
+      />
     </div>
   );
 }
