@@ -15,15 +15,31 @@
   overflow-y: auto;
 }
 
-.close {
+/* Matches the rail panel header. */
+.head {
   position: sticky;
-  top: var(--space-2);
+  top: 0;
   z-index: 1;
+  display: flex;
+  align-items: center;
+  height: var(--rail-width);
+  padding: 0 var(--space-2) 0 var(--space-4);
+  background: var(--sunken);
+}
+
+.title {
+  margin: 0;
+  color: var(--ink-muted);
+  font: 600 16px / 20px var(--font-sans);
+  letter-spacing: 0.02em;
+}
+
+.close {
   display: grid;
   place-items: center;
   width: 32px;
   height: 32px;
-  margin: var(--space-2) var(--space-2) 0 auto;
+  margin-left: auto;
   padding: 0;
   color: var(--ink-muted);
   background: var(--sunken);

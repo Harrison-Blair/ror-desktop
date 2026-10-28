@@ -6,6 +6,7 @@ type SidePanelProps = {
   open?: boolean;
   onClose?: () => void;
   label?: string;
+  title?: string;
   children?: ReactNode;
   width?: number;
   resizeHandle?: ReactNode;
@@ -15,6 +16,7 @@ export function SidePanel({
   open = true,
   onClose,
   label = "Side panel",
+  title,
   children,
   width,
   resizeHandle,
@@ -24,15 +26,20 @@ export function SidePanel({
   return (
     <aside className={styles.panel} aria-label={label} style={{ width }}>
       <div className={styles.scroll}>
-        {onClose && (
-          <button
-            type="button"
-            className={styles.close}
-            aria-label={`Close ${label}`}
-            onClick={onClose}
-          >
-            <X size={16} strokeWidth={1.75} aria-hidden />
-          </button>
+        {(title || onClose) && (
+          <div className={styles.head}>
+            {title && <h2 className={styles.title}>{title}</h2>}
+            {onClose && (
+              <button
+                type="button"
+                className={styles.close}
+                aria-label={`Close ${label}`}
+                onClick={onClose}
+              >
+                <X size={16} strokeWidth={1.75} aria-hidden />
+              </button>
+            )}
+          </div>
         )}
         <div className={styles.body}>{children}</div>
       </div>

@@ -19,8 +19,7 @@ function drag(handleName: string, fromX: number, toX: number) {
 
 const railPanel = () =>
   screen.getByRole("region", { name: "Session rail panel" });
-const sidePanel = () =>
-  screen.getByRole("complementary", { name: "Side panel" });
+const sidePanel = () => screen.getByRole("complementary", { name: "Dice" });
 const toggleRailPanel = () =>
   fireEvent.click(
     screen.getByRole("button", { name: /(Hide|Show) rail panel/ }),
@@ -32,6 +31,7 @@ describe("resizing panels", () => {
   beforeEach(() => {
     setWindowWidth(1252);
     render(<App />);
+    fireEvent.click(screen.getByRole("button", { name: "Dice" }));
   });
 
   it("marks both handles as vertical separators", () => {
@@ -72,7 +72,7 @@ describe("resizing panels", () => {
     drag("Resize rail panel", 300, 900);
     expect(railPanel()).toHaveStyle({ width: "400px" });
 
-    fireEvent.click(screen.getByRole("button", { name: "Close Side panel" }));
+    fireEvent.click(screen.getByRole("button", { name: "Close Dice" }));
     drag("Resize rail panel", 300, 900);
     expect(railPanel()).toHaveStyle({ width: "600px" });
   });
