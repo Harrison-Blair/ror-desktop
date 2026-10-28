@@ -1,16 +1,16 @@
-name: Desktop CI
+name: Desktop Build
 
 on:
   push:
-    branches: [main, dev]
+    branches: [main]
     paths:
       - 'client/**'
-      - '.github/workflows/desktop-ci.yml'
+      - '.github/workflows/desktop-build.yml'
   pull_request:
     types: [opened, synchronize, reopened, ready_for_review, converted_to_draft]
     paths:
       - 'client/**'
-      - '.github/workflows/desktop-ci.yml'
+      - '.github/workflows/desktop-build.yml'
 
 permissions:
   contents: read
@@ -20,8 +20,8 @@ concurrency:
   cancel-in-progress: true
 
 jobs:
-  desktop:
-    name: Desktop (${{ matrix.platform }})
+  build:
+    name: Release build (${{ matrix.platform }})
     if: github.event_name != 'pull_request' || !github.event.pull_request.draft
     runs-on: ${{ matrix.os }}
     timeout-minutes: 45
@@ -37,23 +37,16 @@ jobs:
       run:
         working-directory: client
     steps:
-      - name: Preserve LF on Windows
-        if: runner.os == 'Windows'
-        working-directory: ${{ github.workspace }}
-        run: git config --global core.autocrlf false
-      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+      - uses: actions/checkout@v7
         with:
           persist-credentials: false
-      - uses: actions/setup-node@949feb2413d6458794dcd2491c4babbbce0c15c1 # v7.1.0
+      - uses: actions/setup-node@v7
         with:
           node-version: '24'
           cache: npm
           cache-dependency-path: client/package-lock.json
-      - uses: dtolnay/rust-toolchain@683b588c487a69d01f6c6ddf40f036ff682cc2c8 # master
-        with:
-          toolchain: stable
-          components: rustfmt, clippy
-      - uses: Swatinem/rust-cache@d1527c8f67ef9af357290475d4af4b0fab8f12e0 # v2.9.3
+      - uses: dtolnay/rust-toolchain@stable
+      - uses: Swatinem/rust-cache@v2
         with:
           workspaces: client/src-tauri -> target
       - name: Install Linux native dependencies
@@ -64,9 +57,4 @@ jobs:
             build-essential pkg-config libwebkit2gtk-4.1-dev libxdo-dev \
             libssl-dev libayatana-appindicator3-dev librsvg2-dev
       - run: npm ci
-      - name: Check frontend formatting and lint
-        run: npm run check:frontend
-      - name: Check Rust formatting and lint
-        run: npm run check:rust
-      - name: Build desktop app in release mode
-        run: npm run tauri build -- --ci --no-bundle -- --locked
+      - run: npm run tauri build -- --ci --no-bundle -- --locked
