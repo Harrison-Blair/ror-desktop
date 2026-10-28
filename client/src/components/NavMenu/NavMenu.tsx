@@ -13,6 +13,8 @@ type NavMenuProps = {
   activeId?: string;
   onSelect?: (id: string) => void;
   children?: ReactNode;
+  width?: number;
+  resizeHandle?: ReactNode;
 };
 
 export function NavMenu({
@@ -22,11 +24,17 @@ export function NavMenu({
   activeId,
   onSelect,
   children,
+  width,
+  resizeHandle,
 }: NavMenuProps) {
   if (!open) return null;
 
   return (
-    <section className={styles.menu} aria-label={`${title} menu`}>
+    <section
+      className={styles.menu}
+      aria-label={`${title} menu`}
+      style={{ width }}
+    >
       <header className={styles.head}>
         <h2 className={styles.title}>{title}</h2>
       </header>
@@ -49,6 +57,7 @@ export function NavMenu({
             );
           })}
       </div>
+      {resizeHandle}
     </section>
   );
 }

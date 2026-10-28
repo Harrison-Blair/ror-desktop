@@ -1,0 +1,46 @@
+.handle {
+  position: absolute;
+  top: 0;
+  bottom: 0;
+  z-index: 1;
+  width: 8px;
+  height: auto;
+  margin: 0;
+  border: 0;
+  overflow: visible;
+  cursor: col-resize;
+  touch-action: none;
+}
+
+/* Offsets start inside the panel's 1px border. The menu strip sits fully
+   outside the menu; the side panel strip sits inside the panel, starting
+   at its border, so neither covers main's scrollbar. */
+.right {
+  right: -9px;
+}
+
+.left {
+  left: -1px;
+}
+
+.handle::after {
+  position: absolute;
+  top: 0;
+  bottom: 0;
+  width: 1px;
+  content: "";
+}
+
+/* Keeps the highlight exactly over the panel's 1px border. */
+.right::after {
+  left: -1px;
+}
+
+.left::after {
+  left: 0;
+}
+
+.handle:hover::after,
+.handle:active::after {
+  background: var(--line-control);
+}

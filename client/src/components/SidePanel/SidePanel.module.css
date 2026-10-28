@@ -1,8 +1,18 @@
 .panel {
-  flex: 0 0 var(--panel-width);
-  overflow-y: auto;
+  position: relative;
+  display: flex;
+  flex: none;
+  box-sizing: border-box;
+  width: var(--panel-width);
   background: var(--sunken);
   border-left: 1px solid var(--line);
+}
+
+/* Scrolls inside the panel so the resize handle stays on the edge. */
+.scroll {
+  flex: 1;
+  min-width: 0;
+  overflow-y: auto;
 }
 
 .close {

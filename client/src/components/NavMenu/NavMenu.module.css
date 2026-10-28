@@ -1,7 +1,9 @@
 .menu {
+  position: relative;
   display: flex;
-  flex: 0 0 var(--menu-width);
+  flex: none;
   flex-direction: column;
+  box-sizing: border-box;
   width: var(--menu-width);
   min-height: 0;
   background: var(--sunken);

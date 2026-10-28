@@ -14,8 +14,9 @@
       {
         "label": "main",
         "title": "Ror Desktop",
-        "width": 1000,
-        "height": 700
+        "width": 1280,
+        "height": 700,
+        "minWidth": 900
       }
     ],
     "security": {
