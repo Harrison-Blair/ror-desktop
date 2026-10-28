@@ -1,6 +1,5 @@
 import { useEffect, useState } from "react";
 import styles from "@/App.module.css";
-import { AppShell } from "@/components/AppShell/AppShell";
 import { MainPanel } from "@/components/MainPanel/MainPanel";
 import { NavMenu } from "@/components/NavMenu/NavMenu";
 import { Placeholder } from "@/components/Placeholder/Placeholder";
@@ -67,7 +66,7 @@ export default function App() {
   };
 
   return (
-    <AppShell>
+    <div className={styles.shell}>
       <Rail
         items={railItems}
         bottomItems={bottomItems}
@@ -126,6 +125,6 @@ export default function App() {
           ))}
         </div>
       </SidePanel>
-    </AppShell>
+    </div>
   );
 }
