@@ -36,6 +36,12 @@ const errorMessage = (e: unknown) =>
     ? String(e.message)
     : String(e);
 
+const isNameError = (e: unknown) =>
+  typeof e === "object" &&
+  e !== null &&
+  "code" in e &&
+  (e.code === "invalid_name" || e.code === "name_taken");
+
 const toTree = (entries: Entry[]): TreeEntry[] =>
   entries.map((entry) => ({
     kind: entry.kind === "note" ? "file" : "folder",
@@ -138,6 +144,19 @@ export function NotesMenu({
       load();
     });
 
+  // A rejected name changes nothing, so it needs no reload.
+  const reloadAfterNameEdit = <T,>(change: Promise<T>) =>
+    change.then(
+      (result) => {
+        load();
+        return result;
+      },
+      (e) => {
+        if (!isNameError(e)) load();
+        throw e;
+      },
+    );
+
   return (
     <FileTree
       ref={ref}
@@ -149,11 +168,13 @@ export function NotesMenu({
       selected={selected}
       setSelected={setSelected}
       onCreate={(parent, kind, name) =>
-        reloadAfter(
+        reloadAfterNameEdit(
           createEntry(parent, kind === "file" ? "note" : "folder", name),
         )
       }
-      onRename={(path, newName) => reloadAfter(renameEntry(path, newName))}
+      onRename={(path, newName) =>
+        reloadAfterNameEdit(renameEntry(path, newName))
+      }
       onMove={(path, newParent) => reloadAfter(moveEntry(path, newParent))}
       onDelete={(path) => reloadAfter(deleteEntry(path))}
       confirmDelete={(entry) => ({

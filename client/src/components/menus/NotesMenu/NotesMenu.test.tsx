@@ -570,6 +570,38 @@ describe("NotesTree", () => {
     expect(screen.queryByRole("treeitem")).toBeNull();
   });
 
+  it("a rename rejected as taken shows the error inline without reloading", async () => {
+    api.renameEntry.mockRejectedValue({
+      code: "name_taken",
+      message: "“Places” already exists here.",
+    });
+    const { user } = await renderLoaded();
+    focusItem("Chicago");
+    await user.keyboard("{F2}");
+    await user.clear(screen.getByRole("textbox", { name: "Note name" }));
+    await user.keyboard("Places{Enter}");
+
+    expect(await screen.findByRole("alert")).toHaveTextContent(
+      /^“Places” already exists here\.$/,
+    );
+    expect(api.listNotes).toHaveBeenCalledTimes(1);
+  });
+
+  it("renaming the selected note keeps it selected and focused", async () => {
+    api.renameEntry.mockResolvedValue("Detroit.md");
+    const { user } = await renderLoaded();
+    await user.click(row("Chicago"));
+    const renamed = sample();
+    renamed[2] = { kind: "note", name: "Detroit", path: "Detroit.md" };
+    api.listNotes.mockResolvedValue(renamed);
+
+    await user.keyboard("{F2}Detroit{Enter}");
+
+    await waitFor(() => expect(item("Detroit")).toBeInTheDocument());
+    expect(item("Detroit")).toHaveAttribute("aria-selected", "true");
+    expect(item("Detroit")).toHaveFocus();
+  });
+
   describe("drag to move", () => {
     const dragTo = (from: HTMLElement, over: Element | null) => {
       document.elementFromPoint = () => over;
