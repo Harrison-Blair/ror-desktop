@@ -73,3 +73,4 @@ jobs:
             build-essential pkg-config libwebkit2gtk-4.1-dev libxdo-dev \
             libssl-dev libayatana-appindicator3-dev librsvg2-dev
       - run: npm run check:rust:clippy
+      - run: npm run test:rust
