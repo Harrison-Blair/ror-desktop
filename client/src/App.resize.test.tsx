@@ -1,6 +1,13 @@
 import { act, fireEvent, render, screen } from "@testing-library/react";
-import { beforeEach, describe, expect, it } from "vitest";
+import { beforeEach, describe, expect, it, vi } from "vitest";
 import App from "@/App";
+
+// The notes folder lives on disk behind Tauri; these tests need an empty one.
+vi.mock("@/lib/notesApi", () => ({
+  listNotes: async () => [],
+  onNotesChanged: async () => () => {},
+  getNotesFolder: async () => ({ path: "/notes", missing: null }),
+}));
 
 function setWindowWidth(width: number) {
   Object.defineProperty(window, "innerWidth", {
@@ -18,7 +25,7 @@ function drag(handleName: string, fromX: number, toX: number) {
 }
 
 const railPanel = () =>
-  screen.getByRole("region", { name: "Session rail panel" });
+  screen.getByRole("region", { name: "Notes rail panel" });
 const sidePanel = () => screen.getByRole("complementary", { name: "Dice" });
 const toggleRailPanel = () =>
   fireEvent.click(

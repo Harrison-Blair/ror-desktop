@@ -3,6 +3,13 @@ import userEvent from "@testing-library/user-event";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import App from "@/App";
 
+// The notes folder lives on disk behind Tauri; these tests need an empty one.
+vi.mock("@/lib/notesApi", () => ({
+  listNotes: async () => [],
+  onNotesChanged: async () => () => {},
+  getNotesFolder: async () => ({ path: "/notes", missing: null }),
+}));
+
 // Every random word is 48, so each die shows (48 % sides) + 1.
 const RANDOM_WORD = 48;
 

@@ -1,29 +1,30 @@
 import { Dices, Globe, NotebookPen, Settings, Users } from "lucide-react";
-import { useEffect, useRef, useState } from "react";
+import { useCallback, useEffect, useRef, useState } from "react";
 import styles from "@/App.module.css";
 import {
   DICE_HISTORY_LENGTH,
-  DicePanel,
+  DiceMenu,
   type DiceRoll,
-} from "@/components/DicePanel/DicePanel";
-import { MainPanel } from "@/components/MainPanel/MainPanel";
+} from "@/components/menus/DiceMenu/DiceMenu";
+import {
+  NotesMenu,
+  NotesMenuActions,
+  type NotesMenuHandle,
+} from "@/components/menus/NotesMenu/NotesMenu";
+import { MainPanel } from "@/components/panels/MainPanel/MainPanel";
+import { RailPanel } from "@/components/panels/RailPanel/RailPanel";
+import { ResizeHandle } from "@/components/panels/ResizeHandle/ResizeHandle";
+import { SidePanel } from "@/components/panels/SidePanel/SidePanel";
 import { Rail, type RailItem } from "@/components/Rail/Rail";
-import { RailPanel } from "@/components/RailPanel/RailPanel";
-import { ResizeHandle } from "@/components/ResizeHandle/ResizeHandle";
-import { SidePanel } from "@/components/SidePanel/SidePanel";
 import { ToastProvider, useToast } from "@/components/Toast/Toast";
 import type { DiceResult } from "@/lib/dice";
+import { getNotesFolder } from "@/lib/notesApi";
 
 const railItems: RailItem[] = [
   { id: "session", label: "Session", icon: Users },
   { id: "world", label: "World", icon: Globe },
   { id: "notes", label: "Notes", icon: NotebookPen },
 ];
-
-const railPanelItems = [1, 2, 3, 4, 5, 6].map((n) => ({
-  id: `p${n}`,
-  label: `Panel item ${n}`,
-}));
 
 // Defaults match --rail-panel-width, --panel-width and --rail-width in tokens.css.
 const RAIL_PANEL_WIDTH = { default: 220, min: 180 };
@@ -41,19 +42,54 @@ export default function App() {
 // Inside the ToastProvider so it can raise toasts.
 function Shell() {
   const notify = useToast();
-  const [activeId, setActiveId] = useState("session");
+  const [activeId, setActiveId] = useState("notes");
   const [railPanelOpen, setRailPanelOpen] = useState(true);
-  const [railPanelItemId, setRailPanelItemId] = useState("p1");
   const [panelOpen, setPanelOpen] = useState(false);
   // Kept here so the history survives closing the Dice panel.
   const [rolls, setRolls] = useState<DiceRoll[]>([]);
   const [latestRoll, setLatestRoll] = useState<DiceRoll>();
   const nextRollId = useRef(1);
+  const notesMenu = useRef<NotesMenuHandle>(null);
+  // Kept here so the folder, open folders and the selection survive closing
+  // the rail panel.
+  const [notesFolder, setNotesFolder] = useState<string>();
+  // Stops StrictMode from asking twice for the startup folder.
+  const askedNotesFolder = useRef(false);
+  // A pick wins over a startup answer that arrives after it.
+  const pickedNotesFolder = useRef(false);
+  const [notesExpanded, setNotesExpanded] = useState<Set<string>>(
+    () => new Set(),
+  );
+  const [notesSelected, setNotesSelected] = useState<string | null>(null);
   const [railPanelWidth, setRailPanelWidth] = useState(
     RAIL_PANEL_WIDTH.default,
   );
   const [panelWidth, setPanelWidth] = useState(PANEL_WIDTH.default);
   const [windowWidth, setWindowWidth] = useState(window.innerWidth);
+
+  // Asked here, once per run, since the notes menu comes and goes.
+  useEffect(() => {
+    if (askedNotesFolder.current) return;
+    askedNotesFolder.current = true;
+    getNotesFolder().then(
+      ({ path, missing }) => {
+        if (pickedNotesFolder.current) return;
+        setNotesFolder(path);
+        if (missing !== null) {
+          notify({
+            kind: "error",
+            message: `Couldn't find ${missing}. Showing the default notes folder.`,
+          });
+        }
+      },
+      (e) => notify({ kind: "error", message: String(e) }),
+    );
+  }, [notify]);
+
+  const pickNotesFolder = useCallback((path: string) => {
+    pickedNotesFolder.current = true;
+    setNotesFolder(path);
+  }, []);
 
   useEffect(() => {
     const updateWindowWidth = () => setWindowWidth(window.innerWidth);
@@ -96,12 +132,17 @@ function Shell() {
   };
 
   const selectRailItem = (id: string) => {
+    // Only Notes is built so far.
+    if (id !== "notes") {
+      const label = railItems.find((item) => item.id === id)?.label;
+      notify({ kind: "error", message: `${label} is not implemented yet.` });
+      return;
+    }
     if (id === activeId) {
       setRailPanelOpen((open) => !open);
       return;
     }
     setActiveId(id);
-    setRailPanelItemId(railPanelItems[0].id);
     setRailPanelOpen(true);
   };
 
@@ -118,9 +159,6 @@ function Shell() {
       <RailPanel
         title={activeItem?.label ?? ""}
         open={railPanelOpen}
-        items={railPanelItems}
-        activeId={railPanelItemId}
-        onSelect={setRailPanelItemId}
         width={drawnRailPanelWidth}
         resizeHandle={
           <ResizeHandle
@@ -133,7 +171,27 @@ function Shell() {
             onReset={() => setRailPanelWidth(RAIL_PANEL_WIDTH.default)}
           />
         }
-      />
+        actions={
+          activeId === "notes" && (
+            <NotesMenuActions
+              folder={notesFolder}
+              onChooseFolder={() => notesMenu.current?.chooseFolder()}
+              onCreate={(kind) => notesMenu.current?.startCreate(kind)}
+            />
+          )
+        }
+      >
+        {activeId === "notes" && (
+          <NotesMenu
+            ref={notesMenu}
+            setFolder={pickNotesFolder}
+            expanded={notesExpanded}
+            setExpanded={setNotesExpanded}
+            selected={notesSelected}
+            setSelected={setNotesSelected}
+          />
+        )}
+      </RailPanel>
       <MainPanel />
       <SidePanel
         open={panelOpen}
@@ -152,7 +210,7 @@ function Shell() {
           />
         }
       >
-        <DicePanel
+        <DiceMenu
           rolls={rolls}
           latest={latestRoll}
           onRoll={addRoll}

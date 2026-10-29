@@ -1,7 +1,7 @@
 import { type FormEvent, Fragment, useId, useState } from "react";
 import { useToast } from "@/components/Toast/Toast";
 import { type DiceResult, parseDiceExpression, rollDice } from "@/lib/dice";
-import styles from "./DicePanel.module.css";
+import styles from "./DiceMenu.module.css";
 
 export type DiceRoll = {
   id: number;
@@ -11,7 +11,7 @@ export type DiceRoll = {
 
 export const DICE_HISTORY_LENGTH = 10;
 
-type DicePanelProps = {
+type DiceMenuProps = {
   rolls: DiceRoll[];
   latest: DiceRoll | undefined;
   onRoll: (result: DiceResult) => void;
@@ -29,12 +29,12 @@ type NotationError = { id: number; message: string };
 const errorMessage = (e: unknown) =>
   e instanceof Error ? e.message : String(e);
 
-export function DicePanel({
+export function DiceMenu({
   rolls,
   latest,
   onRoll,
   onClearHistory,
-}: DicePanelProps) {
+}: DiceMenuProps) {
   const id = useId();
   const notify = useToast();
   const [notation, setNotation] = useState("");
@@ -67,7 +67,7 @@ export function DicePanel({
   };
 
   return (
-    <div className={styles.panel}>
+    <div className={styles.menu}>
       <div className={styles.controls}>
         <button
           type="button"

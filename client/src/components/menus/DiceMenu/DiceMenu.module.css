@@ -1,5 +1,5 @@
 /* The side panel supplies the outer padding. Sections run edge to edge. */
-.panel {
+.menu {
   display: flex;
   flex-direction: column;
   margin: 0 calc(-1 * var(--space-4));
@@ -195,7 +195,7 @@
   color: var(--ink-muted);
 }
 
-.panel button:focus-visible,
+.menu button:focus-visible,
 .field:focus-visible {
   outline: 2px solid var(--focus);
   outline-offset: 2px;

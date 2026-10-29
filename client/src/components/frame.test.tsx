@@ -1,20 +1,32 @@
 import { render, screen } from "@testing-library/react";
 import { describe, expect, it } from "vitest";
+import { RailPanel } from "@/components/panels/RailPanel/RailPanel";
+import { SidePanel } from "@/components/panels/SidePanel/SidePanel";
 import { Rail } from "@/components/Rail/Rail";
-import { RailPanel } from "@/components/RailPanel/RailPanel";
-import { SidePanel } from "@/components/SidePanel/SidePanel";
 
 describe("frame components", () => {
-  it("RailPanel shows children in place of item buttons", () => {
+  it("RailPanel shows its title, header actions and children", () => {
     render(
-      <RailPanel title="Notes" items={[{ id: "a", label: "Item A" }]}>
+      <RailPanel
+        title="Notes"
+        actions={
+          <button type="button" aria-label="New note">
+            +
+          </button>
+        }
+      >
         <p>Custom body</p>
       </RailPanel>,
     );
     const railPanel = screen.getByRole("region", { name: "Notes rail panel" });
 
+    expect(
+      screen.getByRole("heading", { name: "Notes", level: 2 }),
+    ).toBeInTheDocument();
     expect(railPanel).toHaveTextContent("Custom body");
-    expect(screen.queryByRole("button")).not.toBeInTheDocument();
+    expect(
+      screen.getByRole("button", { name: "New note" }),
+    ).toBeInTheDocument();
   });
 
   it("SidePanel without onClose has no close button", () => {
@@ -44,11 +56,9 @@ describe("frame components", () => {
 
   it("RailPanel renders nothing when closed", () => {
     const { container } = render(
-      <RailPanel
-        title="Notes"
-        open={false}
-        items={[{ id: "a", label: "A" }]}
-      />,
+      <RailPanel title="Notes" open={false}>
+        Body
+      </RailPanel>,
     );
 
     expect(container).toBeEmptyDOMElement();
