@@ -7,6 +7,7 @@ import App from "@/App";
 vi.mock("@/lib/notesApi", () => ({
   listNotes: async () => [],
   onNotesChanged: async () => () => {},
+  getNotesFolder: async () => ({ path: "/notes", missing: null }),
 }));
 
 // Every random word is 48, so each die shows (48 % sides) + 1.

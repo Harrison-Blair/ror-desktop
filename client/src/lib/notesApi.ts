@@ -12,6 +12,16 @@ export type Entry = {
   children?: Entry[];
 };
 
+// `missing` is the saved folder when it was missing at startup and the
+// default folder is in use instead.
+export type NotesFolder = { path: string; missing: string | null };
+
+export const getNotesFolder = () => invoke<NotesFolder>("notes_folder");
+
+// Opens the folder picker. Resolves to the new folder, or null on Cancel.
+export const chooseNotesFolder = () =>
+  invoke<string | null>("notes_choose_folder");
+
 export const listNotes = () => invoke<Entry[]>("notes_list");
 
 export const createEntry = (parent: string, kind: EntryKind, name: string) =>

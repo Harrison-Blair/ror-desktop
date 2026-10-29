@@ -6,6 +6,7 @@ import App from "@/App";
 vi.mock("@/lib/notesApi", () => ({
   listNotes: async () => [],
   onNotesChanged: async () => () => {},
+  getNotesFolder: async () => ({ path: "/notes", missing: null }),
 }));
 
 function setWindowWidth(width: number) {

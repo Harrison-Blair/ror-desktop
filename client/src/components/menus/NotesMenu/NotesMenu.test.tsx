@@ -25,6 +25,8 @@ vi.mock("@/lib/notesApi", () => ({
   moveEntry: vi.fn(),
   deleteEntry: vi.fn(),
   onNotesChanged: vi.fn(),
+  getNotesFolder: vi.fn(),
+  chooseNotesFolder: vi.fn(),
 }));
 
 const api = vi.mocked(notesApi);
@@ -57,11 +59,18 @@ function Harness() {
   const tree = useRef<NotesMenuHandle>(null);
   const [expanded, setExpanded] = useState<Set<string>>(() => new Set());
   const [selected, setSelected] = useState<string | null>(null);
+  const [folder, setFolder] = useState<string>();
   return (
     <ToastProvider>
-      <NotesMenuActions onCreate={(kind) => tree.current?.startCreate(kind)} />
+      <NotesMenuActions
+        folder={folder}
+        onChooseFolder={() => tree.current?.chooseFolder()}
+        onCreate={(kind) => tree.current?.startCreate(kind)}
+      />
       <NotesMenu
         ref={tree}
+        folder={folder}
+        setFolder={setFolder}
         expanded={expanded}
         setExpanded={setExpanded}
         selected={selected}
@@ -96,6 +105,10 @@ const focusItem = (name: string) => act(() => item(name).focus());
 beforeEach(() => {
   vi.resetAllMocks();
   api.listNotes.mockImplementation(async () => sample());
+  api.getNotesFolder.mockResolvedValue({
+    path: "/home/x/Notes",
+    missing: null,
+  });
   api.onNotesChanged.mockImplementation(async (handler) => {
     notesChanged = handler;
     return () => {};
@@ -691,5 +704,111 @@ describe("NotesTree", () => {
       );
       expect(api.listNotes).toHaveBeenCalledTimes(2);
     });
+  });
+});
+
+describe("Notes folder", () => {
+  const otherFolder = (): Entry[] => [
+    { kind: "folder", name: "Quests", path: "Quests", children: [] },
+    { kind: "note", name: "Chicago", path: "Chicago.md" },
+  ];
+
+  it("puts Choose notes folder before New note and shows the folder in its title", async () => {
+    await renderLoaded();
+    const buttons = screen
+      .getAllByRole("button")
+      .map((button) => button.getAttribute("aria-label"));
+    expect(buttons.slice(0, 3)).toEqual([
+      "Choose notes folder",
+      "New note",
+      "New folder",
+    ]);
+    await waitFor(() =>
+      expect(
+        screen.getByRole("button", { name: "Choose notes folder" }),
+      ).toHaveAttribute("title", "Choose notes folder (/home/x/Notes)"),
+    );
+  });
+
+  it("changes nothing when the picker is cancelled", async () => {
+    const { user } = await renderLoaded();
+    await user.click(row("People"));
+    await user.click(row("Chicago"));
+    api.chooseNotesFolder.mockResolvedValue(null);
+    api.listNotes.mockImplementation(async () => otherFolder());
+    const choose = screen.getByRole("button", { name: "Choose notes folder" });
+    await waitFor(() =>
+      expect(choose).toHaveAttribute(
+        "title",
+        "Choose notes folder (/home/x/Notes)",
+      ),
+    );
+
+    await user.click(choose);
+
+    expect(api.chooseNotesFolder).toHaveBeenCalledTimes(1);
+    expect(item("People")).toHaveAttribute("aria-expanded", "true");
+    expect(item("Chicago")).toHaveAttribute("aria-selected", "true");
+    expect(screen.queryByRole("treeitem", { name: "Quests" })).toBeNull();
+    expect(choose).toHaveAttribute(
+      "title",
+      "Choose notes folder (/home/x/Notes)",
+    );
+    expect(screen.queryByRole("alert")).toBeNull();
+  });
+
+  it("reloads the tree from a picked folder and clears the selection and open folders", async () => {
+    const { user } = await renderLoaded();
+    await user.click(row("People"));
+    await user.click(row("Chicago"));
+    expect(item("Chicago")).toHaveAttribute("aria-selected", "true");
+    api.chooseNotesFolder.mockResolvedValue("/home/x/Other");
+    api.listNotes.mockImplementation(async () => otherFolder());
+
+    await user.click(
+      screen.getByRole("button", { name: "Choose notes folder" }),
+    );
+
+    await screen.findByRole("treeitem", { name: "Quests" });
+    expect(screen.queryByRole("treeitem", { name: "People" })).toBeNull();
+    // Chicago.md exists in both folders, yet it is no longer selected.
+    expect(item("Chicago")).toHaveAttribute("aria-selected", "false");
+    expect(
+      screen.getByRole("button", { name: "Choose notes folder" }),
+    ).toHaveAttribute("title", "Choose notes folder (/home/x/Other)");
+  });
+
+  it("keeps the tree when the picked folder can't be saved", async () => {
+    const { user } = await renderLoaded();
+    await user.click(row("Chicago"));
+    api.chooseNotesFolder.mockRejectedValue(
+      "Couldn't save the notes folder: Permission denied.",
+    );
+    api.listNotes.mockImplementation(async () => otherFolder());
+
+    await user.click(
+      screen.getByRole("button", { name: "Choose notes folder" }),
+    );
+
+    expect(await screen.findByRole("alert")).toHaveTextContent(
+      "Couldn't save the notes folder: Permission denied.",
+    );
+    expect(item("Chicago")).toHaveAttribute("aria-selected", "true");
+    expect(screen.queryByRole("treeitem", { name: "Quests" })).toBeNull();
+  });
+
+  it("raises a toast at startup when the saved folder is missing", async () => {
+    api.getNotesFolder.mockResolvedValue({
+      path: "/data/notes",
+      missing: "/home/x/Gone",
+    });
+    await renderLoaded();
+
+    expect(await screen.findByRole("alert")).toHaveTextContent(
+      "Couldn't find /home/x/Gone. Showing the default notes folder.",
+    );
+    expect(
+      screen.getByRole("button", { name: "Choose notes folder" }),
+    ).toHaveAttribute("title", "Choose notes folder (/data/notes)");
   });
 });

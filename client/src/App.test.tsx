@@ -8,6 +8,7 @@ import type { Entry } from "@/lib/notesApi";
 vi.mock("@/lib/notesApi", () => ({
   listNotes: async () => notesList,
   onNotesChanged: async () => () => {},
+  getNotesFolder: async () => ({ path: "/notes", missing: null }),
 }));
 
 let notesList: Entry[] = [];

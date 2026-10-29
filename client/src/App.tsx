@@ -49,7 +49,9 @@ function Shell() {
   const [latestRoll, setLatestRoll] = useState<DiceRoll>();
   const nextRollId = useRef(1);
   const notesMenu = useRef<NotesMenuHandle>(null);
-  // Kept here so open folders and the selection survive closing the rail panel.
+  // Kept here so the folder, open folders and the selection survive closing
+  // the rail panel.
+  const [notesFolder, setNotesFolder] = useState<string>();
   const [notesExpanded, setNotesExpanded] = useState<Set<string>>(
     () => new Set(),
   );
@@ -143,6 +145,8 @@ function Shell() {
         actions={
           activeId === "notes" && (
             <NotesMenuActions
+              folder={notesFolder}
+              onChooseFolder={() => notesMenu.current?.chooseFolder()}
               onCreate={(kind) => notesMenu.current?.startCreate(kind)}
             />
           )
@@ -151,6 +155,8 @@ function Shell() {
         {activeId === "notes" && (
           <NotesMenu
             ref={notesMenu}
+            folder={notesFolder}
+            setFolder={setNotesFolder}
             expanded={notesExpanded}
             setExpanded={setNotesExpanded}
             selected={notesSelected}

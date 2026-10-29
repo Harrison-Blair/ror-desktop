@@ -1,10 +1,11 @@
-import { FilePlus, FolderPlus } from "lucide-react";
+import { FilePlus, FolderOpen, FolderPlus } from "lucide-react";
 import {
   type Dispatch,
   type Ref,
   type SetStateAction,
   useCallback,
   useEffect,
+  useImperativeHandle,
   useRef,
   useState,
 } from "react";
@@ -15,9 +16,11 @@ import {
 } from "@/components/FileTree/FileTree";
 import { useToast } from "@/components/Toast/Toast";
 import {
+  chooseNotesFolder,
   createEntry,
   deleteEntry,
   type Entry,
+  getNotesFolder,
   listNotes,
   moveEntry,
   onNotesChanged,
@@ -26,7 +29,7 @@ import {
 import { deleteQuestion } from "./deleteQuestion";
 import styles from "./NotesMenu.module.css";
 
-export type NotesMenuHandle = FileTreeHandle;
+export type NotesMenuHandle = FileTreeHandle & { chooseFolder: () => void };
 
 // Shown until the first load, so the tree renders empty meanwhile.
 const NO_ENTRIES: TreeEntry[] = [];
@@ -59,12 +62,29 @@ function pathsOf(entries: TreeEntry[], paths = new Set<string>()) {
 }
 
 export function NotesMenuActions({
+  folder,
+  onChooseFolder,
   onCreate,
 }: {
+  folder: string | undefined;
+  onChooseFolder: () => void;
   onCreate: (kind: TreeEntry["kind"]) => void;
 }) {
   return (
     <>
+      <button
+        type="button"
+        className={styles.iconButton}
+        aria-label="Choose notes folder"
+        title={
+          folder === undefined
+            ? "Choose notes folder"
+            : `Choose notes folder (${folder})`
+        }
+        onClick={onChooseFolder}
+      >
+        <FolderOpen size={16} strokeWidth={1.75} aria-hidden />
+      </button>
       <button
         type="button"
         className={styles.iconButton}
@@ -87,10 +107,12 @@ export function NotesMenuActions({
   );
 }
 
-// Open folders and the selection belong to the caller, so they outlast the
-// menu when the rail panel closes.
+// The folder, open folders and the selection belong to the caller, so they
+// outlast the menu when the rail panel closes.
 export type NotesMenuProps = {
   ref?: Ref<NotesMenuHandle>;
+  folder: string | undefined;
+  setFolder: (folder: string) => void;
   expanded: Set<string>;
   setExpanded: Dispatch<SetStateAction<Set<string>>>;
   selected: string | null;
@@ -99,6 +121,8 @@ export type NotesMenuProps = {
 
 export function NotesMenu({
   ref,
+  folder,
+  setFolder,
   expanded,
   setExpanded,
   selected,
@@ -107,6 +131,9 @@ export function NotesMenu({
   const notify = useToast();
   const [entries, setEntries] = useState<TreeEntry[]>();
   const loadId = useRef(0);
+  const tree = useRef<FileTreeHandle>(null);
+  // Stops StrictMode from asking twice before the folder arrives.
+  const askedFolder = useRef(false);
 
   const load = useCallback(async () => {
     const id = ++loadId.current;
@@ -128,6 +155,47 @@ export function NotesMenu({
       unlisten.then((stop) => stop());
     };
   }, [load]);
+
+  // The folder outlasts the menu, so this runs on the first load only.
+  useEffect(() => {
+    if (folder !== undefined || askedFolder.current) return;
+    askedFolder.current = true;
+    getNotesFolder().then(
+      ({ path, missing }) => {
+        setFolder(path);
+        if (missing !== null) {
+          notify({
+            kind: "error",
+            message: `Couldn't find ${missing}. Showing the default notes folder.`,
+          });
+        }
+      },
+      (e) => notify({ kind: "error", message: errorMessage(e) }),
+    );
+  }, [folder, setFolder, notify]);
+
+  useImperativeHandle(
+    ref,
+    () => ({
+      startCreate: (kind) => tree.current?.startCreate(kind),
+      chooseFolder: async () => {
+        let path: string | null;
+        try {
+          path = await chooseNotesFolder();
+        } catch (e) {
+          notify({ kind: "error", message: errorMessage(e) });
+          return;
+        }
+        if (path === null) return;
+        // Paths in the new folder are unrelated to the old ones.
+        setFolder(path);
+        setExpanded(new Set());
+        setSelected(null);
+        load();
+      },
+    }),
+    [load, notify, setFolder, setExpanded, setSelected],
+  );
 
   // Runs after the render so that the tree has already moved the selection
   // and open folders of a renamed or moved entry to its new path.
@@ -159,7 +227,7 @@ export function NotesMenu({
 
   return (
     <FileTree
-      ref={ref}
+      ref={tree}
       label="Notes"
       labels={{ file: "note" }}
       entries={entries ?? NO_ENTRIES}
