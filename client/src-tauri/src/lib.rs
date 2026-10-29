@@ -152,6 +152,16 @@ fn notes_move(
 }
 
 #[tauri::command]
+fn notes_read(root: State<NotesRoot>, path: String) -> Result<String, NotesError> {
+    notes::read(&root.get(), &path)
+}
+
+#[tauri::command]
+fn notes_write(root: State<NotesRoot>, path: String, text: String) -> Result<(), NotesError> {
+    notes::write(&root.get(), &path, &text)
+}
+
+#[tauri::command]
 fn notes_delete(root: State<NotesRoot>, path: String) -> Result<(), NotesError> {
     notes::delete(&root.get(), &path)
 }
@@ -200,6 +210,8 @@ pub fn run() {
             notes_rename,
             notes_move,
             notes_delete,
+            notes_read,
+            notes_write,
             notes_folder,
             notes_choose_folder
         ])

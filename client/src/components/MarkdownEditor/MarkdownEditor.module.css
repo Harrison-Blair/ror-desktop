@@ -1,0 +1,124 @@
+.editor :global(.cm-editor) {
+  color: var(--ink);
+  font: 400 15px / 1.6 var(--font-sans);
+}
+
+.editor :global(.cm-editor.cm-focused) {
+  outline: none;
+}
+
+.editor :global(.cm-scroller) {
+  font-family: inherit;
+  line-height: inherit;
+}
+
+.editor :global(.cm-content) {
+  padding: var(--space-4) 0;
+  caret-color: var(--ink);
+}
+
+.editor :global(.cm-cursor) {
+  border-left-color: var(--ink);
+}
+
+.editor :global(.cm-selectionBackground),
+.editor :global(.cm-focused .cm-selectionBackground) {
+  background: var(--well);
+}
+
+.raw :global(.cm-editor) {
+  font-family: var(--font-mono);
+  font-size: 14px;
+}
+
+.h1,
+.h2,
+.h3,
+.h4,
+.h5,
+.h6 {
+  font-weight: 600;
+}
+
+.h1 {
+  font-size: 1.75em;
+}
+
+.h2 {
+  font-size: 1.45em;
+}
+
+.h3 {
+  font-size: 1.25em;
+}
+
+.h4 {
+  font-size: 1.1em;
+}
+
+.strong {
+  font-weight: 600;
+}
+
+.em {
+  font-style: italic;
+}
+
+.strike {
+  text-decoration: line-through;
+}
+
+.code,
+.codeBlock {
+  font-family: var(--font-mono);
+  font-size: 0.9em;
+}
+
+.code {
+  padding: 0 var(--space-1);
+  background: var(--raised);
+  border-radius: var(--radius-1);
+}
+
+.codeBlock {
+  background: var(--raised);
+}
+
+.link {
+  text-decoration: underline;
+  text-decoration-color: var(--ink-muted);
+}
+
+.quote {
+  padding-left: var(--space-3);
+  border-left: 3px solid var(--line-control);
+  color: var(--ink-muted);
+}
+
+.bullet {
+  color: var(--ink-muted);
+}
+
+.rule {
+  display: inline-block;
+  width: 100%;
+  vertical-align: middle;
+  border-top: 1px solid var(--line-control);
+}
+
+.table {
+  margin: var(--space-2) 0;
+  border-collapse: collapse;
+}
+
+.table th,
+.table td {
+  padding: var(--space-1) var(--space-2);
+  border: 1px solid var(--line);
+  text-align: left;
+}
+
+.table th {
+  font-weight: 600;
+  background: var(--raised);
+}

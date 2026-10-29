@@ -9,6 +9,8 @@ vi.mock("@/lib/notesApi", () => ({
   listNotes: async () => notesList,
   onNotesChanged: async () => () => {},
   getNotesFolder: async () => ({ path: "/notes", missing: null }),
+  readNote: async (path: string) => `# ${path}`,
+  writeNote: async () => {},
 }));
 
 let notesList: Entry[] = [];
@@ -173,6 +175,23 @@ describe("App frame", () => {
     expect(
       screen.getByRole("button", { name: "Hide rail panel" }),
     ).toBeInTheDocument();
+  });
+
+  it("opens the selected note in the main panel", async () => {
+    notesList = [{ kind: "file", name: "Ada.md", path: "Ada.md" }];
+    const user = renderApp();
+    expect(screen.getByRole("main")).toHaveTextContent("No note open");
+
+    await user.click(
+      (await screen.findByRole("treeitem", { name: "Ada.md" }))
+        .firstElementChild as HTMLElement,
+    );
+
+    expect(
+      await within(screen.getByRole("main")).findByRole("textbox", {
+        name: "Ada.md",
+      }),
+    ).toHaveTextContent(/^Ada\.md$/);
   });
 
   it("keeps open folders and the selection after the rail panel closes and reopens", async () => {

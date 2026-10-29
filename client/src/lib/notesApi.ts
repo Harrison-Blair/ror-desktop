@@ -33,6 +33,13 @@ export const renameEntry = (path: string, newName: string) =>
 export const moveEntry = (path: string, newParent: string) =>
   invoke<string>("notes_move", { path, newParent });
 
+export const readNote = (path: string) =>
+  invoke<string>("notes_read", { path });
+
+// Replaces the file's text. It never creates a file.
+export const writeNote = (path: string, text: string) =>
+  invoke<void>("notes_write", { path, text });
+
 export const deleteEntry = (path: string) =>
   invoke<void>("notes_delete", { path });
 

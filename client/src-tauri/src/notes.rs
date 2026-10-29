@@ -291,6 +291,41 @@ pub fn move_item(root: &Path, path: &str, new_parent: &str) -> Result<String> {
     Ok(join(new_parent, name))
 }
 
+fn resolve_file(root: &Path, rel: &str) -> Result<PathBuf> {
+    match resolve_item(root, rel)? {
+        (abs, Kind::File) => Ok(abs),
+        (_, Kind::Folder) => Err(err(
+            Code::NotFound,
+            format!("“{}” isn't a file.", last_segment(rel)),
+        )),
+    }
+}
+
+pub fn read(root: &Path, path: &str) -> Result<String> {
+    let abs = resolve_file(root, path)?;
+    let name = last_segment(path);
+    let bytes = fs::read(&abs).map_err(|e| io_err("read", name, e))?;
+    String::from_utf8(bytes).map_err(|_| {
+        err(
+            Code::Io,
+            format!("Couldn't read “{name}”: it isn't UTF-8 text."),
+        )
+    })
+}
+
+pub fn write(root: &Path, path: &str, text: &str) -> Result<()> {
+    let abs = resolve_file(root, path)?;
+    let name = last_segment(path);
+    // Writes beside the file and renames over it, so a failed write keeps the
+    // old text. The dot keeps the temp file out of the list.
+    let temp = abs.with_file_name(format!(".{name}.tmp"));
+    let result = fs::write(&temp, text).and_then(|()| fs::rename(&temp, &abs));
+    if result.is_err() {
+        let _ = fs::remove_file(&temp);
+    }
+    result.map_err(|e| io_err("save", name, e))
+}
+
 pub fn delete(root: &Path, path: &str) -> Result<()> {
     let (abs, _) = resolve_item(root, path)?;
     trash::delete(&abs).map_err(|e| {
@@ -848,6 +883,98 @@ mod tests {
         assert_eq!(move_item(r, "n.md", "Lore").unwrap(), "Lore/n.md");
         assert!(r.join("Lore/n.md").is_file());
         assert!(!r.join("n.md").exists());
+    }
+
+    #[test]
+    fn write_then_read_round_trips_the_text() {
+        let dir = root();
+        let r = dir.path();
+        mkdir(r, "Lore");
+        touch(r, "Lore/plot.md");
+        let text = "# Plot\n\nÜnïcode — “quotes”\n";
+        write(r, "Lore/plot.md", text).unwrap();
+        assert_eq!(read(r, "Lore/plot.md").unwrap(), text);
+        assert_eq!(fs::read_to_string(r.join("Lore/plot.md")).unwrap(), text);
+    }
+
+    #[test]
+    fn an_empty_file_reads_and_writes_as_empty_text() {
+        let dir = root();
+        let r = dir.path();
+        touch(r, "a.md");
+        assert_eq!(read(r, "a.md").unwrap(), "");
+        fs::write(r.join("b.md"), "old").unwrap();
+        write(r, "b.md", "").unwrap();
+        assert_eq!(fs::read(r.join("b.md")).unwrap(), b"");
+    }
+
+    #[test]
+    fn a_write_keeps_siblings_and_leaves_no_temp_file() {
+        let dir = root();
+        let r = dir.path();
+        fs::write(r.join("a.md"), "old").unwrap();
+        fs::write(r.join("b.md"), "sibling").unwrap();
+        write(r, "a.md", "new").unwrap();
+        let mut names: Vec<String> = fs::read_dir(r)
+            .unwrap()
+            .map(|e| e.unwrap().file_name().to_string_lossy().into_owned())
+            .collect();
+        names.sort();
+        assert_eq!(names, ["a.md", "b.md"]);
+        assert_eq!(fs::read_to_string(r.join("b.md")).unwrap(), "sibling");
+        assert_eq!(fs::read_to_string(r.join("a.md")).unwrap(), "new");
+    }
+
+    #[test]
+    fn read_and_write_refuse_folders_outside_paths_and_missing_files() {
+        let dir = root();
+        let r = dir.path().join("notes");
+        mkdir(&r, "Lore");
+        fs::write(dir.path().join("outside.md"), "secret").unwrap();
+        for path in ["Lore", "../outside.md", "", "gone.md"] {
+            assert_eq!(read(&r, path).unwrap_err().code, Code::NotFound, "{path:?}");
+            assert_eq!(
+                write(&r, path, "x").unwrap_err().code,
+                Code::NotFound,
+                "{path:?}"
+            );
+        }
+        assert_eq!(
+            read(&r, "Lore").unwrap_err().message,
+            "“Lore” isn't a file."
+        );
+        assert_eq!(
+            fs::read_to_string(dir.path().join("outside.md")).unwrap(),
+            "secret"
+        );
+        assert!(!r.join("gone.md").exists());
+    }
+
+    #[cfg(unix)]
+    #[test]
+    fn read_and_write_refuse_symlinks() {
+        let dir = root();
+        let r = dir.path().join("notes");
+        mkdir(&r, "");
+        fs::write(dir.path().join("target.md"), "secret").unwrap();
+        std::os::unix::fs::symlink(dir.path().join("target.md"), r.join("link.md")).unwrap();
+        assert_eq!(read(&r, "link.md").unwrap_err().code, Code::NotFound);
+        assert_eq!(write(&r, "link.md", "x").unwrap_err().code, Code::NotFound);
+        assert_eq!(
+            fs::read_to_string(dir.path().join("target.md")).unwrap(),
+            "secret"
+        );
+        assert!(r.join("link.md").is_symlink());
+    }
+
+    #[test]
+    fn read_refuses_text_that_is_not_utf8() {
+        let dir = root();
+        let r = dir.path();
+        fs::write(r.join("bin.md"), b"ok \xff\xfe").unwrap();
+        let e = read(r, "bin.md").unwrap_err();
+        assert_eq!(e.code, Code::Io);
+        assert_eq!(e.message, "Couldn't read “bin.md”: it isn't UTF-8 text.");
     }
 
     #[test]

@@ -6,6 +6,7 @@ import {
   DiceMenu,
   type DiceRoll,
 } from "@/components/menus/DiceMenu/DiceMenu";
+import { EditorMenu } from "@/components/menus/EditorMenu/EditorMenu";
 import {
   NotesMenu,
   NotesMenuActions,
@@ -192,7 +193,9 @@ function Shell() {
           />
         )}
       </RailPanel>
-      <MainPanel />
+      <MainPanel>
+        <EditorMenu path={notesSelected} />
+      </MainPanel>
       <SidePanel
         open={panelOpen}
         onClose={() => setPanelOpen(false)}
