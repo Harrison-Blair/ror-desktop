@@ -9,6 +9,10 @@ type SidePanelProps = {
   children?: ReactNode;
   width?: number;
   resizeHandle?: ReactNode;
+  // Buttons shown in the header before Close.
+  actions?: ReactNode;
+  // The body fills the panel without padding and scrolls on its own.
+  fill?: boolean;
 };
 
 export function SidePanel({
@@ -18,27 +22,32 @@ export function SidePanel({
   children,
   width,
   resizeHandle,
+  actions,
+  fill = false,
 }: SidePanelProps) {
   const titleId = useId();
   if (!open) return null;
 
   return (
     <aside className={styles.panel} aria-labelledby={titleId} style={{ width }}>
-      <div className={styles.scroll}>
+      <div className={fill ? `${styles.scroll} ${styles.fill}` : styles.scroll}>
         <div className={styles.head}>
           <h2 id={titleId} className={styles.title}>
             {title}
           </h2>
-          {onClose && (
-            <button
-              type="button"
-              className={styles.close}
-              aria-label={`Close ${title}`}
-              onClick={onClose}
-            >
-              <X size={16} strokeWidth={1.75} aria-hidden />
-            </button>
-          )}
+          <div className={styles.tools}>
+            {actions}
+            {onClose && (
+              <button
+                type="button"
+                className={styles.close}
+                aria-label={`Close ${title}`}
+                onClick={onClose}
+              >
+                <X size={16} strokeWidth={1.75} aria-hidden />
+              </button>
+            )}
+          </div>
         </div>
         <div className={styles.body}>{children}</div>
       </div>

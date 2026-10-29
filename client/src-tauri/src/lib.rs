@@ -1,5 +1,7 @@
+mod chat;
 mod config;
 mod notes;
+mod secrets;
 
 use notes::{Entry, Kind, NotesError};
 use notify_debouncer_mini::{
@@ -223,6 +225,7 @@ pub fn run() {
 
             app.manage(NotesRoot(Mutex::new(start.root)));
             app.manage(MissingNotesDir(start.missing));
+            app.manage(chat::ChatState::new());
             Ok(())
         })
         .invoke_handler(tauri::generate_handler![
@@ -235,7 +238,17 @@ pub fn run() {
             notes_write,
             notes_folder,
             notes_choose_folder,
-            open_web_link
+            open_web_link,
+            chat::chat_settings,
+            chat::chat_set_model,
+            chat::chat_set_permission_mode,
+            chat::key_saved,
+            chat::key_save,
+            chat::chat_models,
+            chat::chat_latest,
+            chat::chat_send,
+            chat::chat_tool_result,
+            chat::chat_stop
         ])
         .run(tauri::generate_context!())
         .expect("error while running Ror Desktop");

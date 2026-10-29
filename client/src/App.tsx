@@ -1,6 +1,18 @@
-import { Dices, Globe, NotebookPen, Settings, Users } from "lucide-react";
+import {
+  Dices,
+  Globe,
+  MessageSquare,
+  NotebookPen,
+  Settings,
+  Users,
+} from "lucide-react";
 import { useCallback, useEffect, useRef, useState } from "react";
 import styles from "@/App.module.css";
+import {
+  ChatMenu,
+  ChatMenuActions,
+} from "@/components/menus/ChatMenu/ChatMenu";
+import { useChat } from "@/components/menus/ChatMenu/useChat";
 import {
   DICE_HISTORY_LENGTH,
   DiceMenu,
@@ -35,6 +47,9 @@ const RAIL_PANEL_WIDTH = { default: 220, min: 180 };
 const PANEL_WIDTH = { default: 360, min: 280 };
 const RAIL_WIDTH = 52;
 
+// Chat and Dice share the side panel.
+type SidePanelId = "chat" | "dice";
+
 export default function App() {
   return (
     <ToastProvider>
@@ -48,7 +63,8 @@ function Shell() {
   const notify = useToast();
   const [activeId, setActiveId] = useState("notes");
   const [railPanelOpen, setRailPanelOpen] = useState(true);
-  const [panelOpen, setPanelOpen] = useState(false);
+  const [sidePanel, setSidePanel] = useState<SidePanelId | null>(null);
+  const panelOpen = sidePanel !== null;
   // Kept here so the history survives closing the Dice panel.
   const [rolls, setRolls] = useState<DiceRoll[]>([]);
   const [latestRoll, setLatestRoll] = useState<DiceRoll>();
@@ -71,6 +87,16 @@ function Shell() {
   );
   const [panelWidth, setPanelWidth] = useState(PANEL_WIDTH.default);
   const [windowWidth, setWindowWidth] = useState(window.innerWidth);
+  const chat = useChat({
+    openNote: notesSelected?.toLowerCase().endsWith(".md")
+      ? notesSelected
+      : null,
+  });
+  const loadChat = chat.load;
+
+  useEffect(() => {
+    if (sidePanel === "chat") loadChat();
+  }, [sidePanel, loadChat]);
 
   // Asked here, once per run, since the notes menu comes and goes.
   useEffect(() => {
@@ -111,13 +137,24 @@ function Shell() {
   const drawnRailPanelWidth = clampWidth(railPanelWidth, RAIL_PANEL_WIDTH.min);
   const drawnPanelWidth = clampWidth(panelWidth, PANEL_WIDTH.min);
 
+  // Clicking the open panel's button closes the panel.
+  const toggleSidePanel = (id: SidePanelId) =>
+    setSidePanel((open) => (open === id ? null : id));
+
   const bottomItems: RailItem[] = [
+    {
+      id: "chat",
+      label: "Chat",
+      icon: MessageSquare,
+      pressed: sidePanel === "chat",
+      onClick: () => toggleSidePanel("chat"),
+    },
     {
       id: "dice",
       label: "Dice",
       icon: Dices,
-      pressed: panelOpen,
-      onClick: () => setPanelOpen((open) => !open),
+      pressed: sidePanel === "dice",
+      onClick: () => toggleSidePanel("dice"),
     },
     {
       id: "settings",
@@ -210,8 +247,22 @@ function Shell() {
       </MainPanel>
       <SidePanel
         open={panelOpen}
-        onClose={() => setPanelOpen(false)}
-        title="Dice"
+        onClose={() => setSidePanel(null)}
+        title={sidePanel === "chat" ? "Chat" : "Dice"}
+        fill={sidePanel === "chat"}
+        actions={
+          sidePanel === "chat" && (
+            <ChatMenuActions
+              onHistory={() =>
+                notify({
+                  kind: "error",
+                  message: "Chat history is not implemented yet.",
+                })
+              }
+              onNewChat={chat.newChat}
+            />
+          )
+        }
         width={drawnPanelWidth}
         resizeHandle={
           <ResizeHandle
@@ -225,12 +276,16 @@ function Shell() {
           />
         }
       >
-        <DiceMenu
-          rolls={rolls}
-          latest={latestRoll}
-          onRoll={addRoll}
-          onClearHistory={() => setRolls([])}
-        />
+        {sidePanel === "chat" ? (
+          <ChatMenu chat={chat} />
+        ) : (
+          <DiceMenu
+            rolls={rolls}
+            latest={latestRoll}
+            onRoll={addRoll}
+            onClearHistory={() => setRolls([])}
+          />
+        )}
       </SidePanel>
     </div>
   );

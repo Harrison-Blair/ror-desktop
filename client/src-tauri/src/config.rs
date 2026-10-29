@@ -2,11 +2,80 @@ use serde::{Deserialize, Serialize};
 use std::fs;
 use std::io;
 use std::path::{Path, PathBuf};
+use std::sync::Mutex;
 
 #[derive(Default, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]
-struct Config {
-    notes_dir: Option<PathBuf>,
+pub struct Config {
+    #[serde(default)]
+    pub notes_dir: Option<PathBuf>,
+    /// The last model chosen in the chat panel.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub chat_model: Option<String>,
+    #[serde(default)]
+    pub permission_mode: PermissionMode,
+}
+
+/// Whether the chat agent asks before it runs a write tool.
+#[derive(Default, Clone, Copy, Debug, PartialEq, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub enum PermissionMode {
+    #[default]
+    Manual,
+    Auto,
+}
+
+// Updates read, change and write the whole file, so they run one at a time.
+static UPDATE: Mutex<()> = Mutex::new(());
+
+/// Reads the config. A missing file counts as the defaults. A file that
+/// can't be read or parsed is an error.
+fn read(config_file: &Path) -> io::Result<Config> {
+    let text = match fs::read_to_string(config_file) {
+        Ok(text) => text,
+        Err(e) if e.kind() == io::ErrorKind::NotFound => return Ok(Config::default()),
+        Err(e) => return Err(e),
+    };
+    let invalid = |e: String| {
+        io::Error::new(
+            io::ErrorKind::InvalidData,
+            format!("{} is not a valid config ({e})", config_file.display()),
+        )
+    };
+    // serde would also read a struct from an array, which is not a config.
+    match serde_json::from_str::<serde_json::Value>(&text) {
+        Ok(value) if value.is_object() => {
+            serde_json::from_value(value).map_err(|e| invalid(e.to_string()))
+        }
+        Ok(_) => Err(invalid("not a JSON object".to_string())),
+        Err(e) => Err(invalid(e.to_string())),
+    }
+}
+
+/// Reads the config. A missing or unreadable file counts as the defaults.
+pub fn load(config_file: &Path) -> Config {
+    read(config_file).unwrap_or_default()
+}
+
+/// Changes the saved config and keeps the other settings. A config file that
+/// can't be read or parsed is left as it is, so its settings can be
+/// recovered, and the update fails.
+pub fn update(config_file: &Path, change: impl FnOnce(&mut Config)) -> io::Result<()> {
+    let _guard = UPDATE.lock().unwrap_or_else(|e| e.into_inner());
+    let mut config = read(config_file)?;
+    change(&mut config);
+    let text = serde_json::to_string_pretty(&config).map_err(io::Error::other)?;
+    if let Some(parent) = config_file.parent() {
+        fs::create_dir_all(parent)?;
+    }
+    // Writes beside the config and renames over it, so a failed write keeps
+    // the previous settings.
+    let temp = config_file.with_extension("json.tmp");
+    let result = fs::write(&temp, text).and_then(|()| fs::rename(&temp, config_file));
+    if result.is_err() {
+        let _ = fs::remove_file(&temp);
+    }
+    result
 }
 
 pub struct NotesStart {
@@ -18,11 +87,7 @@ pub struct NotesStart {
 /// Picks the notes folder for this run. A saved folder that is missing falls
 /// back to `default` and leaves the config file as it is.
 pub fn notes_start(config_file: &Path, default: &Path) -> io::Result<NotesStart> {
-    // A missing or unreadable file counts as no saved folder.
-    let saved = fs::read_to_string(config_file)
-        .ok()
-        .and_then(|text| serde_json::from_str::<Config>(&text).ok())
-        .and_then(|config| config.notes_dir);
+    let saved = load(config_file).notes_dir;
     match saved {
         Some(dir) if dir.is_dir() => Ok(NotesStart {
             root: dir,
@@ -39,21 +104,9 @@ pub fn notes_start(config_file: &Path, default: &Path) -> io::Result<NotesStart>
 }
 
 pub fn save_notes_dir(config_file: &Path, dir: &Path) -> io::Result<()> {
-    let config = Config {
-        notes_dir: Some(dir.to_path_buf()),
-    };
-    let text = serde_json::to_string_pretty(&config).map_err(io::Error::other)?;
-    if let Some(parent) = config_file.parent() {
-        fs::create_dir_all(parent)?;
-    }
-    // Writes beside the config and renames over it, so a failed write keeps
-    // the previous choice.
-    let temp = config_file.with_extension("json.tmp");
-    let result = fs::write(&temp, text).and_then(|()| fs::rename(&temp, config_file));
-    if result.is_err() {
-        let _ = fs::remove_file(&temp);
-    }
-    result
+    update(config_file, |config| {
+        config.notes_dir = Some(dir.to_path_buf())
+    })
 }
 
 #[cfg(test)]
@@ -145,9 +198,68 @@ mod tests {
         save_notes_dir(&dirs.config_file, &dirs.other).unwrap();
         let saved: serde_json::Value =
             serde_json::from_str(&fs::read_to_string(&dirs.config_file).unwrap()).unwrap();
-        assert_eq!(saved, serde_json::json!({ "notesDir": dirs.other }));
+        assert_eq!(
+            saved,
+            serde_json::json!({ "notesDir": dirs.other, "permissionMode": "manual" })
+        );
         let start = notes_start(&dirs.config_file, &dirs.default).unwrap();
         assert_eq!(start.root, dirs.other);
         assert_eq!(start.missing, None);
+    }
+
+    #[test]
+    fn chat_settings_default_to_manual_and_no_model() {
+        let dirs = dirs();
+        let config = load(&dirs.config_file);
+        assert_eq!(config.permission_mode, PermissionMode::Manual);
+        assert_eq!(config.chat_model, None);
+    }
+
+    #[test]
+    fn an_update_keeps_the_other_settings() {
+        let dirs = dirs();
+        save_notes_dir(&dirs.config_file, &dirs.other).unwrap();
+        update(&dirs.config_file, |c| c.chat_model = Some("glm-5.3".into())).unwrap();
+        update(&dirs.config_file, |c| {
+            c.permission_mode = PermissionMode::Auto
+        })
+        .unwrap();
+        let saved: serde_json::Value =
+            serde_json::from_str(&fs::read_to_string(&dirs.config_file).unwrap()).unwrap();
+        assert_eq!(
+            saved,
+            serde_json::json!({
+                "notesDir": dirs.other,
+                "chatModel": "glm-5.3",
+                "permissionMode": "auto"
+            })
+        );
+        assert!(!dirs.config_file.with_extension("json.tmp").exists());
+    }
+
+    #[test]
+    fn an_update_leaves_a_config_it_cant_parse_as_it_is() {
+        for text in ["{ not json", "[]", r#"{ "notesDir": 3 }"#] {
+            let dirs = dirs();
+            write_config(&dirs, text);
+            let result = update(&dirs.config_file, |c| c.chat_model = Some("glm-5.3".into()));
+            assert_eq!(
+                result.unwrap_err().kind(),
+                io::ErrorKind::InvalidData,
+                "{text}"
+            );
+            assert_eq!(fs::read_to_string(&dirs.config_file).unwrap(), text);
+            assert!(save_notes_dir(&dirs.config_file, &dirs.other).is_err());
+            assert_eq!(fs::read_to_string(&dirs.config_file).unwrap(), text);
+        }
+    }
+
+    #[test]
+    fn an_update_fails_when_the_config_cant_be_read() {
+        let dirs = dirs();
+        // A folder where the file should be can't be read as a file.
+        fs::create_dir_all(dirs.config_file.join("inside")).unwrap();
+        assert!(update(&dirs.config_file, |c| c.chat_model = Some("m".into())).is_err());
+        assert!(dirs.config_file.join("inside").is_dir());
     }
 }

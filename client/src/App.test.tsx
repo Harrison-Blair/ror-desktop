@@ -66,7 +66,7 @@ function renderApp() {
 }
 
 describe("App frame", () => {
-  it("shows the Session, World and Notes tabs in order, then Dice and Settings at the bottom", () => {
+  it("shows the Session, World and Notes tabs in order, then Chat, Dice and Settings at the bottom", () => {
     renderApp();
     const rail = screen.getByRole("navigation", { name: "Main" });
     const railButtons = within(rail)
@@ -78,6 +78,7 @@ describe("App frame", () => {
       "Session",
       "World",
       "Notes",
+      "Chat",
       "Dice",
       "Settings",
     ]);

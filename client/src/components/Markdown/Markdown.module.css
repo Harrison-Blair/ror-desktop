@@ -1,0 +1,96 @@
+.markdown {
+  min-width: 0;
+  color: var(--ink);
+  font: 400 14px / 20px var(--font-sans);
+  overflow-wrap: anywhere;
+}
+
+.markdown > :first-child {
+  margin-top: 0;
+}
+
+.markdown > :last-child {
+  margin-bottom: 0;
+}
+
+.markdown p,
+.markdown ul,
+.markdown ol,
+.markdown pre,
+.markdown blockquote,
+.markdown table {
+  margin: 0 0 var(--space-2);
+}
+
+.markdown li > p {
+  margin: 0;
+}
+
+.markdown ul,
+.markdown ol {
+  padding-left: var(--space-5);
+}
+
+.markdown h3,
+.markdown h4,
+.markdown h5,
+.markdown h6 {
+  margin: var(--space-3) 0 var(--space-1);
+  font: 600 14px / 20px var(--font-sans);
+}
+
+.markdown h3 {
+  font-size: 16px;
+}
+
+.markdown code {
+  font: 400 13px / 18px var(--font-mono);
+}
+
+.markdown :not(pre) > code {
+  padding: 0 3px;
+  background: var(--well);
+  border-radius: var(--radius-1);
+}
+
+.markdown pre {
+  padding: var(--space-2);
+  overflow-x: auto;
+  background: var(--ground);
+  border: 1px solid var(--line);
+  border-radius: var(--radius-1);
+}
+
+.markdown blockquote {
+  padding-left: var(--space-3);
+  color: var(--ink-muted);
+  border-left: 2px solid var(--line-control);
+}
+
+.markdown a {
+  color: var(--ink);
+  text-decoration: underline;
+  cursor: pointer;
+}
+
+.markdown a:focus-visible {
+  outline: 2px solid var(--focus);
+  outline-offset: 2px;
+}
+
+.markdown hr {
+  margin: var(--space-3) 0;
+  border: 0;
+  border-top: 1px solid var(--line);
+}
+
+.markdown table {
+  border-collapse: collapse;
+}
+
+.markdown th,
+.markdown td {
+  padding: var(--space-1) var(--space-2);
+  text-align: left;
+  border: 1px solid var(--line);
+}
