@@ -1,10 +1,10 @@
-import type { Entry } from "@/lib/notesApi";
+import type { TreeEntry } from "@/components/FileTree/FileTree";
 
-function countInside(entry: Entry) {
+function countInside(entry: TreeEntry) {
   let notes = 0;
   let folders = 0;
   for (const child of entry.children ?? []) {
-    if (child.kind === "note") notes++;
+    if (child.kind === "file") notes++;
     else {
       folders++;
       const inner = countInside(child);
@@ -18,7 +18,7 @@ function countInside(entry: Entry) {
 const plural = (count: number, word: string) =>
   `${count} ${word}${count === 1 ? "" : "s"}`;
 
-export function deleteQuestion(entry: Entry) {
+export function deleteQuestion(entry: TreeEntry) {
   const { notes, folders } = countInside(entry);
   const parts = [
     notes > 0 && plural(notes, "note"),

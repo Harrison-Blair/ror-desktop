@@ -17,7 +17,6 @@ import {
   type PointerEvent,
   type Ref,
   type SetStateAction,
-  useCallback,
   useEffect,
   useId,
   useImperativeHandle,
@@ -30,30 +29,29 @@ import {
   type ContextMenuItem,
 } from "@/components/ContextMenu/ContextMenu";
 import { useToast } from "@/components/Toast/Toast";
-import {
-  createEntry,
-  deleteEntry,
-  type Entry,
-  type EntryKind,
-  listNotes,
-  moveEntry,
-  onNotesChanged,
-  renameEntry,
-} from "@/lib/notesApi";
-import { deleteQuestion } from "./deleteQuestion";
-import styles from "./NotesTree.module.css";
+import styles from "./FileTree.module.css";
 
-export type NotesTreeHandle = { startCreate: (kind: EntryKind) => void };
+// Paths are "/"-separated and "" is the top level.
+export type TreeEntry = {
+  kind: "folder" | "file";
+  name: string;
+  path: string;
+  children?: TreeEntry[];
+};
+
+type EntryKind = TreeEntry["kind"];
+
+export type FileTreeHandle = { startCreate: (kind: EntryKind) => void };
 
 type Editing = { kind: EntryKind; value: string; error: string | null } & (
   | { mode: "create"; parent: string }
   | { mode: "rename"; path: string; name: string }
 );
 
-type Row = { entry: Entry; level: number; parent: string };
+type Row = { entry: TreeEntry; level: number; parent: string };
 
 type Drag = {
-  entry: Entry;
+  entry: TreeEntry;
   x: number;
   y: number;
   target: string | null;
@@ -87,7 +85,7 @@ const isNameError = (e: unknown) =>
   (e.code === "invalid_name" || e.code === "name_taken");
 
 function visibleRows(
-  entries: Entry[],
+  entries: TreeEntry[],
   expanded: Set<string>,
   level = 1,
   parent = "",
@@ -101,7 +99,10 @@ function visibleRows(
   return rows;
 }
 
-function entriesByPath(entries: Entry[], map = new Map<string, Entry>()) {
+function entriesByPath(
+  entries: TreeEntry[],
+  map = new Map<string, TreeEntry>(),
+) {
   for (const entry of entries) {
     map.set(entry.path, entry);
     entriesByPath(entry.children ?? [], map);
@@ -109,59 +110,58 @@ function entriesByPath(entries: Entry[], map = new Map<string, Entry>()) {
   return map;
 }
 
-export function NotesTreeActions({
-  onCreate,
-}: {
-  onCreate: (kind: EntryKind) => void;
-}) {
-  return (
-    <>
-      <button
-        type="button"
-        className={styles.iconButton}
-        aria-label="New note"
-        title="New note"
-        onClick={() => onCreate("note")}
-      >
-        <FilePlus size={16} strokeWidth={1.75} aria-hidden />
-      </button>
-      <button
-        type="button"
-        className={styles.iconButton}
-        aria-label="New folder"
-        title="New folder"
-        onClick={() => onCreate("folder")}
-      >
-        <FolderPlus size={16} strokeWidth={1.75} aria-hidden />
-      </button>
-    </>
-  );
-}
-
-// Open folders and the selection belong to the caller, so they outlast the
-// tree when the rail panel closes.
-export type NotesTreeProps = {
-  ref?: Ref<NotesTreeHandle>;
+// The entries, open folders and selection belong to the caller, so they
+// outlast the tree when its panel closes. The caller drops open folders and
+// a selection that are no longer in the entries.
+export type FileTreeProps = {
+  ref?: Ref<FileTreeHandle>;
+  label: string;
+  // The word for a file in menus and labels, such as "note".
+  labels: { file: string };
+  entries: TreeEntry[];
   expanded: Set<string>;
   setExpanded: Dispatch<SetStateAction<Set<string>>>;
   selected: string | null;
   setSelected: Dispatch<SetStateAction<string | null>>;
+  // Create, rename and move resolve to the entry's new path. A rejection
+  // whose code is "invalid_name" or "name_taken" shows under the name box;
+  // any other rejection raises a toast.
+  onCreate: (parent: string, kind: EntryKind, name: string) => Promise<string>;
+  onRename: (path: string, newName: string) => Promise<string>;
+  onMove: (path: string, newParent: string) => Promise<string>;
+  onDelete: (path: string) => Promise<void>;
+  confirmDelete: (entry: TreeEntry) => {
+    title: string;
+    message: string;
+    confirmLabel: string;
+  };
 };
 
-export function NotesTree({
+export function FileTree({
   ref,
+  label,
+  labels,
+  entries,
   expanded,
   setExpanded,
   selected,
   setSelected,
-}: NotesTreeProps) {
+  onCreate,
+  onRename,
+  onMove,
+  onDelete,
+  confirmDelete,
+}: FileTreeProps) {
   const notify = useToast();
   const errorId = useId();
-  const [entries, setEntries] = useState<Entry[]>([]);
   const [focused, setFocused] = useState<string | null>(null);
   const [editing, setEditingState] = useState<Editing | null>(null);
-  const [menu, setMenu] = useState<{ entry: Entry; x: number; y: number }>();
-  const [deleting, setDeleting] = useState<Entry>();
+  const [menu, setMenu] = useState<{
+    entry: TreeEntry;
+    x: number;
+    y: number;
+  }>();
+  const [deleting, setDeleting] = useState<TreeEntry>();
   const [drag, setDrag] = useState<Drag>();
   // Read by name box handlers that can fire before a re-render, such as a
   // blur right after Esc.
@@ -169,7 +169,6 @@ export function NotesTree({
   const saving = useRef(false);
   // Counts edits so a save that resolves late can tell it is out of date.
   const editSession = useRef(0);
-  const loadId = useRef(0);
   const rowRefs = useRef(new Map<string, HTMLDivElement>());
   // A row to focus once it is rendered, if focus would otherwise be lost.
   const pendingFocus = useRef<string | null>(null);
@@ -185,20 +184,8 @@ export function NotesTree({
     setEditing(value);
   };
 
-  const load = useCallback(async () => {
-    const id = ++loadId.current;
-    let list: Entry[];
-    try {
-      list = await listNotes();
-    } catch (e) {
-      notify({ kind: "error", message: errorMessage(e) });
-      return;
-    }
-    if (id !== loadId.current) return;
-    const paths = entriesByPath(list);
-    const keep = (path: string | null) =>
-      path !== null && paths.has(path) ? path : null;
-    setEntries(list);
+  useEffect(() => {
+    const paths = entriesByPath(entries);
     // An edit whose row or target folder is gone can never be saved.
     const edit = editingRef.current;
     const lost =
@@ -212,20 +199,10 @@ export function NotesTree({
       editSession.current++;
       editingRef.current = null;
       setEditingState(null);
-      pendingFocus.current = survivor || (list[0]?.path ?? null);
+      pendingFocus.current = survivor || (entries[0]?.path ?? null);
     }
-    setExpanded((prev) => new Set([...prev].filter((p) => paths.has(p))));
-    setSelected(keep);
-    setFocused(keep);
-  }, [notify, setExpanded, setSelected]);
-
-  useEffect(() => {
-    load();
-    const unlisten = onNotesChanged(load);
-    return () => {
-      unlisten.then((stop) => stop());
-    };
-  }, [load]);
+    setFocused((path) => (path !== null && paths.has(path) ? path : null));
+  }, [entries]);
 
   useEffect(() => {
     const path = pendingFocus.current;
@@ -274,7 +251,7 @@ export function NotesTree({
     setFocused((p) => p && remapPath(p, from, to));
   };
 
-  const activate = (entry: Entry) => {
+  const activate = (entry: TreeEntry) => {
     setSelected(entry.path);
     if (entry.kind === "folder") toggle(entry.path);
   };
@@ -300,7 +277,7 @@ export function NotesTree({
 
   useImperativeHandle(ref, () => ({ startCreate }));
 
-  const startRename = (entry: Entry) =>
+  const startRename = (entry: TreeEntry) =>
     beginEdit({
       mode: "rename",
       path: entry.path,
@@ -339,14 +316,13 @@ export function NotesTree({
     try {
       const path =
         edit.mode === "create"
-          ? await createEntry(edit.parent, edit.kind, edit.value)
-          : await renameEntry(edit.path, edit.value);
+          ? await onCreate(edit.parent, edit.kind, edit.value)
+          : await onRename(edit.path, edit.value);
       if (edit.mode === "rename") remapAll(edit.path, path);
       if (stillEditing()) {
         if (edit.mode === "create") setSelected(path);
         finishEdit(path);
       }
-      load();
     } catch (e) {
       const current = editingRef.current;
       if (isNameError(e)) {
@@ -356,14 +332,13 @@ export function NotesTree({
         if (stillEditing())
           finishEdit(edit.mode === "rename" ? edit.path : focused);
         notify({ kind: "error", message: errorMessage(e) });
-        load();
       }
     } finally {
       saving.current = false;
     }
   };
 
-  const confirmDelete = async (entry: Entry) => {
+  const deleteNow = async (entry: TreeEntry) => {
     const index = rows.findIndex((row) => row.entry.path === entry.path);
     const level = rows[index]?.level ?? 0;
     const next =
@@ -372,16 +347,15 @@ export function NotesTree({
     setDeleting(undefined);
     returnFocusTo(next?.entry.path ?? null);
     try {
-      await deleteEntry(entry.path);
+      await onDelete(entry.path);
     } catch (e) {
       notify({ kind: "error", message: errorMessage(e) });
     }
-    load();
   };
 
-  const moveInto = async (entry: Entry, parent: string) => {
+  const moveInto = async (entry: TreeEntry, parent: string) => {
     try {
-      const path = await moveEntry(entry.path, parent);
+      const path = await onMove(entry.path, parent);
       remapAll(entry.path, path);
       // Shows the moved row so keyboard focus can follow it.
       if (parent !== "") expand(parent);
@@ -389,18 +363,17 @@ export function NotesTree({
     } catch (e) {
       notify({ kind: "error", message: errorMessage(e) });
     }
-    load();
   };
 
-  const openMenu = (entry: Entry, x: number, y: number) =>
+  const openMenu = (entry: TreeEntry, x: number, y: number) =>
     setMenu({ entry, x, y });
 
-  const openMenuAtRow = (entry: Entry) => {
+  const openMenuAtRow = (entry: TreeEntry) => {
     const rect = rowRefs.current.get(entry.path)?.getBoundingClientRect();
     if (rect) openMenu(entry, rect.left + 16, rect.top + ROW_HEIGHT);
   };
 
-  const menuItems = (entry: Entry): ContextMenuItem[] => {
+  const menuItems = (entry: TreeEntry): ContextMenuItem[] => {
     const common: ContextMenuItem[] = [
       { label: "Rename", shortcut: "F2", run: () => startRename(entry) },
       {
@@ -410,12 +383,12 @@ export function NotesTree({
         run: () => setDeleting(entry),
       },
     ];
-    if (entry.kind === "note") return common;
+    if (entry.kind === "file") return common;
     return [
       {
-        label: "New note",
+        label: `New ${labels.file}`,
         icon: FilePlus,
-        run: () => startCreate("note", entry.path),
+        run: () => startCreate("file", entry.path),
       },
       {
         label: "New folder",
@@ -484,7 +457,7 @@ export function NotesTree({
     if (path !== undefined) setFocused(path);
   };
 
-  const startDrag = (event: PointerEvent<HTMLDivElement>, entry: Entry) => {
+  const startDrag = (event: PointerEvent<HTMLDivElement>, entry: TreeEntry) => {
     if (event.button !== 0 || editingRef.current) return;
     const row = event.currentTarget;
     const { pointerId } = event;
@@ -533,9 +506,11 @@ export function NotesTree({
     window.addEventListener("pointercancel", end);
   };
 
+  const fileWord = labels.file[0].toUpperCase() + labels.file.slice(1);
+
   const renderNameBox = (edit: Editing) => (
     <NameBox
-      label={edit.kind === "folder" ? "Folder name" : "Note name"}
+      label={edit.kind === "folder" ? "Folder name" : `${fileWord} name`}
       value={edit.value}
       error={edit.error}
       errorId={errorId}
@@ -572,7 +547,7 @@ export function NotesTree({
     );
   };
 
-  const renderItems = (items: Entry[], level: number, parent: string) => {
+  const renderItems = (items: TreeEntry[], level: number, parent: string) => {
     const rendered = items.map((entry) => renderItem(entry, level));
     if (editing?.mode === "create" && editing.parent === parent) {
       const at =
@@ -584,7 +559,7 @@ export function NotesTree({
     return rendered;
   };
 
-  const renderItem = (entry: Entry, level: number) => {
+  const renderItem = (entry: TreeEntry, level: number) => {
     const folder = entry.kind === "folder";
     const open = folder && expanded.has(entry.path);
     const renaming =
@@ -670,12 +645,12 @@ export function NotesTree({
   return (
     <div
       className={
-        drag?.refused ? `${styles.notes} ${styles.refusing}` : styles.notes
+        drag?.refused ? `${styles.root} ${styles.refusing}` : styles.root
       }
     >
       <div
         role="tree"
-        aria-label="Notes"
+        aria-label={label}
         onKeyDown={onTreeKeyDown}
         onFocus={onTreeFocus}
       >
@@ -722,14 +697,12 @@ export function NotesTree({
       )}
       {deleting && (
         <ConfirmDialog
-          title={deleteQuestion(deleting)}
-          message="You can restore it from the system trash."
-          confirmLabel="Move to trash"
+          {...confirmDelete(deleting)}
           onCancel={() => {
             returnFocusTo(deleting.path);
             setDeleting(undefined);
           }}
-          onConfirm={() => confirmDelete(deleting)}
+          onConfirm={() => deleteNow(deleting)}
         />
       )}
     </div>

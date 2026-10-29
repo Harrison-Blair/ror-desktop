@@ -10,10 +10,10 @@ import userEvent from "@testing-library/user-event";
 import { useRef, useState } from "react";
 import { beforeEach, describe, expect, it, vi } from "vitest";
 import {
-  NotesTree,
-  NotesTreeActions,
-  type NotesTreeHandle,
-} from "@/components/NotesTree/NotesTree";
+  NotesMenu,
+  NotesMenuActions,
+  type NotesMenuHandle,
+} from "@/components/menus/NotesMenu/NotesMenu";
 import { ToastProvider } from "@/components/Toast/Toast";
 import type { Entry } from "@/lib/notesApi";
 import * as notesApi from "@/lib/notesApi";
@@ -54,13 +54,13 @@ const sample = (): Entry[] => [
 let notesChanged: () => void;
 
 function Harness() {
-  const tree = useRef<NotesTreeHandle>(null);
+  const tree = useRef<NotesMenuHandle>(null);
   const [expanded, setExpanded] = useState<Set<string>>(() => new Set());
   const [selected, setSelected] = useState<string | null>(null);
   return (
     <ToastProvider>
-      <NotesTreeActions onCreate={(kind) => tree.current?.startCreate(kind)} />
-      <NotesTree
+      <NotesMenuActions onCreate={(kind) => tree.current?.startCreate(kind)} />
+      <NotesMenu
         ref={tree}
         expanded={expanded}
         setExpanded={setExpanded}

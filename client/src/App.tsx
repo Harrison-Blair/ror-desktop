@@ -7,10 +7,10 @@ import {
   type DiceRoll,
 } from "@/components/menus/DiceMenu/DiceMenu";
 import {
-  NotesTree,
-  NotesTreeActions,
-  type NotesTreeHandle,
-} from "@/components/NotesTree/NotesTree";
+  NotesMenu,
+  NotesMenuActions,
+  type NotesMenuHandle,
+} from "@/components/menus/NotesMenu/NotesMenu";
 import { MainPanel } from "@/components/panels/MainPanel/MainPanel";
 import { RailPanel } from "@/components/panels/RailPanel/RailPanel";
 import { ResizeHandle } from "@/components/panels/ResizeHandle/ResizeHandle";
@@ -48,7 +48,7 @@ function Shell() {
   const [rolls, setRolls] = useState<DiceRoll[]>([]);
   const [latestRoll, setLatestRoll] = useState<DiceRoll>();
   const nextRollId = useRef(1);
-  const notesTree = useRef<NotesTreeHandle>(null);
+  const notesMenu = useRef<NotesMenuHandle>(null);
   // Kept here so open folders and the selection survive closing the rail panel.
   const [notesExpanded, setNotesExpanded] = useState<Set<string>>(
     () => new Set(),
@@ -142,15 +142,15 @@ function Shell() {
         }
         actions={
           activeId === "notes" && (
-            <NotesTreeActions
-              onCreate={(kind) => notesTree.current?.startCreate(kind)}
+            <NotesMenuActions
+              onCreate={(kind) => notesMenu.current?.startCreate(kind)}
             />
           )
         }
       >
         {activeId === "notes" && (
-          <NotesTree
-            ref={notesTree}
+          <NotesMenu
+            ref={notesMenu}
             expanded={notesExpanded}
             setExpanded={setNotesExpanded}
             selected={notesSelected}

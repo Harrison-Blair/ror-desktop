@@ -1,4 +1,4 @@
-.notes {
+.root {
   display: flex;
   flex: 1 0 auto;
   flex-direction: column;
@@ -134,27 +134,4 @@
   background: var(--sunken);
   border: 1px solid var(--error);
   border-radius: 50%;
-}
-
-.iconButton {
-  display: grid;
-  place-items: center;
-  width: 32px;
-  height: 32px;
-  padding: 0;
-  color: var(--ink-muted);
-  background: transparent;
-  border: 0;
-  border-radius: var(--radius-1);
-  cursor: pointer;
-}
-
-.iconButton:hover {
-  color: var(--ink);
-  background: var(--raised);
-}
-
-.iconButton:focus-visible {
-  outline: 2px solid var(--focus);
-  outline-offset: 2px;
 }
