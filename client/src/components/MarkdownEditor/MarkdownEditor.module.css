@@ -89,6 +89,10 @@
   text-decoration-color: var(--ink-muted);
 }
 
+.modifierHeld .link {
+  cursor: pointer;
+}
+
 .quote {
   padding-left: var(--space-3);
   border-left: 3px solid var(--line-control);

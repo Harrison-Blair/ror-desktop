@@ -8,7 +8,14 @@ import {
 } from "react";
 import { MarkdownEditor } from "@/components/MarkdownEditor/MarkdownEditor";
 import { useToast } from "@/components/Toast/Toast";
-import { onNotesChanged, readNote, writeNote } from "@/lib/notesApi";
+import { openWebLink } from "@/lib/linksApi";
+import {
+  type Entry,
+  listNotes,
+  onNotesChanged,
+  readNote,
+  writeNote,
+} from "@/lib/notesApi";
 import styles from "./EditorMenu.module.css";
 
 export const SAVE_DELAY = 500;
@@ -18,24 +25,55 @@ const errorMessage = (e: unknown) =>
     ? String(e.message)
     : String(e);
 
+// The path that a relative link in the note at `from` points to, with any
+// #fragment dropped, or null when it leaves the notes folder.
+function linkedPath(from: string, href: string) {
+  let link: string;
+  try {
+    link = decodeURIComponent(href.replace(/#.*/, ""));
+  } catch {
+    return null;
+  }
+  const parts = from.split("/").slice(0, -1);
+  for (const part of link.split("/")) {
+    if (part === "..") {
+      if (parts.pop() === undefined) return null;
+    } else if (part !== "." && part !== "") {
+      parts.push(part);
+    }
+  }
+  return parts.join("/");
+}
+
+const hasFile = (entries: Entry[], path: string): boolean =>
+  entries.some((entry) =>
+    entry.kind === "file"
+      ? entry.path === path
+      : hasFile(entry.children ?? [], path),
+  );
+
 export type EditorMenuHandle = {
-  // Writes any pending edit and waits for every write to end.
-  flush: () => Promise<void>;
+  // Writes any pending edit and waits for every write to end. Resolves
+  // false when an edit couldn't be saved, which stays in the editor.
+  flush: () => Promise<boolean>;
 };
 
 type EditorMenuProps = {
   ref?: Ref<EditorMenuHandle>;
   // The selected note, relative to the notes folder.
   path: string | null;
+  // Opens another note, given its path.
+  onOpenNote?: (path: string) => void;
 };
 
-export function EditorMenu({ ref, path }: EditorMenuProps) {
+export function EditorMenu({ ref, path, onOpenNote }: EditorMenuProps) {
+  const notify = useToast();
   // Kept here so the choice survives switching notes.
   const [raw, setRaw] = useState(false);
   const note = useRef<EditorMenuHandle>(null);
   useImperativeHandle(
     ref,
-    () => ({ flush: () => note.current?.flush() ?? Promise.resolve() }),
+    () => ({ flush: () => note.current?.flush() ?? Promise.resolve(true) }),
     [],
   );
 
@@ -44,6 +82,33 @@ export function EditorMenu({ ref, path }: EditorMenuProps) {
     return <p className={styles.empty}>This file can't be shown yet.</p>;
   }
   const name = path.slice(path.lastIndexOf("/") + 1);
+
+  // Web and mail links open outside the app. A link with no scheme names a
+  // note relative to this one.
+  const openLink = async (href: string) => {
+    const scheme = /^([a-z][a-z\d+.-]*):/i.exec(href)?.[1].toLowerCase();
+    if (scheme !== undefined) {
+      if (["http", "https", "mailto"].includes(scheme)) {
+        openWebLink(href).catch((e) =>
+          notify({ kind: "error", message: errorMessage(e) }),
+        );
+      } else {
+        notify({ kind: "error", message: "Can't open this link." });
+      }
+      return;
+    }
+    const target = linkedPath(path, href);
+    let found = false;
+    try {
+      found = target !== null && hasFile(await listNotes(), target);
+    } catch (e) {
+      notify({ kind: "error", message: errorMessage(e) });
+      return;
+    }
+    if (target !== null && found) onOpenNote?.(target);
+    else notify({ kind: "error", message: `Couldn't find “${href}”.` });
+  };
+
   return (
     <div className={styles.menu}>
       <div className={styles.bar}>
@@ -58,7 +123,14 @@ export function EditorMenu({ ref, path }: EditorMenuProps) {
         </button>
       </div>
       {/* A new path is a new note, so a pending save goes to the old one. */}
-      <NoteEditor key={path} ref={note} path={path} name={name} raw={raw} />
+      <NoteEditor
+        key={path}
+        ref={note}
+        path={path}
+        name={name}
+        raw={raw}
+        onOpenLink={openLink}
+      />
     </div>
   );
 }
@@ -68,9 +140,10 @@ type NoteEditorProps = {
   path: string;
   name: string;
   raw: boolean;
+  onOpenLink: (href: string) => void;
 };
 
-function NoteEditor({ ref, path, name, raw }: NoteEditorProps) {
+function NoteEditor({ ref, path, name, raw, onOpenLink }: NoteEditorProps) {
   const notify = useToast();
   const [text, setText] = useState<string>();
   const [failed, setFailed] = useState(false);
@@ -83,7 +156,7 @@ function NoteEditor({ ref, path, name, raw }: NoteEditorProps) {
   // Counts reads, so only the newest read is taken in.
   const reads = useRef(0);
   // The running save, which writes until every edit is on disk.
-  const saving = useRef<Promise<void>>(undefined);
+  const saving = useRef<Promise<boolean>>(undefined);
   // Set by an outside change that came while the note loaded or saved, so
   // the note is read again after that.
   const missed = useRef(false);
@@ -127,7 +200,8 @@ function NoteEditor({ ref, path, name, raw }: NoteEditorProps) {
   }, [reload]);
 
   // Writes one text at a time until every edit is on disk, so the newest
-  // text lands last. Resolves when the writing stops.
+  // text lands last. Resolves when the writing stops, to false when an edit
+  // couldn't be saved.
   const save = useCallback(() => {
     clearTimeout(timer.current);
     if (!saving.current && dirty.current) {
@@ -143,16 +217,17 @@ function NoteEditor({ ref, path, name, raw }: NoteEditorProps) {
             // tries again. A newer edit is written now.
             if (edits.current === edit) {
               dirty.current = true;
-              break;
+              return false;
             }
           }
         }
+        return true;
       })().finally(() => {
         saving.current = undefined;
         readMissed();
       });
     }
-    return saving.current ?? Promise.resolve();
+    return saving.current ?? Promise.resolve(true);
   }, [path, notify, readMissed]);
 
   useImperativeHandle(ref, () => ({ flush: save }), [save]);
@@ -194,6 +269,12 @@ function NoteEditor({ ref, path, name, raw }: NoteEditorProps) {
     return <p className={styles.empty}>This note couldn't be opened.</p>;
   if (text === undefined) return null;
   return (
-    <MarkdownEditor value={text} onChange={change} raw={raw} label={name} />
+    <MarkdownEditor
+      value={text}
+      onChange={change}
+      raw={raw}
+      label={name}
+      onOpenLink={onOpenLink}
+    />
   );
 }

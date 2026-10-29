@@ -13,6 +13,9 @@ type MarkdownEditorProps = {
   // Shows plain Markdown with no live preview.
   raw: boolean;
   label: string;
+  // Called with a link's target when it is Ctrl+clicked (Cmd+clicked on
+  // macOS) in live preview.
+  onOpenLink?: (href: string) => void;
 };
 
 // Marks a change that came from `value`, so it isn't reported back.
@@ -38,18 +41,24 @@ function changeTo(doc: string, value: string) {
   };
 }
 
+// Live preview that opens links through the latest `onOpenLink`.
+const withLinks = (latest: {
+  current: Pick<MarkdownEditorProps, "onOpenLink">;
+}) => livePreview((href) => latest.current.onOpenLink?.(href));
+
 export function MarkdownEditor({
   value,
   onChange,
   raw,
   label,
+  onOpenLink,
 }: MarkdownEditorProps) {
   const host = useRef<HTMLDivElement>(null);
   const view = useRef<EditorView>(null);
   const preview = useRef(new Compartment());
   // Read by the editor, which is made once.
-  const latest = useRef({ value, raw, onChange });
-  latest.current = { value, raw, onChange };
+  const latest = useRef({ value, raw, onChange, onOpenLink });
+  latest.current = { value, raw, onChange, onOpenLink };
 
   useEffect(() => {
     const editor = new EditorView({
@@ -61,7 +70,7 @@ export function MarkdownEditor({
           keymap.of([...defaultKeymap, ...historyKeymap]),
           markdown({ extensions: GFM }),
           EditorView.lineWrapping,
-          preview.current.of(latest.current.raw ? [] : livePreview()),
+          preview.current.of(latest.current.raw ? [] : withLinks(latest)),
           EditorView.updateListener.of((update) => {
             if (
               update.docChanged &&
@@ -82,7 +91,7 @@ export function MarkdownEditor({
 
   useEffect(() => {
     view.current?.dispatch({
-      effects: preview.current.reconfigure(raw ? [] : livePreview()),
+      effects: preview.current.reconfigure(raw ? [] : withLinks(latest)),
     });
   }, [raw]);
 

@@ -21,5 +21,7 @@ export default defineConfig({
   test: {
     environment: "jsdom",
     setupFiles: ["./src/test/setup.ts"],
+    // Loads the editor's styles, so tests can check the link pointer.
+    css: { include: [/MarkdownEditor\.module\.css$/] },
   },
 });

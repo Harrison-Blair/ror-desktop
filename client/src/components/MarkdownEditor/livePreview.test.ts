@@ -94,6 +94,18 @@ describe("live preview", () => {
     );
   });
 
+  it("keeps styling the other lines of bold, italic and strike-through on the cursor's line", () => {
+    for (const [marker, className] of [
+      ["**", styles.strong],
+      ["_", styles.em],
+      ["~~", styles.strike],
+    ]) {
+      const text = `${marker}first‸\nsecond${marker}`;
+      expect(shown(text)).toBe(`${marker}first\nsecond`);
+      expect(marks(text)).toEqual([[`second${marker}`, className]]);
+    }
+  });
+
   it("shows a link's text off the cursor's line and its Markdown on it", () => {
     expect(shown('see [site](https://x.y "T") now\n‸')).toBe("see site now\n");
     expect(shown('see [si‸te](https://x.y "T") now\n')).toBe(
@@ -145,6 +157,44 @@ describe("live preview", () => {
     expect(widgets[0].rows).toEqual([
       ["x", ""],
       ["1", "2"],
+    ]);
+  });
+
+  // The grid's header and body rows for `text`, with the cursor after it.
+  function grid(text: string) {
+    const state = stateOf(`${text}\n\n‸`);
+    const widgets: TableWidget[] = [];
+    livePreviewDecorations(state).between(0, state.doc.length, (_f, _t, d) => {
+      if (d.spec.widget instanceof TableWidget) widgets.push(d.spec.widget);
+    });
+    expect(widgets).toHaveLength(1);
+    return [widgets[0].head, ...widgets[0].rows];
+  }
+
+  it("splits table cells at a pipe after an even number of backslashes only", () => {
+    expect(
+      grid("| a | b |\n| - | - |\n| x \\\\| y |\n| p \\\\\\| q |"),
+    ).toEqual([
+      ["a", "b"],
+      ["x \\\\", "y"],
+      ["p \\\\| q", ""],
+    ]);
+  });
+
+  it("draws a table inside a quote without the quote markers", () => {
+    expect(grid("> | a | b |\n> | - | - |\n> | 1 | 2 |")).toEqual([
+      ["a", "b"],
+      ["1", "2"],
+    ]);
+  });
+
+  it("keeps empty cells in their columns", () => {
+    expect(
+      grid("| a | b | c |\n| - | - | - |\n| x |  | z |\n|  | y |"),
+    ).toEqual([
+      ["a", "b", "c"],
+      ["x", "", "z"],
+      ["", "y", ""],
     ]);
   });
 

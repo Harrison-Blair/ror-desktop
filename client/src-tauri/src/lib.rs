@@ -13,6 +13,7 @@ use std::sync::Mutex;
 use std::time::Duration;
 use tauri::{AppHandle, Emitter, Manager, State, WebviewWindow};
 use tauri_plugin_dialog::DialogExt;
+use tauri_plugin_opener::OpenerExt;
 
 struct NotesRoot(Mutex<PathBuf>);
 
@@ -161,6 +162,25 @@ fn notes_write(root: State<NotesRoot>, path: String, text: String) -> Result<(),
     notes::write(&root.get(), &path, &text)
 }
 
+// Only web and mail links open outside the app.
+fn web_link(url: &str) -> Result<tauri::Url, String> {
+    let refused = || "Can't open this link.".to_string();
+    let url = tauri::Url::parse(url).map_err(|_| refused())?;
+    match url.scheme() {
+        "http" | "https" | "mailto" => Ok(url),
+        _ => Err(refused()),
+    }
+}
+
+// Opens a web or mail link in the system's browser or mail app.
+#[tauri::command]
+fn open_web_link(app: AppHandle, url: String) -> Result<(), String> {
+    let url = web_link(&url)?;
+    app.opener()
+        .open_url(url.as_str(), None::<&str>)
+        .map_err(|e| format!("Couldn't open the link: {e}."))
+}
+
 #[tauri::command]
 fn notes_delete(root: State<NotesRoot>, path: String) -> Result<(), NotesError> {
     notes::delete(&root.get(), &path)
@@ -169,6 +189,7 @@ fn notes_delete(root: State<NotesRoot>, path: String) -> Result<(), NotesError> 
 pub fn run() {
     tauri::Builder::default()
         .plugin(tauri_plugin_dialog::init())
+        .plugin(tauri_plugin_opener::init())
         .setup(|app| {
             let start = config::notes_start(
                 &config_file(app.handle())?,
@@ -213,7 +234,8 @@ pub fn run() {
             notes_read,
             notes_write,
             notes_folder,
-            notes_choose_folder
+            notes_choose_folder,
+            open_web_link
         ])
         .run(tauri::generate_context!())
         .expect("error while running Ror Desktop");
@@ -276,6 +298,26 @@ mod tests {
             }
         }
         false
+    }
+
+    #[test]
+    fn only_web_and_mail_links_open() {
+        for url in ["https://x.y/a?b#c", "HTTP://x.y", "mailto:a@x.y"] {
+            assert!(web_link(url).is_ok(), "{url}");
+        }
+        for url in [
+            "file:///etc/passwd",
+            "javascript:alert(1)",
+            "ftp://x.y",
+            "Ada.md",
+            "",
+        ] {
+            assert_eq!(
+                web_link(url),
+                Err("Can't open this link.".to_string()),
+                "{url}"
+            );
+        }
     }
 
     #[test]

@@ -115,9 +115,9 @@ export type NotesMenuProps = {
   setExpanded: Dispatch<SetStateAction<Set<string>>>;
   selected: string | null;
   setSelected: Dispatch<SetStateAction<string | null>>;
-  // Awaited before a rename or move, so the caller can finish work on the
-  // old path first.
-  beforeRenameOrMove?: () => Promise<void>;
+  // Saves the open note before a rename, move or folder switch. Resolving
+  // false means it couldn't be saved, which cancels the change.
+  saveOpenNote?: () => Promise<boolean>;
 };
 
 export function NotesMenu({
@@ -127,7 +127,7 @@ export function NotesMenu({
   setExpanded,
   selected,
   setSelected,
-  beforeRenameOrMove = async () => {},
+  saveOpenNote = async () => true,
 }: NotesMenuProps) {
   const notify = useToast();
   const [entries, setEntries] = useState<TreeEntry[]>();
@@ -135,6 +135,17 @@ export function NotesMenu({
   const tree = useRef<FileTreeHandle>(null);
   // Stops a second pick from starting while one is open.
   const picking = useRef(false);
+
+  // Rejects with why `change` was cancelled when the open note can't be
+  // saved.
+  const saveFirst = useCallback(
+    async (change: string) => {
+      if (await saveOpenNote()) return;
+      const name = selected?.slice(selected.lastIndexOf("/") + 1);
+      throw new Error(`Couldn't save “${name}”, so ${change}.`);
+    },
+    [saveOpenNote, selected],
+  );
 
   const load = useCallback(async () => {
     const id = ++loadId.current;
@@ -166,6 +177,7 @@ export function NotesMenu({
         picking.current = true;
         let path: string | null;
         try {
+          await saveFirst("the notes folder wasn't changed");
           path = await chooseNotesFolder();
         } catch (e) {
           notify({ kind: "error", message: errorMessage(e) });
@@ -181,7 +193,7 @@ export function NotesMenu({
         load();
       },
     }),
-    [load, notify, setFolder, setExpanded, setSelected],
+    [load, notify, saveFirst, setFolder, setExpanded, setSelected],
   );
 
   // Runs after the render so that the tree has already moved the selection
@@ -228,11 +240,13 @@ export function NotesMenu({
       }
       onRename={(path, newName) =>
         reloadAfterNameEdit(
-          beforeRenameOrMove().then(() => renameEntry(path, newName)),
+          saveFirst("it wasn't renamed").then(() => renameEntry(path, newName)),
         )
       }
       onMove={(path, newParent) =>
-        reloadAfter(beforeRenameOrMove().then(() => moveEntry(path, newParent)))
+        reloadAfter(
+          saveFirst("it wasn't moved").then(() => moveEntry(path, newParent)),
+        )
       }
       onDelete={(path) => reloadAfter(deleteEntry(path))}
       confirmDelete={(entry) => ({

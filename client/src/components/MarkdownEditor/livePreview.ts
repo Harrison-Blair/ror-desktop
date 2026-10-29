@@ -10,6 +10,7 @@ import {
   Decoration,
   type DecorationSet,
   EditorView,
+  ViewPlugin,
   WidgetType,
 } from "@codemirror/view";
 import styles from "./MarkdownEditor.module.css";
@@ -29,7 +30,15 @@ const MARK_CLASSES: Record<string, string> = {
   Strikethrough: styles.strike,
   InlineCode: styles.code,
   Link: styles.link,
+  Autolink: styles.link,
 };
+
+const LINKS = ["Link", "Autolink"];
+
+const mac = /Mac|iPhone|iPad/.test(navigator.platform);
+
+// Shown over a link.
+export const OPEN_LINK_TITLE = `${mac ? "Cmd" : "Ctrl"}+click to open`;
 
 // Markers hidden off the cursor's line, and the nodes they must sit in.
 const HIDDEN_MARKS: Record<string, string[]> = {
@@ -39,6 +48,8 @@ const HIDDEN_MARKS: Record<string, string[]> = {
 };
 
 const hide = Decoration.replace({});
+
+type SyntaxNode = ReturnType<typeof syntaxTree>["topNode"];
 
 // Text shown in place of a marker, such as a bullet or a rule.
 class MarkerWidget extends WidgetType {
@@ -61,14 +72,24 @@ class MarkerWidget extends WidgetType {
   }
 }
 
-// Splits a table line into its cells, keeping escaped pipes in the cell.
-function cells(line: string) {
-  return line
-    .trim()
-    .replace(/^\|/, "")
-    .replace(/(?<!\\)\|$/, "")
-    .split(/(?<!\\)\|/)
-    .map((cell) => cell.trim().replace(/\\\|/g, "|"));
+// The cells of a table row. A pipe between two delimiters is an empty
+// cell, and an escaped pipe stays in its cell.
+function cells(doc: Text, row: SyntaxNode) {
+  const out: string[] = [];
+  // The cell since the last delimiter, and whether one came before it.
+  let cell: string | undefined;
+  let afterDelimiter = false;
+  for (let child = row.firstChild; child; child = child.nextSibling) {
+    if (child.name === "TableCell") {
+      cell = doc.sliceString(child.from, child.to).replace(/\\\|/g, "|");
+    } else if (child.name === "TableDelimiter") {
+      if (cell !== undefined || afterDelimiter) out.push(cell ?? "");
+      cell = undefined;
+      afterDelimiter = true;
+    }
+  }
+  if (cell !== undefined) out.push(cell);
+  return out;
 }
 
 export class TableWidget extends WidgetType {
@@ -107,17 +128,15 @@ export class TableWidget extends WidgetType {
   }
 }
 
-function tableWidget(doc: Text, from: number, to: number) {
-  const lines: string[] = [];
-  for (let n = doc.lineAt(from).number; n <= doc.lineAt(to).number; n++) {
-    lines.push(doc.line(n).text);
-  }
-  // The second line is the delimiter row. Body rows are cut or padded to
-  // the header's width.
-  const [head, , ...rows] = lines.map(cells);
+// Body rows are cut or padded to the header's width.
+function tableWidget(doc: Text, table: SyntaxNode) {
+  const head = cells(doc, table.getChild("TableHeader") ?? table);
   return new TableWidget(
     head,
-    rows.map((row) => head.map((_, i) => row[i] ?? "")),
+    table.getChildren("TableRow").map((node) => {
+      const row = cells(doc, node);
+      return head.map((_, i) => row[i] ?? "");
+    }),
   );
 }
 
@@ -162,6 +181,20 @@ export function livePreviewDecorations(state: EditorState): DecorationSet {
       );
     }
   };
+  // Marks the part of each line from `from` to `to` that isn't active.
+  const markLines = (from: number, to: number, className: string) => {
+    for (let n = doc.lineAt(from).number; n <= doc.lineAt(to).number; n++) {
+      if (active.has(n)) continue;
+      const line = doc.line(n);
+      const start = Math.max(from, line.from);
+      const end = Math.min(to, line.to);
+      if (start < end) {
+        decorations.push(
+          Decoration.mark({ class: className }).range(start, end),
+        );
+      }
+    }
+  };
   // Hides a marker and the space after it.
   const hideMarker = (from: number, to: number) => {
     const end = doc.sliceString(to, to + 1) === " " ? to + 1 : to;
@@ -178,7 +211,7 @@ export function livePreviewDecorations(state: EditorState): DecorationSet {
         const end = doc.lineAt(to).to;
         decorations.push(
           Decoration.replace({
-            widget: tableWidget(doc, start, end),
+            widget: tableWidget(doc, node.node),
             block: true,
           }).range(start, end),
         );
@@ -202,6 +235,11 @@ export function livePreviewDecorations(state: EditorState): DecorationSet {
       }
       if (name === "Blockquote") {
         eachLine(from, to, styles.quote);
+        return;
+      }
+      // Inline styling can span lines, and keeps its inactive ones styled.
+      if (name in MARK_CLASSES && !LINKS.includes(name)) {
+        markLines(from, to, MARK_CLASSES[name]);
         return;
       }
       if (isActive(from, to)) return;
@@ -234,9 +272,12 @@ export function livePreviewDecorations(state: EditorState): DecorationSet {
             widget: new MarkerWidget(styles.rule, ""),
           }).range(from, to),
         );
-      } else if (name in MARK_CLASSES) {
+      } else if (LINKS.includes(name)) {
         decorations.push(
-          Decoration.mark({ class: MARK_CLASSES[name] }).range(from, to),
+          Decoration.mark({
+            class: MARK_CLASSES[name],
+            attributes: { title: OPEN_LINK_TITLE },
+          }).range(from, to),
         );
         if (name === "Link") {
           // Leaves only the text between the brackets.
@@ -267,10 +308,70 @@ const livePreviewField = StateField.define<DecorationSet>({
   provide: (field) => EditorView.decorations.from(field),
 });
 
-export const livePreview = () => [
+// The target of the link that `element` draws, or null when it has none.
+function linkTarget(view: EditorView, element: Element) {
+  const tree = syntaxTree(view.state);
+  let node: SyntaxNode | null = tree.resolveInner(view.posAtDOM(element), 1);
+  for (; node; node = node.parent) {
+    if (LINKS.includes(node.name)) {
+      const url = node.getChild("URL");
+      if (!url) return null;
+      // A target may be written in angle brackets.
+      return view.state.sliceDoc(url.from, url.to).replace(/^<(.*)>$/, "$1");
+    }
+  }
+  return null;
+}
+
+// Marks the editor while Ctrl (Cmd on macOS) is held, so a link shows the
+// pointer. A blur clears it, so a key released elsewhere can't leave it set,
+// and a mouse move over the editor corrects a missed key event.
+const modifierHeld = ViewPlugin.define((view) => {
+  const key = mac ? "Meta" : "Control";
+  const set = (held: boolean) =>
+    view.dom.classList.toggle(styles.modifierHeld, held);
+  const fromEvent = (event: KeyboardEvent | MouseEvent) =>
+    set(mac ? event.metaKey : event.ctrlKey);
+  // WebKitGTK still reports the key as held on its own keyup.
+  const onKeyUp = (event: KeyboardEvent) =>
+    event.key === key ? set(false) : fromEvent(event);
+  const onBlur = () => set(false);
+  window.addEventListener("keydown", fromEvent);
+  window.addEventListener("keyup", onKeyUp);
+  window.addEventListener("blur", onBlur);
+  view.dom.addEventListener("mousemove", fromEvent);
+  return {
+    destroy: () => {
+      window.removeEventListener("keydown", fromEvent);
+      window.removeEventListener("keyup", onKeyUp);
+      window.removeEventListener("blur", onBlur);
+      view.dom.removeEventListener("mousemove", fromEvent);
+      set(false);
+    },
+  };
+});
+
+// Ctrl+click (Cmd+click on macOS) on a link calls `onOpenLink` with its
+// target. A plain click places the cursor, as on any text.
+export const livePreview = (onOpenLink?: (href: string) => void) => [
   focusedField,
   livePreviewField,
   EditorView.focusChangeEffect.of((_state, focusing) =>
     setFocused.of(focusing),
   ),
+  onOpenLink ? modifierHeld : [],
+  EditorView.domEventHandlers({
+    mousedown: (event, view) => {
+      if (!onOpenLink || event.button !== 0) return false;
+      if (!(mac ? event.metaKey : event.ctrlKey)) return false;
+      const link =
+        event.target instanceof Element &&
+        event.target.closest(`.${styles.link}`);
+      const href = link ? linkTarget(view, link) : null;
+      if (href === null) return false;
+      event.preventDefault();
+      onOpenLink(href);
+      return true;
+    },
+  }),
 ];

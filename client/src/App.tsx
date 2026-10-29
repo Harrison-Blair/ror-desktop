@@ -195,12 +195,18 @@ function Shell() {
             selected={notesSelected}
             setSelected={setNotesSelected}
             // A pending edit is saved to the open note's old path first.
-            beforeRenameOrMove={async () => editorMenu.current?.flush()}
+            saveOpenNote={() =>
+              editorMenu.current?.flush() ?? Promise.resolve(true)
+            }
           />
         )}
       </RailPanel>
       <MainPanel>
-        <EditorMenu ref={editorMenu} path={notesSelected} />
+        <EditorMenu
+          ref={editorMenu}
+          path={notesSelected}
+          onOpenNote={setNotesSelected}
+        />
       </MainPanel>
       <SidePanel
         open={panelOpen}

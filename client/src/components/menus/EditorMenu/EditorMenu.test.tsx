@@ -1,17 +1,23 @@
 import { EditorView } from "@codemirror/view";
 import { act, fireEvent, render, screen } from "@testing-library/react";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
+import styles from "@/components/MarkdownEditor/MarkdownEditor.module.css";
 import { EditorMenu } from "@/components/menus/EditorMenu/EditorMenu";
 import { ToastProvider } from "@/components/Toast/Toast";
+import * as linksApi from "@/lib/linksApi";
 import * as notesApi from "@/lib/notesApi";
 
 vi.mock("@/lib/notesApi", () => ({
   readNote: vi.fn(),
   writeNote: vi.fn(),
   onNotesChanged: vi.fn(),
+  listNotes: vi.fn(),
 }));
 
+vi.mock("@/lib/linksApi", () => ({ openWebLink: vi.fn() }));
+
 const api = vi.mocked(notesApi);
+const links = vi.mocked(linksApi);
 
 let disk: Record<string, string>;
 let notesChanged: () => void;
@@ -309,5 +315,78 @@ describe("EditorMenu", () => {
     unmount();
     expect(api.writeNote).toHaveBeenCalledTimes(2);
     expect(api.writeNote).toHaveBeenLastCalledWith("a.md", "Hello!");
+  });
+});
+
+describe("EditorMenu links", () => {
+  const onOpenNote = vi.fn();
+
+  beforeEach(async () => {
+    disk["Lore/b.md"] = [
+      "[web](https://x.y/a)",
+      "[note](../My%20Notes/c.md#top)",
+      "[gone](gone.md)",
+      "[out](../../c.md)",
+      "[script](javascript:alert(1))",
+    ].join("\n");
+    api.listNotes.mockResolvedValue([
+      {
+        kind: "folder",
+        name: "My Notes",
+        path: "My Notes",
+        children: [{ kind: "file", name: "c.md", path: "My Notes/c.md" }],
+      },
+      { kind: "file", name: "c.md", path: "c.md" },
+      { kind: "folder", name: "Lore", path: "Lore", children: [] },
+    ]);
+    links.openWebLink.mockResolvedValue();
+    render(
+      <ToastProvider>
+        <EditorMenu path="Lore/b.md" onOpenNote={onOpenNote} />
+      </ToastProvider>,
+    );
+    await settle();
+  });
+
+  // Ctrl+clicks the link that shows `text`.
+  const ctrlClick = async (text: string) => {
+    const link = [...document.querySelectorAll(`.${styles.link}`)].find(
+      (el) => el.textContent === text,
+    );
+    if (!link) throw new Error(`No link ${text}`);
+    fireEvent.mouseDown(link, { button: 0, ctrlKey: true });
+    await settle();
+  };
+
+  it("opens a web link outside the app", async () => {
+    await ctrlClick("web");
+    expect(links.openWebLink).toHaveBeenCalledWith("https://x.y/a");
+    expect(onOpenNote).not.toHaveBeenCalled();
+  });
+
+  it("opens the note that a relative link names", async () => {
+    await ctrlClick("note");
+    expect(onOpenNote).toHaveBeenCalledWith("My Notes/c.md");
+    expect(links.openWebLink).not.toHaveBeenCalled();
+  });
+
+  it.each([
+    ["gone", "gone.md"],
+    ["out", "../../c.md"],
+  ])("shows that the %s note can't be found", async (text, href) => {
+    await ctrlClick(text);
+    expect(screen.getByRole("alert")).toHaveTextContent(
+      `Couldn't find “${href}”.`,
+    );
+    expect(onOpenNote).not.toHaveBeenCalled();
+  });
+
+  it("refuses a link with another scheme", async () => {
+    await ctrlClick("script");
+    expect(screen.getByRole("alert")).toHaveTextContent(
+      "Can't open this link.",
+    );
+    expect(links.openWebLink).not.toHaveBeenCalled();
+    expect(onOpenNote).not.toHaveBeenCalled();
   });
 });
