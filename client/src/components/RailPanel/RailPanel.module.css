@@ -20,6 +20,14 @@
   composes: title from "@/styles/panel-header.module.css";
 }
 
+.actions {
+  display: flex;
+  gap: 2px;
+  /* Brings the buttons to 8px from the edge, like the SidePanel close button. */
+  margin-right: calc(-1 * var(--space-2));
+  margin-left: auto;
+}
+
 .body {
   display: flex;
   flex: 1;
@@ -29,34 +37,4 @@
   /* Matches the rail inset. */
   padding: 6px;
   overflow-y: auto;
-}
-
-.item {
-  display: flex;
-  flex: none;
-  align-items: center;
-  height: var(--rail-panel-item-height);
-  padding: 0 var(--space-3);
-  color: var(--ink-muted);
-  font: inherit;
-  text-align: left;
-  background: transparent;
-  border: 0;
-  border-radius: var(--radius-1);
-  cursor: pointer;
-}
-
-.item:hover {
-  background: var(--raised);
-}
-
-.item:focus-visible {
-  outline: 2px solid var(--focus);
-  outline-offset: 2px;
-}
-
-.active,
-.active:hover {
-  color: var(--ink);
-  background: var(--well);
 }

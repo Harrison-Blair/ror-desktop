@@ -7,6 +7,11 @@ import {
   type DiceRoll,
 } from "@/components/DicePanel/DicePanel";
 import { MainPanel } from "@/components/MainPanel/MainPanel";
+import {
+  NotesTree,
+  NotesTreeActions,
+  type NotesTreeHandle,
+} from "@/components/NotesTree/NotesTree";
 import { Rail, type RailItem } from "@/components/Rail/Rail";
 import { RailPanel } from "@/components/RailPanel/RailPanel";
 import { ResizeHandle } from "@/components/ResizeHandle/ResizeHandle";
@@ -19,11 +24,6 @@ const railItems: RailItem[] = [
   { id: "world", label: "World", icon: Globe },
   { id: "notes", label: "Notes", icon: NotebookPen },
 ];
-
-const railPanelItems = [1, 2, 3, 4, 5, 6].map((n) => ({
-  id: `p${n}`,
-  label: `Panel item ${n}`,
-}));
 
 // Defaults match --rail-panel-width, --panel-width and --rail-width in tokens.css.
 const RAIL_PANEL_WIDTH = { default: 220, min: 180 };
@@ -43,12 +43,17 @@ function Shell() {
   const notify = useToast();
   const [activeId, setActiveId] = useState("notes");
   const [railPanelOpen, setRailPanelOpen] = useState(true);
-  const [railPanelItemId, setRailPanelItemId] = useState("p1");
   const [panelOpen, setPanelOpen] = useState(false);
   // Kept here so the history survives closing the Dice panel.
   const [rolls, setRolls] = useState<DiceRoll[]>([]);
   const [latestRoll, setLatestRoll] = useState<DiceRoll>();
   const nextRollId = useRef(1);
+  const notesTree = useRef<NotesTreeHandle>(null);
+  // Kept here so open folders and the selection survive closing the rail panel.
+  const [notesExpanded, setNotesExpanded] = useState<Set<string>>(
+    () => new Set(),
+  );
+  const [notesSelected, setNotesSelected] = useState<string | null>(null);
   const [railPanelWidth, setRailPanelWidth] = useState(
     RAIL_PANEL_WIDTH.default,
   );
@@ -107,7 +112,6 @@ function Shell() {
       return;
     }
     setActiveId(id);
-    setRailPanelItemId(railPanelItems[0].id);
     setRailPanelOpen(true);
   };
 
@@ -124,9 +128,6 @@ function Shell() {
       <RailPanel
         title={activeItem?.label ?? ""}
         open={railPanelOpen}
-        items={railPanelItems}
-        activeId={railPanelItemId}
-        onSelect={setRailPanelItemId}
         width={drawnRailPanelWidth}
         resizeHandle={
           <ResizeHandle
@@ -139,7 +140,24 @@ function Shell() {
             onReset={() => setRailPanelWidth(RAIL_PANEL_WIDTH.default)}
           />
         }
-      />
+        actions={
+          activeId === "notes" && (
+            <NotesTreeActions
+              onCreate={(kind) => notesTree.current?.startCreate(kind)}
+            />
+          )
+        }
+      >
+        {activeId === "notes" && (
+          <NotesTree
+            ref={notesTree}
+            expanded={notesExpanded}
+            setExpanded={setNotesExpanded}
+            selected={notesSelected}
+            setSelected={setNotesSelected}
+          />
+        )}
+      </RailPanel>
       <MainPanel />
       <SidePanel
         open={panelOpen}

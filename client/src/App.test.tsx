@@ -1,7 +1,19 @@
 import { render, screen, within } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
-import { describe, expect, it } from "vitest";
+import { beforeEach, describe, expect, it, vi } from "vitest";
 import App from "@/App";
+import type { Entry } from "@/lib/notesApi";
+
+// The notes folder lives on disk behind Tauri; these tests need an empty one.
+vi.mock("@/lib/notesApi", () => ({
+  listNotes: async () => notesList,
+  onNotesChanged: async () => () => {},
+}));
+
+let notesList: Entry[] = [];
+beforeEach(() => {
+  notesList = [];
+});
 
 function renderApp() {
   render(<App />);
@@ -162,16 +174,50 @@ describe("App frame", () => {
     ).toBeInTheDocument();
   });
 
-  it("selecting a rail panel item marks it pressed", async () => {
+  it("keeps open folders and the selection after the rail panel closes and reopens", async () => {
+    notesList = [
+      {
+        kind: "folder",
+        name: "People",
+        path: "People",
+        children: [{ kind: "note", name: "Ada", path: "People/Ada.md" }],
+      },
+    ];
     const user = renderApp();
+    await user.click(
+      (await screen.findByRole("treeitem", { name: "People" }))
+        .firstElementChild as HTMLElement,
+    );
+    await user.click(
+      screen.getByRole("treeitem", { name: "Ada" })
+        .firstElementChild as HTMLElement,
+    );
+    const notes = screen.getByRole("button", { name: "Notes" });
 
-    await user.click(screen.getByRole("button", { name: "Panel item 4" }));
+    await user.click(notes);
+    expect(screen.queryByRole("tree")).not.toBeInTheDocument();
+    await user.click(notes);
 
     expect(
-      screen.getByRole("button", { name: "Panel item 4", pressed: true }),
+      await screen.findByRole("treeitem", { name: "People", expanded: true }),
     ).toBeInTheDocument();
     expect(
-      screen.getByRole("button", { name: "Panel item 1", pressed: false }),
+      screen.getByRole("treeitem", { name: "Ada", selected: true }),
+    ).toBeInTheDocument();
+  });
+
+  it("the Notes rail panel shows the notes tree and its New note and New folder buttons", async () => {
+    renderApp();
+    const railPanel = screen.getByRole("region", { name: "Notes rail panel" });
+
+    expect(
+      await within(railPanel).findByRole("tree", { name: "Notes" }),
+    ).toBeInTheDocument();
+    expect(
+      within(railPanel).getByRole("button", { name: "New note" }),
+    ).toBeInTheDocument();
+    expect(
+      within(railPanel).getByRole("button", { name: "New folder" }),
     ).toBeInTheDocument();
   });
 });

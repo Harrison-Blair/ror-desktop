@@ -1,6 +1,12 @@
 import { act, fireEvent, render, screen } from "@testing-library/react";
-import { beforeEach, describe, expect, it } from "vitest";
+import { beforeEach, describe, expect, it, vi } from "vitest";
 import App from "@/App";
+
+// The notes folder lives on disk behind Tauri; these tests need an empty one.
+vi.mock("@/lib/notesApi", () => ({
+  listNotes: async () => [],
+  onNotesChanged: async () => () => {},
+}));
 
 function setWindowWidth(width: number) {
   Object.defineProperty(window, "innerWidth", {
