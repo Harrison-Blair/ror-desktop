@@ -24,6 +24,10 @@ import {
   useRef,
   useState,
 } from "react";
+import {
+  ContextMenu,
+  type ContextMenuItem,
+} from "@/components/ContextMenu/ContextMenu";
 import { useToast } from "@/components/Toast/Toast";
 import {
   createEntry,
@@ -36,7 +40,6 @@ import {
   renameEntry,
 } from "@/lib/notesApi";
 import { DeleteDialog } from "./DeleteDialog";
-import { NotesMenu, type NotesMenuItem } from "./NotesMenu";
 import styles from "./NotesTree.module.css";
 
 export type NotesTreeHandle = { startCreate: (kind: EntryKind) => void };
@@ -396,8 +399,8 @@ export function NotesTree({
     if (rect) openMenu(entry, rect.left + 16, rect.top + ROW_HEIGHT);
   };
 
-  const menuItems = (entry: Entry): NotesMenuItem[] => {
-    const common: NotesMenuItem[] = [
+  const menuItems = (entry: Entry): ContextMenuItem[] => {
+    const common: ContextMenuItem[] = [
       { label: "Rename", shortcut: "F2", run: () => startRename(entry) },
       {
         label: "Delete",
@@ -701,7 +704,7 @@ export function NotesTree({
         </div>
       )}
       {menu && (
-        <NotesMenu
+        <ContextMenu
           label={menu.entry.name}
           x={menu.x}
           y={menu.y}

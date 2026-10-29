@@ -6,16 +6,16 @@ import {
   useRef,
   useState,
 } from "react";
-import styles from "./NotesMenu.module.css";
+import styles from "./ContextMenu.module.css";
 
-export type NotesMenuItem =
+export type ContextMenuItem =
   | "separator"
   | { label: string; icon?: LucideIcon; shortcut?: string; run: () => void };
 
 // Distance kept between the menu and the window edge.
 const EDGE = 4;
 
-export function NotesMenu({
+export function ContextMenu({
   label,
   x,
   y,
@@ -26,8 +26,8 @@ export function NotesMenu({
   label: string;
   x: number;
   y: number;
-  items: NotesMenuItem[];
-  onRun: (item: Exclude<NotesMenuItem, "separator">) => void;
+  items: ContextMenuItem[];
+  onRun: (item: Exclude<ContextMenuItem, "separator">) => void;
   onClose: () => void;
 }) {
   const menu = useRef<HTMLDivElement>(null);

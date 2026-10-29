@@ -98,7 +98,7 @@
   outline-color: var(--error);
 }
 
-/* DicePanel .error, placed under the name box. */
+/* DiceMenu .error, placed under the name box. */
 .fieldError {
   margin: 0;
   padding-top: 2px;
