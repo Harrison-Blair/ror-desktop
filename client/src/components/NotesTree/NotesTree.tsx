@@ -24,6 +24,7 @@ import {
   useRef,
   useState,
 } from "react";
+import { ConfirmDialog } from "@/components/ConfirmDialog/ConfirmDialog";
 import {
   ContextMenu,
   type ContextMenuItem,
@@ -39,7 +40,7 @@ import {
   onNotesChanged,
   renameEntry,
 } from "@/lib/notesApi";
-import { DeleteDialog } from "./DeleteDialog";
+import { deleteQuestion } from "./deleteQuestion";
 import styles from "./NotesTree.module.css";
 
 export type NotesTreeHandle = { startCreate: (kind: EntryKind) => void };
@@ -720,8 +721,10 @@ export function NotesTree({
         />
       )}
       {deleting && (
-        <DeleteDialog
-          entry={deleting}
+        <ConfirmDialog
+          title={deleteQuestion(deleting)}
+          message="You can restore it from the system trash."
+          confirmLabel="Move to trash"
           onCancel={() => {
             returnFocusTo(deleting.path);
             setDeleting(undefined);

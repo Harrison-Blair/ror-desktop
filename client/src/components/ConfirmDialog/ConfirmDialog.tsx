@@ -1,44 +1,23 @@
 import { type KeyboardEvent, useEffect, useId, useRef } from "react";
-import type { Entry } from "@/lib/notesApi";
-import styles from "./DeleteDialog.module.css";
+import styles from "./ConfirmDialog.module.css";
 
-function countInside(entry: Entry) {
-  let notes = 0;
-  let folders = 0;
-  for (const child of entry.children ?? []) {
-    if (child.kind === "note") notes++;
-    else {
-      folders++;
-      const inner = countInside(child);
-      notes += inner.notes;
-      folders += inner.folders;
-    }
-  }
-  return { notes, folders };
-}
-
-const plural = (count: number, word: string) =>
-  `${count} ${word}${count === 1 ? "" : "s"}`;
-
-export function deleteQuestion(entry: Entry) {
-  const { notes, folders } = countInside(entry);
-  const parts = [
-    notes > 0 && plural(notes, "note"),
-    folders > 0 && plural(folders, "folder"),
-  ].filter(Boolean);
-  if (parts.length === 0) return `Move “${entry.name}” to the trash?`;
-  return `Move “${entry.name}” and the ${parts.join(" and ")} inside it to the trash?`;
-}
-
-export function DeleteDialog({
-  entry,
-  onCancel,
-  onConfirm,
-}: {
-  entry: Entry;
-  onCancel: () => void;
+export type ConfirmDialogProps = {
+  title: string;
+  message: string;
+  confirmLabel: string;
+  cancelLabel?: string;
   onConfirm: () => void;
-}) {
+  onCancel: () => void;
+};
+
+export function ConfirmDialog({
+  title,
+  message,
+  confirmLabel,
+  cancelLabel = "Cancel",
+  onConfirm,
+  onCancel,
+}: ConfirmDialogProps) {
   const id = useId();
   const dialog = useRef<HTMLDivElement>(null);
   const cancel = useRef<HTMLButtonElement>(null);
@@ -73,10 +52,10 @@ export function DeleteDialog({
         onKeyDown={onKeyDown}
       >
         <h2 id={`${id}-title`} className={styles.title}>
-          {deleteQuestion(entry)}
+          {title}
         </h2>
         <p id={`${id}-text`} className={styles.text}>
-          You can restore it from the system trash.
+          {message}
         </p>
         <div className={styles.actions}>
           <button
@@ -85,14 +64,14 @@ export function DeleteDialog({
             className={styles.button}
             onClick={onCancel}
           >
-            Cancel
+            {cancelLabel}
           </button>
           <button
             type="button"
             className={`${styles.button} ${styles.primary}`}
             onClick={onConfirm}
           >
-            Move to trash
+            {confirmLabel}
           </button>
         </div>
       </div>
