@@ -6,7 +6,7 @@ use std::path::{Path, PathBuf};
 #[serde(rename_all = "lowercase")]
 pub enum Kind {
     Folder,
-    Note,
+    File,
 }
 
 #[derive(Debug, PartialEq, Eq, Serialize)]
@@ -52,16 +52,6 @@ fn outside() -> NotesError {
     err(Code::NotFound, "That item isn't in the notes folder.")
 }
 
-fn note_stem(file_name: &str) -> Option<&str> {
-    let split = file_name.len().checked_sub(3)?;
-    let ext = file_name.get(split..)?;
-    ext.eq_ignore_ascii_case(".md").then(|| &file_name[..split])
-}
-
-fn display_name(segment: &str) -> &str {
-    note_stem(segment).unwrap_or(segment)
-}
-
 fn segments(rel: &str) -> Result<Vec<&str>> {
     if rel.is_empty() {
         return Ok(Vec::new());
@@ -80,27 +70,22 @@ fn segments(rel: &str) -> Result<Vec<&str>> {
     Ok(segs)
 }
 
-/// Resolves an existing folder or note inside `root` without following symlinks.
+/// Resolves an existing folder or file inside `root` without following symlinks.
 fn resolve(root: &Path, rel: &str) -> Result<(PathBuf, Option<Kind>)> {
     let segs = segments(rel)?;
     let mut abs = root.to_path_buf();
     let mut kind = None;
     for (i, seg) in segs.iter().enumerate() {
         abs.push(seg);
-        let missing = || {
-            err(
-                Code::NotFound,
-                format!("“{}” no longer exists.", display_name(seg)),
-            )
-        };
+        let missing = || err(Code::NotFound, format!("“{seg}” no longer exists."));
         let meta = fs::symlink_metadata(&abs).map_err(|_| missing())?;
         let last = i + 1 == segs.len();
         if meta.is_symlink() {
             return Err(outside());
         } else if meta.is_dir() {
             kind = Some(Kind::Folder);
-        } else if last && meta.is_file() && note_stem(seg).is_some() {
-            kind = Some(Kind::Note);
+        } else if last && meta.is_file() {
+            kind = Some(Kind::File);
         } else {
             return Err(missing());
         }
@@ -118,9 +103,9 @@ fn resolve_item(root: &Path, rel: &str) -> Result<(PathBuf, Kind)> {
 fn resolve_folder(root: &Path, rel: &str) -> Result<PathBuf> {
     match resolve(root, rel)? {
         (abs, None | Some(Kind::Folder)) => Ok(abs),
-        (_, Some(Kind::Note)) => Err(err(
+        (_, Some(Kind::File)) => Err(err(
             Code::NotFound,
-            format!("“{}” isn't a folder.", display_name(last_segment(rel))),
+            format!("“{}” isn't a folder.", last_segment(rel)),
         )),
     }
 }
@@ -138,13 +123,6 @@ fn join(parent: &str, segment: &str) -> String {
         segment.to_string()
     } else {
         format!("{parent}/{segment}")
-    }
-}
-
-fn file_name(kind: Kind, name: &str) -> String {
-    match kind {
-        Kind::Folder => name.to_string(),
-        Kind::Note => format!("{name}.md"),
     }
 }
 
@@ -179,7 +157,8 @@ pub fn validate_name(name: &str) -> Result<()> {
     Ok(())
 }
 
-/// Errors if a sibling in `dir` other than `except` (a file name) has `name` ignoring case.
+/// Errors if any entry in `dir` other than `except`, hidden or not, has `name`
+/// ignoring case.
 fn check_clash(
     dir: &Path,
     name: &str,
@@ -194,16 +173,10 @@ fn check_clash(
         if Some(fname.as_str()) == except {
             continue;
         }
-        let Ok(ft) = entry.file_type() else { continue };
-        let sibling = if ft.is_dir() {
-            Some((Kind::Folder, fname.as_str()))
-        } else {
-            note_stem(&fname).map(|stem| (Kind::Note, stem))
-        };
-        if let Some((kind, sibling_name)) = sibling {
-            if sibling_name.to_lowercase() == wanted {
-                return Err(err(Code::NameTaken, message(kind, sibling_name)));
-            }
+        if fname.to_lowercase() == wanted {
+            let is_dir = entry.file_type().is_ok_and(|ft| ft.is_dir());
+            let kind = if is_dir { Kind::Folder } else { Kind::File };
+            return Err(err(Code::NameTaken, message(kind, &fname)));
         }
     }
     Ok(())
@@ -211,7 +184,7 @@ fn check_clash(
 
 fn exists_message(kind: Kind, name: &str) -> String {
     match kind {
-        Kind::Note => format!("A note named “{name}” already exists in this folder."),
+        Kind::File => format!("A file named “{name}” already exists in this folder."),
         Kind::Folder => format!("A folder named “{name}” already exists in this folder."),
     }
 }
@@ -248,14 +221,12 @@ fn list_dir(dir: &Path, rel: &str) -> Result<Vec<Entry>> {
                 children: Some(children),
             });
         } else if ft.is_file() {
-            if let Some(stem) = note_stem(&fname) {
-                out.push(Entry {
-                    kind: Kind::Note,
-                    name: stem.to_string(),
-                    path,
-                    children: None,
-                });
-            }
+            out.push(Entry {
+                kind: Kind::File,
+                name: fname,
+                path,
+                children: None,
+            });
         }
     }
     out.sort_by(|a, b| {
@@ -269,33 +240,31 @@ pub fn create(root: &Path, parent: &str, kind: Kind, name: &str) -> Result<Strin
     validate_name(name)?;
     let dir = resolve_folder(root, parent)?;
     check_clash(&dir, name, None, exists_message)?;
-    let fname = file_name(kind, name);
-    let abs = dir.join(&fname);
+    let abs = dir.join(name);
     match kind {
         Kind::Folder => fs::create_dir(&abs),
-        Kind::Note => fs::File::create_new(&abs).map(|_| ()),
+        Kind::File => fs::File::create_new(&abs).map(|_| ()),
     }
     .map_err(|e| io_err("create", name, e))?;
-    Ok(join(parent, &fname))
+    Ok(join(parent, name))
 }
 
 pub fn rename(root: &Path, path: &str, new_name: &str) -> Result<String> {
     let (abs, kind) = resolve_item(root, path)?;
     validate_name(new_name)?;
-    let old_fname = last_segment(path);
-    let new_fname = file_name(kind, new_name);
+    let old_name = last_segment(path);
     let parent = parent_of(path);
-    if new_fname == old_fname {
+    if new_name == old_name {
         return Ok(path.to_string());
     }
     let dir = abs.parent().expect("item is below root");
-    check_clash(dir, new_name, Some(old_fname), exists_message)?;
-    let dest = dir.join(&new_fname);
-    if new_fname.to_lowercase() != old_fname.to_lowercase() {
+    check_clash(dir, new_name, Some(old_name), exists_message)?;
+    let dest = dir.join(new_name);
+    if new_name.to_lowercase() != old_name.to_lowercase() {
         refuse_existing(&dest, || exists_message(kind, new_name))?;
     }
-    fs::rename(&abs, dest).map_err(|e| io_err("rename", display_name(old_fname), e))?;
-    Ok(join(parent, &new_fname))
+    fs::rename(&abs, dest).map_err(|e| io_err("rename", old_name, e))?;
+    Ok(join(parent, new_name))
 }
 
 pub fn move_item(root: &Path, path: &str, new_parent: &str) -> Result<String> {
@@ -307,8 +276,7 @@ pub fn move_item(root: &Path, path: &str, new_parent: &str) -> Result<String> {
     if new_parent == parent_of(path) {
         return Ok(path.to_string());
     }
-    let fname = last_segment(path);
-    let name = display_name(fname);
+    let name = last_segment(path);
     let place = if new_parent.is_empty() {
         "the top level".to_string()
     } else {
@@ -317,10 +285,10 @@ pub fn move_item(root: &Path, path: &str, new_parent: &str) -> Result<String> {
     check_clash(&target, name, None, |_, _| {
         format!("“{name}” is already in {place}.")
     })?;
-    let dest = target.join(fname);
+    let dest = target.join(name);
     refuse_existing(&dest, || format!("“{name}” is already in {place}."))?;
     fs::rename(&abs, dest).map_err(|e| io_err("move", name, e))?;
-    Ok(join(new_parent, fname))
+    Ok(join(new_parent, name))
 }
 
 pub fn delete(root: &Path, path: &str) -> Result<()> {
@@ -328,10 +296,7 @@ pub fn delete(root: &Path, path: &str) -> Result<()> {
     trash::delete(&abs).map_err(|e| {
         err(
             Code::Io,
-            format!(
-                "Couldn't move “{}” to the trash: {e}.",
-                display_name(last_segment(path))
-            ),
+            format!("Couldn't move “{}” to the trash: {e}.", last_segment(path)),
         )
     })
 }
@@ -425,7 +390,7 @@ mod tests {
     }
 
     #[test]
-    fn list_keeps_folders_and_md_files_and_sorts_them() {
+    fn list_keeps_folders_and_all_files_with_full_names_and_sorts_them() {
         let dir = root();
         let r = dir.path();
         mkdir(r, "beta");
@@ -436,8 +401,10 @@ mod tests {
         touch(r, "delta.md");
         touch(r, ".secret.md");
         touch(r, "image.png");
+        touch(r, "foo");
+        touch(r, "foo.md");
         touch(r, "beta/inner.md");
-        touch(r, "beta/skip.txt");
+        touch(r, "beta/todo.txt");
 
         let tree = list(r).unwrap();
         let top: Vec<(Kind, &str, &str)> = tree
@@ -449,20 +416,31 @@ mod tests {
             vec![
                 (Kind::Folder, "Alpha", "Alpha"),
                 (Kind::Folder, "beta", "beta"),
-                (Kind::Note, "delta", "delta.md"),
-                (Kind::Note, "Echo", "Echo.MD"),
-                (Kind::Note, "zeta", "zeta.md"),
+                (Kind::File, "delta.md", "delta.md"),
+                (Kind::File, "Echo.MD", "Echo.MD"),
+                (Kind::File, "foo", "foo"),
+                (Kind::File, "foo.md", "foo.md"),
+                (Kind::File, "image.png", "image.png"),
+                (Kind::File, "zeta.md", "zeta.md"),
             ]
         );
         assert_eq!(tree[0].children, Some(vec![]));
         assert_eq!(
             tree[1].children,
-            Some(vec![Entry {
-                kind: Kind::Note,
-                name: "inner".into(),
-                path: "beta/inner.md".into(),
-                children: None
-            }])
+            Some(vec![
+                Entry {
+                    kind: Kind::File,
+                    name: "inner.md".into(),
+                    path: "beta/inner.md".into(),
+                    children: None
+                },
+                Entry {
+                    kind: Kind::File,
+                    name: "todo.txt".into(),
+                    path: "beta/todo.txt".into(),
+                    children: None
+                }
+            ])
         );
         assert_eq!(tree[2].children, None);
     }
@@ -470,13 +448,22 @@ mod tests {
     #[test]
     fn entry_serializes_to_the_command_contract() {
         let entry = Entry {
-            kind: Kind::Note,
-            name: "a".into(),
+            kind: Kind::File,
+            name: "a.md".into(),
             path: "a.md".into(),
             children: None,
         };
         let json = serde_json_like(&entry);
-        assert_eq!(json, r#"{"kind":"note","name":"a","path":"a.md"}"#);
+        assert_eq!(json, r#"{"kind":"file","name":"a.md","path":"a.md"}"#);
+        assert_eq!(
+            serde_json::from_str::<Kind>(r#""file""#).unwrap(),
+            Kind::File
+        );
+        assert_eq!(
+            serde_json::from_str::<Kind>(r#""folder""#).unwrap(),
+            Kind::Folder
+        );
+        assert!(serde_json::from_str::<Kind>(r#""note""#).is_err());
         let e = err(Code::InvalidMove, "m");
         assert_eq!(
             serde_json_like(&e),
@@ -489,15 +476,20 @@ mod tests {
     }
 
     #[test]
-    fn create_note_returns_path_and_makes_empty_file() {
+    fn create_uses_the_name_as_typed_and_makes_an_empty_file() {
         let dir = root();
         let r = dir.path();
         mkdir(r, "Lore");
         assert_eq!(
-            create(r, "Lore", Kind::Note, "Factions").unwrap(),
+            create(r, "Lore", Kind::File, "Factions.md").unwrap(),
             "Lore/Factions.md"
         );
         assert_eq!(fs::read_to_string(r.join("Lore/Factions.md")).unwrap(), "");
+        assert_eq!(create(r, "", Kind::File, "todo.txt").unwrap(), "todo.txt");
+        assert_eq!(create(r, "", Kind::File, "README").unwrap(), "README");
+        assert!(r.join("todo.txt").is_file());
+        assert!(r.join("README").is_file());
+        assert!(!r.join("README.md").exists());
         assert_eq!(create(r, "", Kind::Folder, "Maps").unwrap(), "Maps");
         assert!(r.join("Maps").is_dir());
     }
@@ -505,8 +497,23 @@ mod tests {
     #[test]
     fn create_rejects_invalid_names() {
         let dir = root();
-        let e = create(dir.path(), "", Kind::Note, "a?").unwrap_err();
+        let e = create(dir.path(), "", Kind::File, "a?").unwrap_err();
         assert_eq!(e.code, Code::InvalidName);
+    }
+
+    #[test]
+    fn an_extension_alone_is_not_a_name() {
+        let dir = root();
+        let r = dir.path();
+        let e = create(r, "", Kind::File, ".md").unwrap_err();
+        assert_eq!(e.code, Code::InvalidName);
+        assert_eq!(e.message, "Names can't start or end with a space or a dot.");
+        touch(r, "a.md");
+        assert_eq!(
+            rename(r, "a.md", ".md").unwrap_err().code,
+            Code::InvalidName
+        );
+        assert!(!r.join(".md").exists());
     }
 
     #[test]
@@ -515,16 +522,31 @@ mod tests {
         let r = dir.path();
         touch(r, "Plot.md");
         mkdir(r, "Maps");
-        let e = create(r, "", Kind::Folder, "plot").unwrap_err();
+        let e = create(r, "", Kind::Folder, "plot.MD").unwrap_err();
         assert_eq!(e.code, Code::NameTaken);
         assert_eq!(
             e.message,
-            "A note named “Plot” already exists in this folder."
+            "A file named “Plot.md” already exists in this folder."
         );
-        let e = create(r, "", Kind::Note, "MAPS").unwrap_err();
+        let e = create(r, "", Kind::File, "MAPS").unwrap_err();
         assert_eq!(
             e.message,
             "A folder named “Maps” already exists in this folder."
+        );
+    }
+
+    #[test]
+    fn names_that_differ_only_by_extension_coexist() {
+        let dir = root();
+        let r = dir.path();
+        touch(r, "foo");
+        assert_eq!(create(r, "", Kind::File, "foo.md").unwrap(), "foo.md");
+        assert_eq!(create(r, "", Kind::Folder, "foo.d").unwrap(), "foo.d");
+        assert_eq!(rename(r, "foo.md", "foo.txt").unwrap(), "foo.txt");
+        let e = create(r, "", Kind::Folder, "Foo").unwrap_err();
+        assert_eq!(
+            e.message,
+            "A file named “foo” already exists in this folder."
         );
     }
 
@@ -534,15 +556,50 @@ mod tests {
         let r = dir.path();
         touch(r, "plot.md");
         touch(r, "Other.md");
-        let e = rename(r, "plot.md", "other").unwrap_err();
+        let e = rename(r, "plot.md", "other.md").unwrap_err();
         assert_eq!(e.code, Code::NameTaken);
         assert_eq!(
             e.message,
-            "A note named “Other” already exists in this folder."
+            "A file named “Other.md” already exists in this folder."
         );
-        assert_eq!(rename(r, "plot.md", "Plot").unwrap(), "Plot.md");
+        assert_eq!(rename(r, "plot.md", "Plot.md").unwrap(), "Plot.md");
         let names: Vec<String> = list(r).unwrap().into_iter().map(|e| e.name).collect();
-        assert_eq!(names, ["Other", "Plot"]);
+        assert_eq!(names, ["Other.md", "Plot.md"]);
+    }
+
+    #[test]
+    fn case_only_rename_is_refused_when_another_sibling_matches() {
+        let dir = root();
+        let r = dir.path();
+        touch(r, "plot.md");
+        touch(r, "PLOT.md");
+        if list(r).unwrap().len() != 2 {
+            eprintln!("skipped: the file system ignores case");
+            return;
+        }
+        let e = rename(r, "plot.md", "Plot.md").unwrap_err();
+        assert_eq!(e.code, Code::NameTaken);
+        assert_eq!(
+            e.message,
+            "A file named “PLOT.md” already exists in this folder."
+        );
+        assert!(r.join("plot.md").is_file());
+        assert!(!r.join("Plot.md").exists());
+    }
+
+    #[test]
+    fn rename_and_move_keep_the_bytes_of_any_file() {
+        let dir = root();
+        let r = dir.path();
+        mkdir(r, "Lore");
+        fs::write(r.join("todo.txt"), b"keep \x00\xff").unwrap();
+        assert_eq!(rename(r, "todo.txt", "tasks.txt").unwrap(), "tasks.txt");
+        assert_eq!(move_item(r, "tasks.txt", "Lore").unwrap(), "Lore/tasks.txt");
+        assert_eq!(
+            fs::read(r.join("Lore/tasks.txt")).unwrap(),
+            b"keep \x00\xff"
+        );
+        assert!(!r.join("todo.txt").exists());
     }
 
     #[test]
@@ -575,7 +632,7 @@ mod tests {
         let abs = dir.path().join("outside.md").to_string_lossy().into_owned();
         assert_eq!(delete(&r, &abs).unwrap_err().code, Code::NotFound);
         assert_eq!(
-            create(&r, "..", Kind::Note, "x").unwrap_err().code,
+            create(&r, "..", Kind::File, "x").unwrap_err().code,
             Code::NotFound
         );
         assert!(!dir.path().join("x.md").exists());
@@ -609,7 +666,7 @@ mod tests {
             top,
             [
                 ("trail ".to_string(), "trail ".to_string()),
-                (" Intro".to_string(), " Intro.md".to_string())
+                (" Intro.md".to_string(), " Intro.md".to_string())
             ]
         );
         assert_eq!(
@@ -617,7 +674,7 @@ mod tests {
             "trail / Intro.md"
         );
         assert_eq!(
-            rename(r, "trail / Intro.md", "Intro").unwrap(),
+            rename(r, "trail / Intro.md", "Intro.md").unwrap(),
             "trail /Intro.md"
         );
         assert_eq!(rename(r, "trail ", "Trail").unwrap(), "Trail");
@@ -630,9 +687,9 @@ mod tests {
         let dir = root();
         let r = dir.path();
         touch(r, "plot.md");
-        assert_eq!(rename(r, "plot.md", "Plot").unwrap(), "Plot.md");
+        assert_eq!(rename(r, "plot.md", "Plot.md").unwrap(), "Plot.md");
         let names: Vec<String> = list(r).unwrap().into_iter().map(|e| e.name).collect();
-        assert_eq!(names, ["Plot"]);
+        assert_eq!(names, ["Plot.md"]);
     }
 
     #[test]
@@ -645,10 +702,7 @@ mod tests {
         fs::write(r.join("Lore/a"), "keep").unwrap();
         let e = rename(r, "a", "b").unwrap_err();
         assert_eq!(e.code, Code::NameTaken);
-        assert_eq!(
-            e.message,
-            "A folder named “b” already exists in this folder."
-        );
+        assert_eq!(e.message, "A file named “b” already exists in this folder.");
         let e = move_item(r, "a", "Lore").unwrap_err();
         assert_eq!(e.code, Code::NameTaken);
         assert_eq!(e.message, "“a” is already in “Lore”.");
@@ -679,7 +733,7 @@ mod tests {
         assert_eq!(tree.len(), 2);
         assert_eq!(tree[0].name, "locked");
         assert_eq!(tree[0].children, Some(vec![]));
-        assert_eq!(tree[1].name, "open");
+        assert_eq!(tree[1].name, "open.md");
     }
 
     #[cfg(unix)]
@@ -689,21 +743,61 @@ mod tests {
         let r = dir.path().join("notes");
         mkdir(&r, "");
         mkdir(dir.path(), "elsewhere");
+        touch(dir.path(), "elsewhere/a.md");
         std::os::unix::fs::symlink(dir.path().join("elsewhere"), r.join("link")).unwrap();
+        std::os::unix::fs::symlink(dir.path().join("elsewhere/a.md"), r.join("a.md")).unwrap();
         assert_eq!(
-            create(&r, "link", Kind::Note, "x").unwrap_err().code,
+            create(&r, "link", Kind::File, "x").unwrap_err().code,
             Code::NotFound
         );
+        assert_eq!(rename(&r, "a.md", "b.md").unwrap_err().code, Code::NotFound);
         assert!(list(&r).unwrap().is_empty());
     }
 
+    #[cfg(unix)]
     #[test]
-    fn non_note_files_cannot_be_targeted() {
+    fn hidden_entries_and_symlinks_take_their_names() {
         let dir = root();
-        touch(dir.path(), "image.png");
+        let r = dir.path().join("notes");
+        mkdir(&r, "Lore");
+        mkdir(&r, ".git");
+        touch(&r, "draft.md");
+        touch(&r, "Lore/plan.md");
+        // Dangling, so following it would find nothing.
+        std::os::unix::fs::symlink(dir.path().join("gone"), r.join("Link.md")).unwrap();
+        std::os::unix::fs::symlink(dir.path().join("gone"), r.join("Lore/Draft.md")).unwrap();
+        assert!(list(&r).unwrap().iter().all(|e| e.name != "Link.md"));
+        let e = create(&r, "", Kind::File, "link.md").unwrap_err();
+        assert_eq!(e.code, Code::NameTaken);
         assert_eq!(
-            rename(dir.path(), "image.png", "x").unwrap_err().code,
-            Code::NotFound
+            e.message,
+            "A file named “Link.md” already exists in this folder."
+        );
+        let e = rename(&r, "draft.md", "LINK.md").unwrap_err();
+        assert_eq!(e.code, Code::NameTaken);
+        let e = move_item(&r, "draft.md", "Lore").unwrap_err();
+        assert_eq!(e.message, "“draft.md” is already in “Lore”.");
+        assert!(r.join("draft.md").is_file());
+        // Names can't start with a dot, so check a hidden folder directly.
+        let e = check_clash(&r, ".GIT", None, exists_message).unwrap_err();
+        assert_eq!(
+            e.message,
+            "A folder named “.git” already exists in this folder."
+        );
+    }
+
+    #[test]
+    fn any_regular_file_can_be_targeted() {
+        let dir = root();
+        let r = dir.path();
+        touch(r, "image.png");
+        touch(r, "todo.txt");
+        assert_eq!(rename(r, "image.png", "map.png").unwrap(), "map.png");
+        // Delete resolves its item the same way; this checks the resolver
+        // without sending a file to the real trash.
+        assert_eq!(
+            resolve_item(r, "todo.txt").unwrap(),
+            (r.join("todo.txt"), Kind::File)
         );
     }
 
@@ -738,9 +832,10 @@ mod tests {
         mkdir(r, "plot");
         let e = move_item(r, "Plot.md", "Lore").unwrap_err();
         assert_eq!(e.code, Code::NameTaken);
-        assert_eq!(e.message, "“Plot” is already in “Lore”.");
+        assert_eq!(e.message, "“Plot.md” is already in “Lore”.");
         let e = move_item(r, "Lore/plot.md", "").unwrap_err();
-        assert_eq!(e.message, "“plot” is already in the top level.");
+        assert_eq!(e.message, "“plot.md” is already in the top level.");
+        assert_eq!(move_item(r, "plot", "Lore").unwrap(), "Lore/plot");
     }
 
     #[test]
@@ -760,6 +855,6 @@ mod tests {
         let dir = root();
         let e = delete(dir.path(), "gone.md").unwrap_err();
         assert_eq!(e.code, Code::NotFound);
-        assert_eq!(e.message, "“gone” no longer exists.");
+        assert_eq!(e.message, "“gone.md” no longer exists.");
     }
 }

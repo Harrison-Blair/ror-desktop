@@ -46,7 +46,7 @@ const isNameError = (e: unknown) =>
 
 const toTree = (entries: Entry[]): TreeEntry[] =>
   entries.map((entry) => ({
-    kind: entry.kind === "note" ? "file" : "folder",
+    kind: entry.kind,
     name: entry.name,
     path: entry.path,
     children: entry.children && toTree(entry.children),
@@ -212,16 +212,15 @@ export function NotesMenu({
     <FileTree
       ref={tree}
       label="Notes"
-      labels={{ file: "note" }}
+      labels={{ file: "file", newFile: "New note" }}
+      newFileName="Untitled.md"
       entries={entries ?? NO_ENTRIES}
       expanded={expanded}
       setExpanded={setExpanded}
       selected={selected}
       setSelected={setSelected}
       onCreate={(parent, kind, name) =>
-        reloadAfterNameEdit(
-          createEntry(parent, kind === "file" ? "note" : "folder", name),
-        )
+        reloadAfterNameEdit(createEntry(parent, kind, name))
       }
       onRename={(path, newName) =>
         reloadAfterNameEdit(renameEntry(path, newName))

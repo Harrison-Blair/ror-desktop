@@ -41,15 +41,15 @@ const sample = (): Entry[] => [
         name: "Villains",
         path: "People/Villains",
         children: [
-          { kind: "note", name: "Boss", path: "People/Villains/Boss.md" },
+          { kind: "file", name: "Boss.md", path: "People/Villains/Boss.md" },
         ],
       },
-      { kind: "note", name: "Ada", path: "People/Ada.md" },
-      { kind: "note", name: "Ben", path: "People/Ben.md" },
+      { kind: "file", name: "Ada.md", path: "People/Ada.md" },
+      { kind: "file", name: "Ben.md", path: "People/Ben.md" },
     ],
   },
   { kind: "folder", name: "Places", path: "Places", children: [] },
-  { kind: "note", name: "Chicago", path: "Chicago.md" },
+  { kind: "file", name: "Chicago.md", path: "Chicago.md" },
 ];
 
 let notesChanged: () => void;
@@ -114,20 +114,20 @@ describe("NotesTree", () => {
     const { user } = await renderLoaded();
     const tree = screen.getByRole("tree", { name: "Notes" });
 
-    expect(itemNames(tree)).toEqual(["People", "Places", "Chicago"]);
+    expect(itemNames(tree)).toEqual(["People", "Places", "Chicago.md"]);
     expect(item("People")).toHaveAttribute("aria-level", "1");
     expect(item("People")).toHaveAttribute("aria-expanded", "false");
-    expect(item("Chicago")).not.toHaveAttribute("aria-expanded");
-    expect(item("Chicago")).toHaveAttribute("aria-selected", "false");
-    expect(row("Chicago")).toHaveTextContent("Chicago");
-    expect(screen.getByTitle("Chicago")).toBeInTheDocument();
+    expect(item("Chicago.md")).not.toHaveAttribute("aria-expanded");
+    expect(item("Chicago.md")).toHaveAttribute("aria-selected", "false");
+    expect(row("Chicago.md")).toHaveTextContent("Chicago.md");
+    expect(screen.getByTitle("Chicago.md")).toBeInTheDocument();
 
     await user.click(row("People"));
 
     const group = within(item("People")).getByRole("group");
-    expect(itemNames(group)).toEqual(["Villains", "Ada", "Ben"]);
+    expect(itemNames(group)).toEqual(["Villains", "Ada.md", "Ben.md"]);
     expect(item("Villains")).toHaveAttribute("aria-level", "2");
-    expect(item("Ada")).toHaveAttribute("aria-level", "2");
+    expect(item("Ada.md")).toHaveAttribute("aria-level", "2");
   });
 
   it("gives the tree a single tab stop", async () => {
@@ -135,7 +135,7 @@ describe("NotesTree", () => {
 
     expect(item("People")).toHaveAttribute("tabindex", "0");
     expect(item("Places")).toHaveAttribute("tabindex", "-1");
-    expect(item("Chicago")).toHaveAttribute("tabindex", "-1");
+    expect(item("Chicago.md")).toHaveAttribute("tabindex", "-1");
   });
 
   it("clicking a folder selects it and toggles it open and closed", async () => {
@@ -147,7 +147,7 @@ describe("NotesTree", () => {
 
     await user.click(row("People"));
     expect(item("People")).toHaveAttribute("aria-expanded", "false");
-    expect(screen.queryByRole("treeitem", { name: "Ada" })).toBeNull();
+    expect(screen.queryByRole("treeitem", { name: "Ada.md" })).toBeNull();
   });
 
   it("moves focus with the arrow keys, Home and End, and selects with Enter and Space", async () => {
@@ -161,8 +161,8 @@ describe("NotesTree", () => {
     await user.keyboard("{ArrowRight}");
     expect(item("Villains")).toHaveFocus();
     await user.keyboard("{ArrowDown}");
-    expect(item("Ada")).toHaveFocus();
-    expect(item("Ada")).toHaveAttribute("tabindex", "0");
+    expect(item("Ada.md")).toHaveFocus();
+    expect(item("Ada.md")).toHaveAttribute("tabindex", "0");
     await user.keyboard("{ArrowUp}");
     expect(item("Villains")).toHaveFocus();
 
@@ -172,9 +172,9 @@ describe("NotesTree", () => {
     expect(item("People")).toHaveAttribute("aria-expanded", "false");
 
     await user.keyboard("{End}");
-    expect(item("Chicago")).toHaveFocus();
+    expect(item("Chicago.md")).toHaveFocus();
     await user.keyboard(" ");
-    expect(item("Chicago")).toHaveAttribute("aria-selected", "true");
+    expect(item("Chicago.md")).toHaveAttribute("aria-selected", "true");
 
     await user.keyboard("{Home}");
     expect(item("People")).toHaveFocus();
@@ -183,34 +183,58 @@ describe("NotesTree", () => {
     await user.keyboard("{Enter}");
     expect(item("Places")).toHaveAttribute("aria-selected", "true");
     expect(item("Places")).toHaveAttribute("aria-expanded", "true");
-    expect(item("Chicago")).toHaveAttribute("aria-selected", "false");
+    expect(item("Chicago.md")).toHaveAttribute("aria-selected", "false");
+  });
+
+  it("shows every file with its full name", async () => {
+    api.listNotes.mockResolvedValue([
+      { kind: "folder", name: "Maps", path: "Maps", children: [] },
+      { kind: "file", name: "foo", path: "foo" },
+      { kind: "file", name: "foo.md", path: "foo.md" },
+      { kind: "file", name: "Ideas.MD", path: "Ideas.MD" },
+      { kind: "file", name: "region.png", path: "region.png" },
+      { kind: "file", name: "todo.txt", path: "todo.txt" },
+    ]);
+    await renderTree();
+    await screen.findByRole("treeitem", { name: "todo.txt" });
+
+    expect(itemNames(screen.getByRole("tree", { name: "Notes" }))).toEqual([
+      "Maps",
+      "foo",
+      "foo.md",
+      "Ideas.MD",
+      "region.png",
+      "todo.txt",
+    ]);
+    expect(row("region.png")).toHaveTextContent(/^region\.png$/);
+    expect(item("todo.txt")).not.toHaveAttribute("aria-expanded");
   });
 
   it("New note adds a name box after the folders of the selected folder and saves it on Enter", async () => {
-    api.createEntry.mockResolvedValue("People/Zed.md");
+    api.createEntry.mockResolvedValue("People/Ideas.md");
     const { user } = await renderLoaded();
     await user.click(row("People"));
 
     await user.click(screen.getByRole("button", { name: "New note" }));
 
     const box = screen.getByRole<HTMLInputElement>("textbox", {
-      name: "Note name",
+      name: "File name",
     });
-    expect(box).toHaveValue("Untitled");
+    expect(box).toHaveValue("Untitled.md");
     expect(box).toHaveFocus();
     expect([box.selectionStart, box.selectionEnd]).toEqual([0, 8]);
     expect(itemNames(within(item("People")).getByRole("group"))).toEqual([
       "Villains",
       "(new)",
-      "Ada",
-      "Ben",
+      "Ada.md",
+      "Ben.md",
     ]);
     expect(api.createEntry).not.toHaveBeenCalled();
 
-    await user.keyboard("Zed{Enter}");
+    await user.keyboard("Ideas{Enter}");
 
     expect(api.createEntry).toHaveBeenCalledTimes(1);
-    expect(api.createEntry).toHaveBeenCalledWith("People", "note", "Zed");
+    expect(api.createEntry).toHaveBeenCalledWith("People", "file", "Ideas.md");
     expect(screen.queryByRole("textbox")).toBeNull();
   });
 
@@ -218,12 +242,47 @@ describe("NotesTree", () => {
     api.createEntry.mockResolvedValue("People/Untitled.md");
     const { user } = await renderLoaded();
     await user.click(row("People"));
-    await user.click(row("Ada"));
+    await user.click(row("Ada.md"));
 
     await user.click(screen.getByRole("button", { name: "New note" }));
     await user.keyboard("{Enter}");
 
-    expect(api.createEntry).toHaveBeenCalledWith("People", "note", "Untitled");
+    expect(api.createEntry).toHaveBeenCalledWith(
+      "People",
+      "file",
+      "Untitled.md",
+    );
+  });
+
+  it("New note creates a file with exactly the name typed over it", async () => {
+    api.createEntry.mockResolvedValue("todo.txt");
+    const { user } = await renderLoaded();
+
+    await user.click(screen.getByRole("button", { name: "New note" }));
+    await user.clear(screen.getByRole("textbox", { name: "File name" }));
+    await user.keyboard("todo.txt{Enter}");
+
+    expect(api.createEntry).toHaveBeenCalledWith("", "file", "todo.txt");
+  });
+
+  it("the folder menu's New note opens Untitled.md in that folder", async () => {
+    api.createEntry.mockResolvedValue("Places/Untitled.md");
+    const { user } = await renderLoaded();
+
+    await user.pointer({ keys: "[MouseRight]", target: row("Places") });
+    await user.click(screen.getByRole("menuitem", { name: /New note/ }));
+    const box = screen.getByRole<HTMLInputElement>("textbox", {
+      name: "File name",
+    });
+    expect(box).toHaveValue("Untitled.md");
+    expect([box.selectionStart, box.selectionEnd]).toEqual([0, 8]);
+    await user.keyboard("{Enter}");
+
+    expect(api.createEntry).toHaveBeenCalledWith(
+      "Places",
+      "file",
+      "Untitled.md",
+    );
   });
 
   it("Esc cancels a new folder without creating anything", async () => {
@@ -231,8 +290,18 @@ describe("NotesTree", () => {
 
     await user.click(screen.getByRole("button", { name: "New folder" }));
     const tree = screen.getByRole("tree", { name: "Notes" });
-    expect(itemNames(tree)).toEqual(["(new)", "People", "Places", "Chicago"]);
-    expect(screen.getByRole("textbox", { name: "Folder name" })).toHaveFocus();
+    expect(itemNames(tree)).toEqual([
+      "(new)",
+      "People",
+      "Places",
+      "Chicago.md",
+    ]);
+    const box = screen.getByRole<HTMLInputElement>("textbox", {
+      name: "Folder name",
+    });
+    expect(box).toHaveFocus();
+    expect(box).toHaveValue("Untitled");
+    expect([box.selectionStart, box.selectionEnd]).toEqual([0, 8]);
 
     await user.keyboard("{Escape}");
 
@@ -247,7 +316,7 @@ describe("NotesTree", () => {
     });
     const { user } = await renderLoaded();
     await user.click(screen.getByRole("button", { name: "New note" }));
-    const box = screen.getByRole("textbox", { name: "Note name" });
+    const box = screen.getByRole("textbox", { name: "File name" });
 
     await user.keyboard(".hidden{Enter}");
 
@@ -275,7 +344,7 @@ describe("NotesTree", () => {
   ])("with a name error showing, %s cancels the new note", async (_, keys) => {
     api.createEntry.mockRejectedValue({
       code: "name_taken",
-      message: "“Untitled” already exists here.",
+      message: "“Untitled.md” already exists here.",
     });
     const { user } = await renderLoaded();
     focusItem("Places");
@@ -297,9 +366,9 @@ describe("NotesTree", () => {
       message: "“Places” already exists here.",
     });
     const { user } = await renderLoaded();
-    focusItem("Chicago");
+    focusItem("Chicago.md");
     await user.keyboard("{F2}");
-    const box = screen.getByRole("textbox", { name: "Note name" });
+    const box = screen.getByRole("textbox", { name: "File name" });
 
     await user.clear(box);
     await user.keyboard("Places{Enter}");
@@ -315,14 +384,14 @@ describe("NotesTree", () => {
   it("a reload without the row being renamed closes the name box and frees dragging", async () => {
     api.moveEntry.mockResolvedValue("People/Places");
     const { user } = await renderLoaded();
-    focusItem("Chicago");
+    focusItem("Chicago.md");
     await user.keyboard("{F2}");
     api.listNotes.mockResolvedValue(sample().slice(0, 2));
 
     await act(async () => notesChanged());
 
     expect(screen.queryByRole("textbox")).toBeNull();
-    expect(screen.queryByRole("treeitem", { name: "Chicago" })).toBeNull();
+    expect(screen.queryByRole("treeitem", { name: "Chicago.md" })).toBeNull();
     expect(item("People")).toHaveFocus();
     document.elementFromPoint = () => row("People");
     fireEvent.pointerDown(row("Places"), { button: 0, clientX: 0, clientY: 0 });
@@ -339,7 +408,7 @@ describe("NotesTree", () => {
       }),
     );
     const { user } = await renderLoaded();
-    focusItem("Chicago");
+    focusItem("Chicago.md");
     await user.keyboard("{F2}Detroit{Enter}");
 
     await user.click(screen.getByRole("button", { name: "New folder" }));
@@ -359,7 +428,7 @@ describe("NotesTree", () => {
       }),
     );
     const { user } = await renderLoaded();
-    focusItem("Chicago");
+    focusItem("Chicago.md");
     await user.keyboard("{F2}Places{Enter}");
 
     await user.click(screen.getByRole("button", { name: "New folder" }));
@@ -393,24 +462,27 @@ describe("NotesTree", () => {
   it("F2 renames the focused note", async () => {
     api.renameEntry.mockResolvedValue("Detroit.md");
     const { user } = await renderLoaded();
-    focusItem("Chicago");
+    focusItem("Chicago.md");
 
     await user.keyboard("{F2}");
-    const box = screen.getByRole("textbox", { name: "Note name" });
-    expect(box).toHaveValue("Chicago");
+    const box = screen.getByRole<HTMLInputElement>("textbox", {
+      name: "File name",
+    });
+    expect(box).toHaveValue("Chicago.md");
+    expect([box.selectionStart, box.selectionEnd]).toEqual([0, 7]);
 
     await user.keyboard("Detroit{Enter}");
 
-    expect(api.renameEntry).toHaveBeenCalledWith("Chicago.md", "Detroit");
+    expect(api.renameEntry).toHaveBeenCalledWith("Chicago.md", "Detroit.md");
   });
 
   it.each([
     [
       "People",
-      "Move “People” and the 3 notes and 1 folder inside it to the trash?",
+      "Move “People” and the 3 files and 1 folder inside it to the trash?",
     ],
     ["Places", "Move “Places” to the trash?"],
-    ["Chicago", "Move “Chicago” to the trash?"],
+    ["Chicago.md", "Move “Chicago.md” to the trash?"],
   ])("Delete on %s asks: %s", async (name, question) => {
     const { user } = await renderLoaded();
     focusItem(name);
@@ -427,7 +499,7 @@ describe("NotesTree", () => {
     ).toHaveFocus();
   });
 
-  it("uses singular counts for a folder holding one note", async () => {
+  it("uses singular counts for a folder holding one file", async () => {
     const { user } = await renderLoaded();
     await user.click(row("People"));
     focusItem("Villains");
@@ -436,7 +508,7 @@ describe("NotesTree", () => {
 
     expect(
       screen.getByRole("alertdialog", {
-        name: "Move “Villains” and the 1 note inside it to the trash?",
+        name: "Move “Villains” and the 1 file inside it to the trash?",
       }),
     ).toBeInTheDocument();
   });
@@ -444,12 +516,12 @@ describe("NotesTree", () => {
   it("Cancel deletes nothing and returns focus; Move to trash deletes", async () => {
     api.deleteEntry.mockResolvedValue();
     const { user } = await renderLoaded();
-    focusItem("Chicago");
+    focusItem("Chicago.md");
 
     await user.keyboard("{Delete}");
     await user.click(screen.getByRole("button", { name: "Cancel" }));
     expect(screen.queryByRole("alertdialog")).toBeNull();
-    expect(item("Chicago")).toHaveFocus();
+    expect(item("Chicago.md")).toHaveFocus();
     expect(api.deleteEntry).not.toHaveBeenCalled();
 
     await user.keyboard("{Delete}");
@@ -461,7 +533,7 @@ describe("NotesTree", () => {
 
   it("Esc cancels the delete dialog and Tab stays inside it", async () => {
     const { user } = await renderLoaded();
-    focusItem("Chicago");
+    focusItem("Chicago.md");
     await user.keyboard("{Delete}");
 
     await user.tab();
@@ -478,16 +550,16 @@ describe("NotesTree", () => {
     api.deleteEntry.mockRejectedValue({
       code: "io",
       message:
-        "Couldn't move “Chicago” to the trash: the trash is not available.",
+        "Couldn't move “Chicago.md” to the trash: the trash is not available.",
     });
     const { user } = await renderLoaded();
-    focusItem("Chicago");
+    focusItem("Chicago.md");
     await user.keyboard("{Delete}");
 
     await user.click(screen.getByRole("button", { name: "Move to trash" }));
 
     expect(await screen.findByRole("alert")).toHaveTextContent(
-      "Error: Couldn't move “Chicago” to the trash: the trash is not available.",
+      "Error: Couldn't move “Chicago.md” to the trash: the trash is not available.",
     );
   });
 
@@ -518,11 +590,11 @@ describe("NotesTree", () => {
 
   it("the note menu has only Rename and Delete, and Delete opens the dialog", async () => {
     const { user } = await renderLoaded();
-    focusItem("Chicago");
+    focusItem("Chicago.md");
 
     await user.keyboard("{ContextMenu}");
 
-    const menu = screen.getByRole("menu", { name: "Chicago" });
+    const menu = screen.getByRole("menu", { name: "Chicago.md" });
     expect(
       within(menu)
         .getAllByRole("menuitem")
@@ -531,7 +603,9 @@ describe("NotesTree", () => {
 
     await user.click(within(menu).getByRole("menuitem", { name: /Delete/ }));
     expect(
-      screen.getByRole("alertdialog", { name: "Move “Chicago” to the trash?" }),
+      screen.getByRole("alertdialog", {
+        name: "Move “Chicago.md” to the trash?",
+      }),
     ).toBeInTheDocument();
   });
 
@@ -555,15 +629,15 @@ describe("NotesTree", () => {
     await user.click(row("People"));
     const updated = sample();
     updated[0].children?.push({
-      kind: "note",
-      name: "Cleo",
+      kind: "file",
+      name: "Cleo.md",
       path: "People/Cleo.md",
     });
     api.listNotes.mockResolvedValue(updated);
 
     await act(async () => notesChanged());
 
-    expect(item("Cleo")).toHaveAttribute("aria-level", "2");
+    expect(item("Cleo.md")).toHaveAttribute("aria-level", "2");
     expect(item("People")).toHaveAttribute("aria-expanded", "true");
     expect(item("People")).toHaveAttribute("aria-selected", "true");
   });
@@ -583,9 +657,9 @@ describe("NotesTree", () => {
       message: "“Places” already exists here.",
     });
     const { user } = await renderLoaded();
-    focusItem("Chicago");
+    focusItem("Chicago.md");
     await user.keyboard("{F2}");
-    await user.clear(screen.getByRole("textbox", { name: "Note name" }));
+    await user.clear(screen.getByRole("textbox", { name: "File name" }));
     await user.keyboard("Places{Enter}");
 
     expect(await screen.findByRole("alert")).toHaveTextContent(
@@ -597,16 +671,16 @@ describe("NotesTree", () => {
   it("renaming the selected note keeps it selected and focused", async () => {
     api.renameEntry.mockResolvedValue("Detroit.md");
     const { user } = await renderLoaded();
-    await user.click(row("Chicago"));
+    await user.click(row("Chicago.md"));
     const renamed = sample();
-    renamed[2] = { kind: "note", name: "Detroit", path: "Detroit.md" };
+    renamed[2] = { kind: "file", name: "Detroit.md", path: "Detroit.md" };
     api.listNotes.mockResolvedValue(renamed);
 
     await user.keyboard("{F2}Detroit{Enter}");
 
-    await waitFor(() => expect(item("Detroit")).toBeInTheDocument());
-    expect(item("Detroit")).toHaveAttribute("aria-selected", "true");
-    expect(item("Detroit")).toHaveFocus();
+    await waitFor(() => expect(item("Detroit.md")).toBeInTheDocument());
+    expect(item("Detroit.md")).toHaveAttribute("aria-selected", "true");
+    expect(item("Detroit.md")).toHaveFocus();
   });
 
   describe("drag to move", () => {
@@ -623,7 +697,7 @@ describe("NotesTree", () => {
       api.moveEntry.mockResolvedValue("Places/Chicago.md");
       await renderLoaded();
 
-      dragTo(row("Chicago"), row("Places"));
+      dragTo(row("Chicago.md"), row("Places"));
 
       expect(api.moveEntry).toHaveBeenCalledWith("Chicago.md", "Places");
     });
@@ -633,7 +707,7 @@ describe("NotesTree", () => {
       const { user, container } = await renderLoaded();
       await user.click(row("People"));
 
-      dragTo(row("Ada"), topLevel(container));
+      dragTo(row("Ada.md"), topLevel(container));
 
       expect(api.moveEntry).toHaveBeenCalledWith("People/Ada.md", "");
     });
@@ -644,7 +718,7 @@ describe("NotesTree", () => {
 
       dragTo(row("People"), row("Villains"));
       dragTo(row("People"), row("People"));
-      dragTo(row("Ada"), row("People"));
+      dragTo(row("Ada.md"), row("People"));
 
       expect(api.moveEntry).not.toHaveBeenCalled();
     });
@@ -653,7 +727,7 @@ describe("NotesTree", () => {
       await renderLoaded();
       document.elementFromPoint = () => row("Places");
 
-      fireEvent.pointerDown(row("Chicago"), {
+      fireEvent.pointerDown(row("Chicago.md"), {
         button: 0,
         clientX: 10,
         clientY: 10,
@@ -667,34 +741,34 @@ describe("NotesTree", () => {
     it("keyboard focus follows the moved row into its new folder", async () => {
       api.moveEntry.mockResolvedValue("Places/Chicago.md");
       await renderLoaded();
-      focusItem("Chicago");
+      focusItem("Chicago.md");
       const moved = sample();
       moved.pop();
       moved[1].children = [
-        { kind: "note", name: "Chicago", path: "Places/Chicago.md" },
+        { kind: "file", name: "Chicago.md", path: "Places/Chicago.md" },
       ];
       api.listNotes.mockResolvedValue(moved);
 
-      dragTo(row("Chicago"), row("Places"));
+      dragTo(row("Chicago.md"), row("Places"));
 
       await waitFor(() =>
-        expect(item("Chicago")).toHaveAttribute("aria-level", "2"),
+        expect(item("Chicago.md")).toHaveAttribute("aria-level", "2"),
       );
-      expect(item("Chicago")).toHaveFocus();
+      expect(item("Chicago.md")).toHaveFocus();
       expect(item("Places")).toHaveAttribute("aria-expanded", "true");
     });
 
     it("raises a toast and reloads when the move fails", async () => {
       api.moveEntry.mockRejectedValue({
         code: "name_taken",
-        message: "“Chicago” is already in “Places”.",
+        message: "“Chicago.md” is already in “Places”.",
       });
       await renderLoaded();
 
-      dragTo(row("Chicago"), row("Places"));
+      dragTo(row("Chicago.md"), row("Places"));
 
       expect(await screen.findByRole("alert")).toHaveTextContent(
-        "Error: “Chicago” is already in “Places”.",
+        "Error: “Chicago.md” is already in “Places”.",
       );
       expect(api.listNotes).toHaveBeenCalledTimes(2);
     });
@@ -705,7 +779,7 @@ describe("Notes folder", () => {
   const otherFolder = (): Entry[] => [
     { kind: "folder", name: "Quests", path: "Quests", children: [] },
     { kind: "folder", name: "Places", path: "Places", children: [] },
-    { kind: "note", name: "Chicago", path: "Chicago.md" },
+    { kind: "file", name: "Chicago.md", path: "Chicago.md" },
   ];
 
   it("puts Choose notes folder before New note and shows the folder in its title", async () => {
@@ -728,7 +802,7 @@ describe("Notes folder", () => {
   it("changes nothing when the picker is cancelled", async () => {
     const { user } = await renderLoaded();
     await user.click(row("People"));
-    await user.click(row("Chicago"));
+    await user.click(row("Chicago.md"));
     api.chooseNotesFolder.mockResolvedValue(null);
     api.listNotes.mockImplementation(async () => otherFolder());
     const choose = screen.getByRole("button", { name: "Choose notes folder" });
@@ -743,7 +817,7 @@ describe("Notes folder", () => {
 
     expect(api.chooseNotesFolder).toHaveBeenCalledTimes(1);
     expect(item("People")).toHaveAttribute("aria-expanded", "true");
-    expect(item("Chicago")).toHaveAttribute("aria-selected", "true");
+    expect(item("Chicago.md")).toHaveAttribute("aria-selected", "true");
     expect(screen.queryByRole("treeitem", { name: "Quests" })).toBeNull();
     expect(choose).toHaveAttribute(
       "title",
@@ -755,9 +829,9 @@ describe("Notes folder", () => {
   it("reloads the tree from a picked folder and clears the selection and open folders", async () => {
     const { user } = await renderLoaded();
     await user.click(row("Places"));
-    await user.click(row("Chicago"));
+    await user.click(row("Chicago.md"));
     expect(item("Places")).toHaveAttribute("aria-expanded", "true");
-    expect(item("Chicago")).toHaveAttribute("aria-selected", "true");
+    expect(item("Chicago.md")).toHaveAttribute("aria-selected", "true");
     api.chooseNotesFolder.mockResolvedValue("/home/x/Other");
     api.listNotes.mockImplementation(async () => otherFolder());
 
@@ -769,7 +843,7 @@ describe("Notes folder", () => {
     expect(screen.queryByRole("treeitem", { name: "People" })).toBeNull();
     // Places and Chicago.md exist in both folders, yet they are reset.
     expect(item("Places")).toHaveAttribute("aria-expanded", "false");
-    expect(item("Chicago")).toHaveAttribute("aria-selected", "false");
+    expect(item("Chicago.md")).toHaveAttribute("aria-selected", "false");
     expect(
       screen.getByRole("button", { name: "Choose notes folder" }),
     ).toHaveAttribute("title", "Choose notes folder (/home/x/Other)");
@@ -777,7 +851,7 @@ describe("Notes folder", () => {
 
   it("keeps the tree when the picked folder can't be saved", async () => {
     const { user } = await renderLoaded();
-    await user.click(row("Chicago"));
+    await user.click(row("Chicago.md"));
     api.chooseNotesFolder.mockRejectedValue(
       "Couldn't save the notes folder: Permission denied.",
     );
@@ -790,7 +864,7 @@ describe("Notes folder", () => {
     expect(await screen.findByRole("alert")).toHaveTextContent(
       "Couldn't save the notes folder: Permission denied.",
     );
-    expect(item("Chicago")).toHaveAttribute("aria-selected", "true");
+    expect(item("Chicago.md")).toHaveAttribute("aria-selected", "true");
     expect(screen.queryByRole("treeitem", { name: "Quests" })).toBeNull();
   });
 

@@ -96,6 +96,31 @@ describe("FileTree", () => {
     expect(screen.queryByRole("textbox")).toBeNull();
   });
 
+  it.each([
+    ["Ideas.md", "file", 5],
+    ["archive.tar.gz", "file", 11],
+    ["README", "file", 6],
+    ["v1.2", "folder", 4],
+  ] as const)(
+    "rename of %s (a %s) selects its first %i characters",
+    async (name, kind, end) => {
+      const { user } = renderTree([
+        kind === "folder"
+          ? { kind, name, path: name, children: [] }
+          : { kind, name, path: name },
+      ]);
+      focusItem(name);
+
+      await user.keyboard("{F2}");
+
+      const box = screen.getByRole<HTMLInputElement>("textbox", {
+        name: kind === "folder" ? "Folder name" : "Page name",
+      });
+      expect(box).toHaveValue(name);
+      expect([box.selectionStart, box.selectionEnd]).toEqual([0, end]);
+    },
+  );
+
   it("the folder menu's New page calls onCreate in that folder", async () => {
     onCreate.mockResolvedValue("Drafts/Untitled.txt");
     const { user } = renderTree();

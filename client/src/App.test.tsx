@@ -181,7 +181,7 @@ describe("App frame", () => {
         kind: "folder",
         name: "People",
         path: "People",
-        children: [{ kind: "note", name: "Ada", path: "People/Ada.md" }],
+        children: [{ kind: "file", name: "Ada.md", path: "People/Ada.md" }],
       },
     ];
     const user = renderApp();
@@ -190,7 +190,7 @@ describe("App frame", () => {
         .firstElementChild as HTMLElement,
     );
     await user.click(
-      screen.getByRole("treeitem", { name: "Ada" })
+      screen.getByRole("treeitem", { name: "Ada.md" })
         .firstElementChild as HTMLElement,
     );
     const notes = screen.getByRole("button", { name: "Notes" });
@@ -203,7 +203,7 @@ describe("App frame", () => {
       await screen.findByRole("treeitem", { name: "People", expanded: true }),
     ).toBeInTheDocument();
     expect(
-      screen.getByRole("treeitem", { name: "Ada", selected: true }),
+      screen.getByRole("treeitem", { name: "Ada.md", selected: true }),
     ).toBeInTheDocument();
   });
 

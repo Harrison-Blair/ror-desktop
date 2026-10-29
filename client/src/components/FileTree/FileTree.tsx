@@ -116,8 +116,11 @@ function entriesByPath(
 export type FileTreeProps = {
   ref?: Ref<FileTreeHandle>;
   label: string;
-  // The word for a file in menus and labels, such as "note".
-  labels: { file: string };
+  // The word for a file in labels, such as "file", and the action that
+  // creates one, which defaults to "New <file>".
+  labels: { file: string; newFile?: string };
+  // The starting name for a new file. Defaults to "Untitled".
+  newFileName?: string;
   entries: TreeEntry[];
   expanded: Set<string>;
   setExpanded: Dispatch<SetStateAction<Set<string>>>;
@@ -141,6 +144,7 @@ export function FileTree({
   ref,
   label,
   labels,
+  newFileName = "Untitled",
   entries,
   expanded,
   setExpanded,
@@ -270,7 +274,7 @@ export function FileTree({
       mode: "create",
       parent: target,
       kind,
-      value: "Untitled",
+      value: kind === "file" ? newFileName : "Untitled",
       error: null,
     });
   };
@@ -386,7 +390,7 @@ export function FileTree({
     if (entry.kind === "file") return common;
     return [
       {
-        label: `New ${labels.file}`,
+        label: labels.newFile ?? `New ${labels.file}`,
         icon: FilePlus,
         run: () => startCreate("file", entry.path),
       },
@@ -512,6 +516,7 @@ export function FileTree({
     <NameBox
       label={edit.kind === "folder" ? "Folder name" : `${fileWord} name`}
       value={edit.value}
+      selectEnd={nameSelectionEnd(edit.kind, edit.value)}
       error={edit.error}
       errorId={errorId}
       onChange={(value) => setEditing({ ...edit, value, error: null })}
@@ -709,9 +714,19 @@ export function FileTree({
   );
 }
 
+// A file name is selected up to its last dot when there is text on both
+// sides of it, so typing keeps the extension. Folders select the whole name.
+function nameSelectionEnd(kind: EntryKind, name: string) {
+  const dot = name.lastIndexOf(".");
+  return kind === "file" && dot > 0 && dot < name.length - 1
+    ? dot
+    : name.length;
+}
+
 function NameBox({
   label,
   value,
+  selectEnd,
   error,
   errorId,
   onChange,
@@ -720,6 +735,8 @@ function NameBox({
 }: {
   label: string;
   value: string;
+  // Where the first selection ends; it always starts at 0.
+  selectEnd: number;
   error: string | null;
   errorId: string;
   onChange: (value: string) => void;
@@ -727,10 +744,11 @@ function NameBox({
   onCancel: () => void;
 }) {
   const input = useRef<HTMLInputElement>(null);
+  const firstSelectEnd = useRef(selectEnd);
 
   useEffect(() => {
     input.current?.focus();
-    input.current?.select();
+    input.current?.setSelectionRange(0, firstSelectEnd.current);
   }, []);
 
   // A blur-triggered save that fails leaves the box open; bring focus back

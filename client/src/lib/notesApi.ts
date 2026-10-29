@@ -2,8 +2,8 @@ import { invoke } from "@tauri-apps/api/core";
 import { listen } from "@tauri-apps/api/event";
 
 // Paths are relative to the notes folder, "/"-separated, and "" is the top
-// level. A note path ends in ".md"; a name never does.
-export type EntryKind = "folder" | "note";
+// level. A name is the full file or folder name, as on disk.
+export type EntryKind = "folder" | "file";
 
 export type Entry = {
   kind: EntryKind;
