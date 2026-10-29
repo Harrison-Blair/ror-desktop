@@ -134,6 +134,8 @@ export function NotesMenu({
   const tree = useRef<FileTreeHandle>(null);
   // Stops StrictMode from asking twice before the folder arrives.
   const askedFolder = useRef(false);
+  // A pick wins over a startup answer that arrives after it.
+  const pickedFolder = useRef(false);
 
   const load = useCallback(async () => {
     const id = ++loadId.current;
@@ -162,6 +164,7 @@ export function NotesMenu({
     askedFolder.current = true;
     getNotesFolder().then(
       ({ path, missing }) => {
+        if (pickedFolder.current) return;
         setFolder(path);
         if (missing !== null) {
           notify({
@@ -187,6 +190,7 @@ export function NotesMenu({
           return;
         }
         if (path === null) return;
+        pickedFolder.current = true;
         // Paths in the new folder are unrelated to the old ones.
         setFolder(path);
         setExpanded(new Set());

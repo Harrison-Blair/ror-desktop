@@ -4,7 +4,7 @@ mod notes;
 use notes::{Entry, Kind, NotesError};
 use notify_debouncer_mini::{
     new_debouncer,
-    notify::{RecommendedWatcher, RecursiveMode},
+    notify::{RecommendedWatcher, RecursiveMode, Watcher},
     Debouncer,
 };
 use serde::Serialize;
@@ -41,18 +41,40 @@ fn config_file(app: &AppHandle) -> tauri::Result<PathBuf> {
     Ok(app.path().app_config_dir()?.join("config.json"))
 }
 
-// Watches `root` in place of `old`, if the watcher started.
-fn watch(app: &AppHandle, old: Option<&Path>, root: &Path) {
-    let Some(watcher) = app.try_state::<NotesWatcher>() else {
-        return;
-    };
-    let mut watcher = watcher.lock().unwrap();
-    if let Some(old) = old {
-        let _ = watcher.watcher().unwatch(old);
+// Unwatching a folder also drops the watches inside it, so after unwatching
+// `gone`, a folder `kept` that overlaps it needs watching again.
+fn unwatch(watcher: &mut dyn Watcher, gone: &Path, kept: &Path) {
+    if let Err(e) = watcher.unwatch(gone) {
+        eprintln!(
+            "Couldn't stop watching the notes folder {}: {e}",
+            gone.display()
+        );
     }
-    if let Err(e) = watcher.watcher().watch(root, RecursiveMode::Recursive) {
-        eprintln!("Couldn't watch the notes folder {}: {e}", root.display());
+    if kept.starts_with(gone) || gone.starts_with(kept) {
+        if let Err(e) = watcher.watch(kept, RecursiveMode::Recursive) {
+            eprintln!("Couldn't watch the notes folder {}: {e}", kept.display());
+        }
     }
+}
+
+// Watches `new` in place of `old` around `save`. When watching `new` or
+// `save` fails, `old` stays watched and the error is returned.
+fn switch_watch(
+    watcher: &mut Debouncer<RecommendedWatcher>,
+    old: &Path,
+    new: &Path,
+    save: impl FnOnce() -> Result<(), String>,
+) -> Result<(), String> {
+    let watcher = watcher.watcher();
+    watcher
+        .watch(new, RecursiveMode::Recursive)
+        .map_err(|e| format!("Couldn't watch {}: {e}.", new.display()))?;
+    if let Err(e) = save() {
+        unwatch(watcher, new, old);
+        return Err(e);
+    }
+    unwatch(watcher, old, new);
+    Ok(())
 }
 
 #[tauri::command]
@@ -79,12 +101,20 @@ async fn notes_choose_folder(
     };
     let dir = picked.into_path().map_err(|e| e.to_string())?;
     let file = config_file(&app).map_err(|e| e.to_string())?;
-    config::save_notes_dir(&file, &dir)
-        .map_err(|e| format!("Couldn't save the notes folder: {e}."))?;
+    let save = || {
+        config::save_notes_dir(&file, &dir)
+            .map_err(|e| format!("Couldn't save the notes folder: {e}."))
+    };
 
-    let root = app.state::<NotesRoot>();
-    let old = std::mem::replace(&mut *root.0.lock().unwrap(), dir.clone());
-    watch(&app, Some(&old), &dir);
+    // Holding the root through the whole switch makes switches run one at a
+    // time, so the config, the root and the watcher agree.
+    let root_state = app.state::<NotesRoot>();
+    let mut root = root_state.0.lock().unwrap();
+    match app.try_state::<NotesWatcher>() {
+        Some(watcher) => switch_watch(&mut watcher.lock().unwrap(), &root, &dir, save)?,
+        None => save()?,
+    }
+    *root = dir.clone();
     Ok(Some(path_string(&dir)))
 }
 
@@ -145,12 +175,20 @@ pub fn run() {
                 },
             );
             match watcher {
-                Ok(debouncer) => {
+                Ok(mut debouncer) => {
+                    if let Err(e) = debouncer
+                        .watcher()
+                        .watch(&start.root, RecursiveMode::Recursive)
+                    {
+                        eprintln!(
+                            "Couldn't watch the notes folder {}: {e}",
+                            start.root.display()
+                        );
+                    }
                     app.manage(Mutex::new(debouncer));
                 }
                 Err(e) => eprintln!("Couldn't watch the notes folder: {e}"),
             }
-            watch(app.handle(), None, &start.root);
 
             app.manage(NotesRoot(Mutex::new(start.root)));
             app.manage(MissingNotesDir(start.missing));
@@ -167,4 +205,130 @@ pub fn run() {
         ])
         .run(tauri::generate_context!())
         .expect("error while running Ror Desktop");
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use notify_debouncer_mini::DebounceEventResult;
+    use std::fs;
+    use std::sync::mpsc::{channel, Receiver};
+
+    struct Setup {
+        _temp: tempfile::TempDir,
+        old: PathBuf,
+        other: PathBuf,
+        watcher: Debouncer<RecommendedWatcher>,
+        events: Receiver<DebounceEventResult>,
+    }
+
+    // Watches `old` the way startup does.
+    fn setup() -> Setup {
+        let temp = tempfile::tempdir().unwrap();
+        let old = temp.path().join("Old");
+        let other = temp.path().join("Other");
+        fs::create_dir_all(old.join("Inner")).unwrap();
+        fs::create_dir(&other).unwrap();
+        let (tx, events) = channel();
+        let mut watcher = new_debouncer(Duration::from_millis(50), tx).unwrap();
+        watcher
+            .watcher()
+            .watch(&old, RecursiveMode::Recursive)
+            .unwrap();
+        Setup {
+            _temp: temp,
+            old,
+            other,
+            watcher,
+            events,
+        }
+    }
+
+    // Writes a file in `dir` and reports whether the watcher saw it.
+    fn sees_change(setup: &Setup, dir: &Path) -> bool {
+        while setup.events.try_recv().is_ok() {}
+        let file = dir.join("change.md");
+        fs::write(&file, "x").unwrap();
+        let deadline = std::time::Instant::now() + Duration::from_secs(1);
+        while let Some(left) = deadline.checked_duration_since(std::time::Instant::now()) {
+            match setup.events.recv_timeout(left) {
+                Ok(Ok(events)) if events.iter().any(|e| e.path == file) => return true,
+                Ok(_) => {}
+                Err(_) => return false,
+            }
+        }
+        false
+    }
+
+    #[test]
+    fn a_switch_watches_the_new_folder_only() {
+        let mut s = setup();
+        let (old, other) = (s.old.clone(), s.other.clone());
+        let mut saved = false;
+        switch_watch(&mut s.watcher, &old, &other, || {
+            saved = true;
+            Ok(())
+        })
+        .unwrap();
+        assert!(saved);
+        assert!(sees_change(&s, &other));
+        assert!(!sees_change(&s, &old));
+    }
+
+    #[test]
+    fn a_folder_that_cant_be_watched_is_not_saved() {
+        let mut s = setup();
+        let old = s.old.clone();
+        let gone = s.other.join("Gone");
+        let mut saved = false;
+        let result = switch_watch(&mut s.watcher, &old, &gone, || {
+            saved = true;
+            Ok(())
+        });
+        assert!(result.is_err());
+        assert!(!saved);
+        assert!(sees_change(&s, &old));
+    }
+
+    #[test]
+    fn a_failed_save_keeps_the_old_watch() {
+        for inside in [false, true] {
+            let mut s = setup();
+            let old = s.old.clone();
+            let new = if inside {
+                old.join("Inner")
+            } else {
+                s.other.clone()
+            };
+            let result = switch_watch(&mut s.watcher, &old, &new, || {
+                Err("Couldn't save".to_string())
+            });
+            assert_eq!(result, Err("Couldn't save".to_string()));
+            assert!(sees_change(&s, &old.join("Inner")), "inside: {inside}");
+            if !inside {
+                assert!(!sees_change(&s, &new));
+            }
+        }
+    }
+
+    #[test]
+    fn overlapping_folders_stay_watched() {
+        // The same folder, a folder inside the old one, and the folder around it.
+        for case in ["same", "inside", "around"] {
+            let mut s = setup();
+            let old = s.old.clone();
+            let inner = old.join("Inner");
+            let (from, to) = match case {
+                "same" => (&old, &old),
+                "inside" => (&old, &inner),
+                _ => {
+                    switch_watch(&mut s.watcher, &old, &inner, || Ok(())).unwrap();
+                    (&inner, &old)
+                }
+            };
+            switch_watch(&mut s.watcher, from, to, || Ok(())).unwrap();
+            assert!(sees_change(&s, &inner), "{case}");
+            assert!(sees_change(&s, to), "{case}");
+        }
+    }
 }

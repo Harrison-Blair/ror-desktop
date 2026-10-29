@@ -46,7 +46,14 @@ pub fn save_notes_dir(config_file: &Path, dir: &Path) -> io::Result<()> {
     if let Some(parent) = config_file.parent() {
         fs::create_dir_all(parent)?;
     }
-    fs::write(config_file, text)
+    // Writes beside the config and renames over it, so a failed write keeps
+    // the previous choice.
+    let temp = config_file.with_extension("json.tmp");
+    let result = fs::write(&temp, text).and_then(|()| fs::rename(&temp, config_file));
+    if result.is_err() {
+        let _ = fs::remove_file(&temp);
+    }
+    result
 }
 
 #[cfg(test)]

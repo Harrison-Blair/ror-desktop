@@ -710,6 +710,7 @@ describe("NotesTree", () => {
 describe("Notes folder", () => {
   const otherFolder = (): Entry[] => [
     { kind: "folder", name: "Quests", path: "Quests", children: [] },
+    { kind: "folder", name: "Places", path: "Places", children: [] },
     { kind: "note", name: "Chicago", path: "Chicago.md" },
   ];
 
@@ -759,8 +760,9 @@ describe("Notes folder", () => {
 
   it("reloads the tree from a picked folder and clears the selection and open folders", async () => {
     const { user } = await renderLoaded();
-    await user.click(row("People"));
+    await user.click(row("Places"));
     await user.click(row("Chicago"));
+    expect(item("Places")).toHaveAttribute("aria-expanded", "true");
     expect(item("Chicago")).toHaveAttribute("aria-selected", "true");
     api.chooseNotesFolder.mockResolvedValue("/home/x/Other");
     api.listNotes.mockImplementation(async () => otherFolder());
@@ -771,7 +773,8 @@ describe("Notes folder", () => {
 
     await screen.findByRole("treeitem", { name: "Quests" });
     expect(screen.queryByRole("treeitem", { name: "People" })).toBeNull();
-    // Chicago.md exists in both folders, yet it is no longer selected.
+    // Places and Chicago.md exist in both folders, yet they are reset.
+    expect(item("Places")).toHaveAttribute("aria-expanded", "false");
     expect(item("Chicago")).toHaveAttribute("aria-selected", "false");
     expect(
       screen.getByRole("button", { name: "Choose notes folder" }),
@@ -795,6 +798,32 @@ describe("Notes folder", () => {
     );
     expect(item("Chicago")).toHaveAttribute("aria-selected", "true");
     expect(screen.queryByRole("treeitem", { name: "Quests" })).toBeNull();
+  });
+
+  it("keeps a picked folder when the startup folder arrives after it", async () => {
+    let answer!: (folder: notesApi.NotesFolder) => void;
+    api.getNotesFolder.mockReturnValue(
+      new Promise((resolve) => {
+        answer = resolve;
+      }),
+    );
+    api.chooseNotesFolder.mockResolvedValue("/home/x/Other");
+    const { user } = await renderLoaded();
+    const choose = screen.getByRole("button", { name: "Choose notes folder" });
+
+    await user.click(choose);
+    await waitFor(() =>
+      expect(choose).toHaveAttribute(
+        "title",
+        "Choose notes folder (/home/x/Other)",
+      ),
+    );
+    await act(async () => answer({ path: "/home/x/Notes", missing: null }));
+
+    expect(choose).toHaveAttribute(
+      "title",
+      "Choose notes folder (/home/x/Other)",
+    );
   });
 
   it("raises a toast at startup when the saved folder is missing", async () => {
