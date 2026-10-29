@@ -1,8 +1,8 @@
 import { render, screen } from "@testing-library/react";
 import { describe, expect, it } from "vitest";
+import { RailPanel } from "@/components/panels/RailPanel/RailPanel";
+import { SidePanel } from "@/components/panels/SidePanel/SidePanel";
 import { Rail } from "@/components/Rail/Rail";
-import { RailPanel } from "@/components/RailPanel/RailPanel";
-import { SidePanel } from "@/components/SidePanel/SidePanel";
 
 describe("frame components", () => {
   it("RailPanel shows its title, header actions and children", () => {

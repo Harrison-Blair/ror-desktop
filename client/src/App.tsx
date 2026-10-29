@@ -2,20 +2,20 @@ import { Dices, Globe, NotebookPen, Settings, Users } from "lucide-react";
 import { useEffect, useRef, useState } from "react";
 import styles from "@/App.module.css";
 import {
-  DICE_HISTORY_LENGTH,
-  DicePanel,
-  type DiceRoll,
-} from "@/components/DicePanel/DicePanel";
-import { MainPanel } from "@/components/MainPanel/MainPanel";
-import {
   NotesTree,
   NotesTreeActions,
   type NotesTreeHandle,
 } from "@/components/NotesTree/NotesTree";
+import {
+  DICE_HISTORY_LENGTH,
+  DicePanel,
+  type DiceRoll,
+} from "@/components/panels/DicePanel/DicePanel";
+import { MainPanel } from "@/components/panels/MainPanel/MainPanel";
+import { RailPanel } from "@/components/panels/RailPanel/RailPanel";
+import { SidePanel } from "@/components/panels/SidePanel/SidePanel";
 import { Rail, type RailItem } from "@/components/Rail/Rail";
-import { RailPanel } from "@/components/RailPanel/RailPanel";
 import { ResizeHandle } from "@/components/ResizeHandle/ResizeHandle";
-import { SidePanel } from "@/components/SidePanel/SidePanel";
 import { ToastProvider, useToast } from "@/components/Toast/Toast";
 import type { DiceResult } from "@/lib/dice";
 
