@@ -112,9 +112,13 @@ function tableWidget(doc: Text, from: number, to: number) {
   for (let n = doc.lineAt(from).number; n <= doc.lineAt(to).number; n++) {
     lines.push(doc.line(n).text);
   }
-  // The second line is the delimiter row.
+  // The second line is the delimiter row. Body rows are cut or padded to
+  // the header's width.
   const [head, , ...rows] = lines.map(cells);
-  return new TableWidget(head, rows);
+  return new TableWidget(
+    head,
+    rows.map((row) => head.map((_, i) => row[i] ?? "")),
+  );
 }
 
 // Sets whether the editor has focus.
@@ -132,8 +136,8 @@ const focusedField = StateField.define<boolean>({
 
 // The decorations that live preview draws for `state`. While the editor has
 // focus, lines that hold the cursor or the selection get none, so they show
-// their Markdown. Without focus every line renders. A fenced code block or a
-// table counts as active when any of its lines is.
+// their Markdown. Without focus every line renders. A table counts as active
+// when any of its lines is.
 export function livePreviewDecorations(state: EditorState): DecorationSet {
   const { doc } = state;
   const active = new Set<number>();
@@ -149,8 +153,10 @@ export function livePreviewDecorations(state: EditorState): DecorationSet {
     }
     return false;
   };
+  // Styles each line from `from` to `to` that isn't active.
   const eachLine = (from: number, to: number, className: string) => {
     for (let n = doc.lineAt(from).number; n <= doc.lineAt(to).number; n++) {
+      if (active.has(n)) continue;
       decorations.push(
         Decoration.line({ class: className }).range(doc.line(n).from),
       );
@@ -179,18 +185,24 @@ export function livePreviewDecorations(state: EditorState): DecorationSet {
         return false;
       }
       if (name === "FencedCode") {
-        if (isActive(from, to)) return false;
         eachLine(from, to, styles.codeBlock);
         for (
           let child = node.node.firstChild;
           child;
           child = child.nextSibling
         ) {
-          if (child.name === "CodeMark" || child.name === "CodeInfo") {
+          if (
+            (child.name === "CodeMark" || child.name === "CodeInfo") &&
+            !isActive(child.from, child.to)
+          ) {
             decorations.push(hide.range(child.from, child.to));
           }
         }
         return false;
+      }
+      if (name === "Blockquote") {
+        eachLine(from, to, styles.quote);
+        return;
       }
       if (isActive(from, to)) return;
       const parent = node.node.parent?.name ?? "";
@@ -205,21 +217,17 @@ export function livePreviewDecorations(state: EditorState): DecorationSet {
           while (doc.sliceString(start - 1, start) === " ") start--;
           decorations.push(hide.range(start, to));
         }
-      } else if (name === "Blockquote") {
-        eachLine(from, to, styles.quote);
       } else if (name === "QuoteMark") {
         hideMarker(from, to);
-      } else if (name === "ListMark") {
-        if (
-          parent === "ListItem" &&
+      } else if (name === "ListMark" && parent === "ListItem") {
+        // A bullet becomes a dot, and a number keeps its text.
+        decorations.push(
           node.node.parent?.parent?.name === "BulletList"
-        ) {
-          decorations.push(
-            Decoration.replace({
-              widget: new MarkerWidget(styles.bullet, "•"),
-            }).range(from, to),
-          );
-        }
+            ? Decoration.replace({
+                widget: new MarkerWidget(styles.bullet, "•"),
+              }).range(from, to)
+            : Decoration.mark({ class: styles.bullet }).range(from, to),
+        );
       } else if (name === "HorizontalRule") {
         decorations.push(
           Decoration.replace({

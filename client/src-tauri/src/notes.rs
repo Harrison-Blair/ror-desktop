@@ -1,5 +1,6 @@
 use serde::{Deserialize, Serialize};
 use std::fs;
+use std::io::Write;
 use std::path::{Path, PathBuf};
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
@@ -316,14 +317,22 @@ pub fn read(root: &Path, path: &str) -> Result<String> {
 pub fn write(root: &Path, path: &str, text: &str) -> Result<()> {
     let abs = resolve_file(root, path)?;
     let name = last_segment(path);
-    // Writes beside the file and renames over it, so a failed write keeps the
-    // old text. The dot keeps the temp file out of the list.
-    let temp = abs.with_file_name(format!(".{name}.tmp"));
-    let result = fs::write(&temp, text).and_then(|()| fs::rename(&temp, &abs));
-    if result.is_err() {
-        let _ = fs::remove_file(&temp);
-    }
-    result.map_err(|e| io_err("save", name, e))
+    let save_err = |e: std::io::Error| io_err("save", name, e);
+    let permissions = fs::metadata(&abs).map_err(save_err)?.permissions();
+    // Writes a new file beside the note and renames it over the note, so a
+    // failed write keeps the old text. The file is made for this save alone
+    // and is removed if the save fails. The dot keeps it out of the list.
+    let mut temp = tempfile::Builder::new()
+        .prefix(&format!(".{name}."))
+        .suffix(".tmp")
+        .tempfile_in(abs.parent().unwrap_or(root))
+        .map_err(save_err)?;
+    temp.write_all(text.as_bytes()).map_err(save_err)?;
+    temp.as_file()
+        .set_permissions(permissions)
+        .map_err(save_err)?;
+    temp.persist(&abs).map_err(|e| save_err(e.error))?;
+    Ok(())
 }
 
 pub fn delete(root: &Path, path: &str) -> Result<()> {
@@ -923,6 +932,50 @@ mod tests {
         assert_eq!(names, ["a.md", "b.md"]);
         assert_eq!(fs::read_to_string(r.join("b.md")).unwrap(), "sibling");
         assert_eq!(fs::read_to_string(r.join("a.md")).unwrap(), "new");
+    }
+
+    #[test]
+    fn a_write_leaves_a_hidden_sibling_with_a_temp_name_alone() {
+        let dir = root();
+        let r = dir.path();
+        fs::write(r.join("a.md"), "old").unwrap();
+        fs::write(r.join(".a.md.tmp"), "keep").unwrap();
+        write(r, "a.md", "new").unwrap();
+        assert_eq!(fs::read_to_string(r.join("a.md")).unwrap(), "new");
+        assert_eq!(fs::read_to_string(r.join(".a.md.tmp")).unwrap(), "keep");
+    }
+
+    #[cfg(unix)]
+    #[test]
+    fn a_write_does_not_follow_a_symlink_with_a_temp_name() {
+        let dir = root();
+        let r = dir.path().join("notes");
+        mkdir(&r, "");
+        fs::write(r.join("a.md"), "old").unwrap();
+        fs::write(dir.path().join("target.md"), "secret").unwrap();
+        std::os::unix::fs::symlink(dir.path().join("target.md"), r.join(".a.md.tmp")).unwrap();
+        write(&r, "a.md", "new").unwrap();
+        assert_eq!(fs::read_to_string(r.join("a.md")).unwrap(), "new");
+        assert_eq!(
+            fs::read_to_string(dir.path().join("target.md")).unwrap(),
+            "secret"
+        );
+        assert!(r.join(".a.md.tmp").is_symlink());
+    }
+
+    #[cfg(unix)]
+    #[test]
+    fn a_write_keeps_the_note_permissions() {
+        use std::os::unix::fs::PermissionsExt;
+        let dir = root();
+        let r = dir.path();
+        for mode in [0o600, 0o644] {
+            fs::write(r.join("a.md"), "old").unwrap();
+            fs::set_permissions(r.join("a.md"), fs::Permissions::from_mode(mode)).unwrap();
+            write(r, "a.md", "new").unwrap();
+            let after = fs::metadata(r.join("a.md")).unwrap().permissions().mode();
+            assert_eq!(after & 0o777, mode, "{mode:o}");
+        }
     }
 
     #[test]

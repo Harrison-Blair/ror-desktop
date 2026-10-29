@@ -1,4 +1,11 @@
-import { useCallback, useEffect, useRef, useState } from "react";
+import {
+  type Ref,
+  useCallback,
+  useEffect,
+  useImperativeHandle,
+  useRef,
+  useState,
+} from "react";
 import { MarkdownEditor } from "@/components/MarkdownEditor/MarkdownEditor";
 import { useToast } from "@/components/Toast/Toast";
 import { onNotesChanged, readNote, writeNote } from "@/lib/notesApi";
@@ -11,14 +18,26 @@ const errorMessage = (e: unknown) =>
     ? String(e.message)
     : String(e);
 
+export type EditorMenuHandle = {
+  // Writes any pending edit and waits for every write to end.
+  flush: () => Promise<void>;
+};
+
 type EditorMenuProps = {
+  ref?: Ref<EditorMenuHandle>;
   // The selected note, relative to the notes folder.
   path: string | null;
 };
 
-export function EditorMenu({ path }: EditorMenuProps) {
+export function EditorMenu({ ref, path }: EditorMenuProps) {
   // Kept here so the choice survives switching notes.
   const [raw, setRaw] = useState(false);
+  const note = useRef<EditorMenuHandle>(null);
+  useImperativeHandle(
+    ref,
+    () => ({ flush: () => note.current?.flush() ?? Promise.resolve() }),
+    [],
+  );
 
   if (path === null) return <p className={styles.empty}>No note open</p>;
   if (!path.toLowerCase().endsWith(".md")) {
@@ -39,14 +58,19 @@ export function EditorMenu({ path }: EditorMenuProps) {
         </button>
       </div>
       {/* A new path is a new note, so a pending save goes to the old one. */}
-      <NoteEditor key={path} path={path} name={name} raw={raw} />
+      <NoteEditor key={path} ref={note} path={path} name={name} raw={raw} />
     </div>
   );
 }
 
-type NoteEditorProps = { path: string; name: string; raw: boolean };
+type NoteEditorProps = {
+  ref: Ref<EditorMenuHandle>;
+  path: string;
+  name: string;
+  raw: boolean;
+};
 
-function NoteEditor({ path, name, raw }: NoteEditorProps) {
+function NoteEditor({ ref, path, name, raw }: NoteEditorProps) {
   const notify = useToast();
   const [text, setText] = useState<string>();
   const [failed, setFailed] = useState(false);
@@ -54,70 +78,109 @@ function NoteEditor({ path, name, raw }: NoteEditorProps) {
   const latest = useRef<string>(undefined);
   // True from an edit until a save of it succeeds.
   const dirty = useRef(false);
-  const writes = useRef(0);
   // Counts edits, so a read that an edit overtook is dropped.
   const edits = useRef(0);
+  // Counts reads, so only the newest read is taken in.
+  const reads = useRef(0);
+  // The running save, which writes until every edit is on disk.
+  const saving = useRef<Promise<void>>(undefined);
+  // Set by an outside change that came while the note loaded or saved, so
+  // the note is read again after that.
+  const missed = useRef(false);
+  const alive = useRef(true);
   const timer = useRef<ReturnType<typeof setTimeout>>(undefined);
 
+  // Takes in an outside change only while every edit is on disk, so
+  // unsaved edits win. A deleted note fails to read and clears its
+  // selection, so a failed reload is dropped.
+  const reload = useCallback(async () => {
+    if (!alive.current) return;
+    if (latest.current === undefined || saving.current) {
+      missed.current = true;
+      return;
+    }
+    if (dirty.current) return;
+    const read = ++reads.current;
+    const edit = edits.current;
+    let disk: string;
+    try {
+      disk = await readNote(path);
+    } catch {
+      return;
+    }
+    if (
+      !alive.current ||
+      read !== reads.current ||
+      edit !== edits.current ||
+      dirty.current
+    )
+      return;
+    if (disk === latest.current) return;
+    latest.current = disk;
+    setText(disk);
+  }, [path]);
+
+  const readMissed = useCallback(() => {
+    if (!missed.current) return;
+    missed.current = false;
+    reload();
+  }, [reload]);
+
+  // Writes one text at a time until every edit is on disk, so the newest
+  // text lands last. Resolves when the writing stops.
   const save = useCallback(() => {
     clearTimeout(timer.current);
-    if (!dirty.current || latest.current === undefined) return;
-    const edit = edits.current;
-    dirty.current = false;
-    writes.current++;
-    writeNote(path, latest.current)
-      .catch((e) => {
-        // The text stays in the editor, and the next edit or flush tries again.
-        if (edits.current === edit) dirty.current = true;
-        notify({ kind: "error", message: errorMessage(e) });
-      })
-      .finally(() => {
-        writes.current--;
+    if (!saving.current && dirty.current) {
+      saving.current = (async () => {
+        while (dirty.current && latest.current !== undefined) {
+          const edit = edits.current;
+          dirty.current = false;
+          try {
+            await writeNote(path, latest.current);
+          } catch (e) {
+            notify({ kind: "error", message: errorMessage(e) });
+            // The text stays in the editor, and the next edit or flush
+            // tries again. A newer edit is written now.
+            if (edits.current === edit) {
+              dirty.current = true;
+              break;
+            }
+          }
+        }
+      })().finally(() => {
+        saving.current = undefined;
+        readMissed();
       });
-  }, [path, notify]);
+    }
+    return saving.current ?? Promise.resolve();
+  }, [path, notify, readMissed]);
+
+  useImperativeHandle(ref, () => ({ flush: save }), [save]);
 
   useEffect(() => {
-    let alive = true;
+    alive.current = true;
+    const read = ++reads.current;
     readNote(path).then(
       (disk) => {
-        if (!alive) return;
+        if (!alive.current || read !== reads.current) return;
         latest.current = disk;
         setText(disk);
+        readMissed();
       },
       (e) => {
-        if (!alive) return;
+        if (!alive.current || read !== reads.current) return;
         setFailed(true);
         notify({ kind: "error", message: errorMessage(e) });
       },
     );
-
-    // Takes in an outside change only while every edit is on disk, so
-    // unsaved edits win. A deleted note fails to read and clears its
-    // selection, so a failed reload is dropped.
-    const reload = async () => {
-      if (latest.current === undefined || dirty.current || writes.current)
-        return;
-      const edit = edits.current;
-      let disk: string;
-      try {
-        disk = await readNote(path);
-      } catch {
-        return;
-      }
-      if (!alive || edit !== edits.current || dirty.current) return;
-      if (disk === latest.current) return;
-      latest.current = disk;
-      setText(disk);
-    };
     const unlisten = onNotesChanged(reload);
 
     return () => {
-      alive = false;
+      alive.current = false;
       unlisten.then((stop) => stop());
       save();
     };
-  }, [path, notify, save]);
-
+  }, [path, notify, reload, readMissed, save]);
   const change = (value: string) => {
     latest.current = value;
     edits.current++;

@@ -115,6 +115,9 @@ export type NotesMenuProps = {
   setExpanded: Dispatch<SetStateAction<Set<string>>>;
   selected: string | null;
   setSelected: Dispatch<SetStateAction<string | null>>;
+  // Awaited before a rename or move, so the caller can finish work on the
+  // old path first.
+  beforeRenameOrMove?: () => Promise<void>;
 };
 
 export function NotesMenu({
@@ -124,6 +127,7 @@ export function NotesMenu({
   setExpanded,
   selected,
   setSelected,
+  beforeRenameOrMove = async () => {},
 }: NotesMenuProps) {
   const notify = useToast();
   const [entries, setEntries] = useState<TreeEntry[]>();
@@ -223,9 +227,13 @@ export function NotesMenu({
         reloadAfterNameEdit(createEntry(parent, kind, name))
       }
       onRename={(path, newName) =>
-        reloadAfterNameEdit(renameEntry(path, newName))
+        reloadAfterNameEdit(
+          beforeRenameOrMove().then(() => renameEntry(path, newName)),
+        )
       }
-      onMove={(path, newParent) => reloadAfter(moveEntry(path, newParent))}
+      onMove={(path, newParent) =>
+        reloadAfter(beforeRenameOrMove().then(() => moveEntry(path, newParent)))
+      }
       onDelete={(path) => reloadAfter(deleteEntry(path))}
       confirmDelete={(entry) => ({
         title: deleteQuestion(entry),

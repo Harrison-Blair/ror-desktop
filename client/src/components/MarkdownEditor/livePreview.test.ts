@@ -55,6 +55,18 @@ function marks(marked: string) {
   return out;
 }
 
+// The class of each line's line decoration, or "" for a line with none.
+function lineClasses(marked: string) {
+  const state = stateOf(marked);
+  const out: string[] = Array(state.doc.lines).fill("");
+  livePreviewDecorations(state).between(0, state.doc.length, (from, to, d) => {
+    if (from === to && d.spec.class) {
+      out[state.doc.lineAt(from).number - 1] = d.spec.class;
+    }
+  });
+  return out;
+}
+
 const table =
   "| Name | Role |\n| --- | --- |\n| Ada | GM \\| host |\n| Ben |  |";
 
@@ -96,8 +108,44 @@ describe("live preview", () => {
     expect(shown("- one\n2. two\n> said\n\n---\n\n```js\nx\n```\n‸")).toBe(
       "• one\n2. two\nsaid\n\n\n\n\nx\n\n",
     );
-    // The cursor inside a code block shows the whole block.
-    expect(shown("```js\nx‸\n```")).toBe("```js\nx\n```");
+  });
+
+  it("keeps styling the other lines of a quote on the cursor's line", () => {
+    expect(shown("> first‸\n> second")).toBe("> first\nsecond");
+    expect(lineClasses("> first‸\n> second")).toEqual(["", styles.quote]);
+  });
+
+  it("keeps styling the other lines of a fenced code block on the cursor's line", () => {
+    expect(shown("```js\nx‸\n```")).toBe("\nx\n");
+    expect(lineClasses("```js\nx‸\n```")).toEqual([
+      styles.codeBlock,
+      "",
+      styles.codeBlock,
+    ]);
+    expect(shown("```js‸\nx\n```")).toBe("```js\nx\n");
+    expect(lineClasses("```js‸\nx\n```")).toEqual([
+      "",
+      styles.codeBlock,
+      styles.codeBlock,
+    ]);
+  });
+
+  it("keeps a list number and styles it as a marker", () => {
+    expect(shown("2. two\n‸")).toBe("2. two\n");
+    expect(marks("2. two\n‸")).toEqual([["2.", styles.bullet]]);
+  });
+
+  it("cuts or pads table rows to the header's width", () => {
+    const state = stateOf("| a | b |\n| - | - |\n| x |\n| 1 | 2 | 3 |\n\n‸");
+    const widgets: TableWidget[] = [];
+    livePreviewDecorations(state).between(0, state.doc.length, (_f, _t, d) => {
+      if (d.spec.widget instanceof TableWidget) widgets.push(d.spec.widget);
+    });
+    expect(widgets).toHaveLength(1);
+    expect(widgets[0].rows).toEqual([
+      ["x", ""],
+      ["1", "2"],
+    ]);
   });
 
   it("draws a table as a grid off the cursor's lines and as text on them", () => {

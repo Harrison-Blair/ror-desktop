@@ -1,4 +1,12 @@
-import { render, screen, within } from "@testing-library/react";
+import { EditorView } from "@codemirror/view";
+import {
+  act,
+  fireEvent,
+  render,
+  screen,
+  waitFor,
+  within,
+} from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import { beforeEach, describe, expect, it, vi } from "vitest";
 import App from "@/App";
@@ -9,14 +17,30 @@ vi.mock("@/lib/notesApi", () => ({
   listNotes: async () => notesList,
   onNotesChanged: async () => () => {},
   getNotesFolder: async () => ({ path: "/notes", missing: null }),
-  readNote: async (path: string) => `# ${path}`,
-  writeNote: async () => {},
+  readNote: async (path: string) => disk[path] ?? `# ${path}`,
+  writeNote: async (path: string, text: string) => {
+    if (!(path in disk)) throw { code: "not_found", message: "Not found." };
+    disk[path] = text;
+  },
+  renameEntry: async (path: string, newName: string) =>
+    moveOnDisk(path, path.replace(/[^/]*$/, newName)),
+  moveEntry: async (path: string, newParent: string) =>
+    moveOnDisk(path, `${newParent}/${path.slice(path.lastIndexOf("/") + 1)}`),
 }));
 
 let notesList: Entry[] = [];
+// Note texts by path, for the tests that edit notes.
+let disk: Record<string, string> = {};
 beforeEach(() => {
   notesList = [];
+  disk = {};
 });
+
+const moveOnDisk = (from: string, to: string) => {
+  disk[to] = disk[from];
+  delete disk[from];
+  return to;
+};
 
 function renderApp() {
   render(<App />);
@@ -239,5 +263,77 @@ describe("App frame", () => {
     expect(
       within(railPanel).getByRole("button", { name: "New folder" }),
     ).toBeInTheDocument();
+  });
+
+  describe("an edit saved before its note is renamed or moved", () => {
+    beforeEach(() => {
+      disk = { "Ada.md": "Hello" };
+    });
+
+    // Opens Ada.md and types into it, leaving the save pending.
+    async function editAda() {
+      const user = renderApp();
+      await user.click(
+        (await screen.findByRole("treeitem", { name: "Ada.md" }))
+          .firstElementChild as HTMLElement,
+      );
+      const content = await within(screen.getByRole("main")).findByRole(
+        "textbox",
+        { name: "Ada.md" },
+      );
+      await waitFor(() => expect(content).toHaveTextContent("Hello"));
+      act(() => {
+        EditorView.findFromDOM(content)?.dispatch({
+          changes: { from: 5, insert: "!" },
+        });
+      });
+      return user;
+    }
+
+    const shownText = async (name: string) =>
+      EditorView.findFromDOM(
+        await within(screen.getByRole("main")).findByRole("textbox", { name }),
+      )?.state.doc.toString();
+
+    it("keeps an edit made just before a rename", async () => {
+      notesList = [{ kind: "file", name: "Ada.md", path: "Ada.md" }];
+      const user = await editAda();
+      notesList = [{ kind: "file", name: "Bea.md", path: "Bea.md" }];
+
+      await user.keyboard("{F2}{Control>}a{/Control}Bea.md{Enter}");
+
+      expect(await shownText("Bea.md")).toBe("Hello!");
+      expect(disk).toEqual({ "Bea.md": "Hello!" });
+    });
+
+    it("keeps an edit made just before a move", async () => {
+      notesList = [
+        { kind: "folder", name: "Lore", path: "Lore", children: [] },
+        { kind: "file", name: "Ada.md", path: "Ada.md" },
+      ];
+      await editAda();
+      notesList = [
+        {
+          kind: "folder",
+          name: "Lore",
+          path: "Lore",
+          children: [{ kind: "file", name: "Ada.md", path: "Lore/Ada.md" }],
+        },
+      ];
+
+      const row = (name: string) =>
+        screen.getByRole("treeitem", { name }).firstElementChild as Element;
+      document.elementFromPoint = () => row("Lore");
+      fireEvent.pointerDown(row("Ada.md"), {
+        button: 0,
+        clientX: 10,
+        clientY: 10,
+      });
+      fireEvent.pointerMove(window, { clientX: 30, clientY: 40 });
+      fireEvent.pointerUp(window, { clientX: 30, clientY: 40 });
+
+      await waitFor(() => expect(disk).toEqual({ "Lore/Ada.md": "Hello!" }));
+      expect(await shownText("Ada.md")).toBe("Hello!");
+    });
   });
 });

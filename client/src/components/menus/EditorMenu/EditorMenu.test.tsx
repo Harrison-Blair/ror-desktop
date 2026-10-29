@@ -176,6 +176,70 @@ describe("EditorMenu", () => {
     await act(async () => finish());
   });
 
+  it("reads again after a save when the file changed during it", async () => {
+    let finish: () => void = () => {};
+    api.writeNote.mockReturnValueOnce(
+      new Promise((resolve) => {
+        finish = resolve;
+      }),
+    );
+    await open("a.md");
+    await type("a.md", "!");
+    await advance(500);
+
+    disk["a.md"] = "Outside";
+    notesChanged();
+    await settle();
+    expect(editor("a.md").state.doc.toString()).toBe("Hello!");
+
+    await act(async () => finish());
+    expect(editor("a.md").state.doc.toString()).toBe("Outside");
+  });
+
+  it("writes one save at a time, so the newest text lands last", async () => {
+    const pending: (() => void)[] = [];
+    api.writeNote.mockImplementation(
+      (path, text) =>
+        new Promise((resolve) => {
+          pending.push(() => {
+            disk[path] = text;
+            resolve();
+          });
+        }),
+    );
+    await open("a.md");
+    await type("a.md", "!");
+    await advance(500);
+    await type("a.md", "?");
+    await advance(500);
+
+    // Finishes the newest write first whenever two are running.
+    while (pending.length > 0) {
+      const done = pending.pop();
+      await act(async () => done?.());
+    }
+
+    expect(disk["a.md"]).toBe("Hello!?");
+    expect(api.writeNote).toHaveBeenLastCalledWith("a.md", "Hello!?");
+  });
+
+  it("takes in only the newest of two reloads", async () => {
+    await open("a.md");
+    const answers: ((text: string) => void)[] = [];
+    api.readNote.mockImplementation(
+      () =>
+        new Promise((resolve) => {
+          answers.push(resolve);
+        }),
+    );
+    notesChanged();
+    notesChanged();
+    await act(async () => answers[1]("Newer"));
+    await act(async () => answers[0]("Older"));
+
+    expect(editor("a.md").state.doc.toString()).toBe("Newer");
+  });
+
   it("drops a reload that an edit overtook", async () => {
     await open("a.md");
     let answer: (text: string) => void = () => {};
