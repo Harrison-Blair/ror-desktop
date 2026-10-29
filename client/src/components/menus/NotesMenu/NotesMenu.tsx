@@ -20,7 +20,6 @@ import {
   createEntry,
   deleteEntry,
   type Entry,
-  getNotesFolder,
   listNotes,
   moveEntry,
   onNotesChanged,
@@ -111,7 +110,6 @@ export function NotesMenuActions({
 // outlast the menu when the rail panel closes.
 export type NotesMenuProps = {
   ref?: Ref<NotesMenuHandle>;
-  folder: string | undefined;
   setFolder: (folder: string) => void;
   expanded: Set<string>;
   setExpanded: Dispatch<SetStateAction<Set<string>>>;
@@ -121,7 +119,6 @@ export type NotesMenuProps = {
 
 export function NotesMenu({
   ref,
-  folder,
   setFolder,
   expanded,
   setExpanded,
@@ -132,10 +129,8 @@ export function NotesMenu({
   const [entries, setEntries] = useState<TreeEntry[]>();
   const loadId = useRef(0);
   const tree = useRef<FileTreeHandle>(null);
-  // Stops StrictMode from asking twice before the folder arrives.
-  const askedFolder = useRef(false);
-  // A pick wins over a startup answer that arrives after it.
-  const pickedFolder = useRef(false);
+  // Stops a second pick from starting while one is open.
+  const picking = useRef(false);
 
   const load = useCallback(async () => {
     const id = ++loadId.current;
@@ -158,39 +153,23 @@ export function NotesMenu({
     };
   }, [load]);
 
-  // The folder outlasts the menu, so this runs on the first load only.
-  useEffect(() => {
-    if (folder !== undefined || askedFolder.current) return;
-    askedFolder.current = true;
-    getNotesFolder().then(
-      ({ path, missing }) => {
-        if (pickedFolder.current) return;
-        setFolder(path);
-        if (missing !== null) {
-          notify({
-            kind: "error",
-            message: `Couldn't find ${missing}. Showing the default notes folder.`,
-          });
-        }
-      },
-      (e) => notify({ kind: "error", message: errorMessage(e) }),
-    );
-  }, [folder, setFolder, notify]);
-
   useImperativeHandle(
     ref,
     () => ({
       startCreate: (kind) => tree.current?.startCreate(kind),
       chooseFolder: async () => {
+        if (picking.current) return;
+        picking.current = true;
         let path: string | null;
         try {
           path = await chooseNotesFolder();
         } catch (e) {
           notify({ kind: "error", message: errorMessage(e) });
           return;
+        } finally {
+          picking.current = false;
         }
         if (path === null) return;
-        pickedFolder.current = true;
         // Paths in the new folder are unrelated to the old ones.
         setFolder(path);
         setExpanded(new Set());

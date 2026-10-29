@@ -1,5 +1,5 @@
 import { Dices, Globe, NotebookPen, Settings, Users } from "lucide-react";
-import { useEffect, useRef, useState } from "react";
+import { useCallback, useEffect, useRef, useState } from "react";
 import styles from "@/App.module.css";
 import {
   DICE_HISTORY_LENGTH,
@@ -18,6 +18,7 @@ import { SidePanel } from "@/components/panels/SidePanel/SidePanel";
 import { Rail, type RailItem } from "@/components/Rail/Rail";
 import { ToastProvider, useToast } from "@/components/Toast/Toast";
 import type { DiceResult } from "@/lib/dice";
+import { getNotesFolder } from "@/lib/notesApi";
 
 const railItems: RailItem[] = [
   { id: "session", label: "Session", icon: Users },
@@ -52,6 +53,10 @@ function Shell() {
   // Kept here so the folder, open folders and the selection survive closing
   // the rail panel.
   const [notesFolder, setNotesFolder] = useState<string>();
+  // Stops StrictMode from asking twice for the startup folder.
+  const askedNotesFolder = useRef(false);
+  // A pick wins over a startup answer that arrives after it.
+  const pickedNotesFolder = useRef(false);
   const [notesExpanded, setNotesExpanded] = useState<Set<string>>(
     () => new Set(),
   );
@@ -61,6 +66,30 @@ function Shell() {
   );
   const [panelWidth, setPanelWidth] = useState(PANEL_WIDTH.default);
   const [windowWidth, setWindowWidth] = useState(window.innerWidth);
+
+  // Asked here, once per run, since the notes menu comes and goes.
+  useEffect(() => {
+    if (askedNotesFolder.current) return;
+    askedNotesFolder.current = true;
+    getNotesFolder().then(
+      ({ path, missing }) => {
+        if (pickedNotesFolder.current) return;
+        setNotesFolder(path);
+        if (missing !== null) {
+          notify({
+            kind: "error",
+            message: `Couldn't find ${missing}. Showing the default notes folder.`,
+          });
+        }
+      },
+      (e) => notify({ kind: "error", message: String(e) }),
+    );
+  }, [notify]);
+
+  const pickNotesFolder = useCallback((path: string) => {
+    pickedNotesFolder.current = true;
+    setNotesFolder(path);
+  }, []);
 
   useEffect(() => {
     const updateWindowWidth = () => setWindowWidth(window.innerWidth);
@@ -155,8 +184,7 @@ function Shell() {
         {activeId === "notes" && (
           <NotesMenu
             ref={notesMenu}
-            folder={notesFolder}
-            setFolder={setNotesFolder}
+            setFolder={pickNotesFolder}
             expanded={notesExpanded}
             setExpanded={setNotesExpanded}
             selected={notesSelected}

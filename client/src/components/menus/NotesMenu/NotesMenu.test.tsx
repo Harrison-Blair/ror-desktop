@@ -25,7 +25,6 @@ vi.mock("@/lib/notesApi", () => ({
   moveEntry: vi.fn(),
   deleteEntry: vi.fn(),
   onNotesChanged: vi.fn(),
-  getNotesFolder: vi.fn(),
   chooseNotesFolder: vi.fn(),
 }));
 
@@ -59,7 +58,7 @@ function Harness() {
   const tree = useRef<NotesMenuHandle>(null);
   const [expanded, setExpanded] = useState<Set<string>>(() => new Set());
   const [selected, setSelected] = useState<string | null>(null);
-  const [folder, setFolder] = useState<string>();
+  const [folder, setFolder] = useState("/home/x/Notes");
   return (
     <ToastProvider>
       <NotesMenuActions
@@ -69,7 +68,6 @@ function Harness() {
       />
       <NotesMenu
         ref={tree}
-        folder={folder}
         setFolder={setFolder}
         expanded={expanded}
         setExpanded={setExpanded}
@@ -105,10 +103,6 @@ const focusItem = (name: string) => act(() => item(name).focus());
 beforeEach(() => {
   vi.resetAllMocks();
   api.listNotes.mockImplementation(async () => sample());
-  api.getNotesFolder.mockResolvedValue({
-    path: "/home/x/Notes",
-    missing: null,
-  });
   api.onNotesChanged.mockImplementation(async (handler) => {
     notesChanged = handler;
     return () => {};
@@ -800,44 +794,43 @@ describe("Notes folder", () => {
     expect(screen.queryByRole("treeitem", { name: "Quests" })).toBeNull();
   });
 
-  it("keeps a picked folder when the startup folder arrives after it", async () => {
-    let answer!: (folder: notesApi.NotesFolder) => void;
-    api.getNotesFolder.mockReturnValue(
-      new Promise((resolve) => {
-        answer = resolve;
-      }),
+  it("ignores clicks while the picker is open, and allows them after it closes", async () => {
+    const answers: ((path: string | null) => void)[] = [];
+    let fail!: (e: unknown) => void;
+    api.chooseNotesFolder.mockImplementation(
+      () => new Promise((resolve) => answers.push(resolve)),
     );
-    api.chooseNotesFolder.mockResolvedValue("/home/x/Other");
     const { user } = await renderLoaded();
+    api.listNotes.mockImplementation(async () => otherFolder());
     const choose = screen.getByRole("button", { name: "Choose notes folder" });
 
     await user.click(choose);
-    await waitFor(() =>
-      expect(choose).toHaveAttribute(
-        "title",
-        "Choose notes folder (/home/x/Other)",
-      ),
-    );
-    await act(async () => answer({ path: "/home/x/Notes", missing: null }));
+    await user.click(choose);
+    expect(api.chooseNotesFolder).toHaveBeenCalledTimes(1);
 
-    expect(choose).toHaveAttribute(
-      "title",
-      "Choose notes folder (/home/x/Other)",
-    );
-  });
+    // Cancel ends the pick.
+    await act(async () => answers[0](null));
+    await user.click(choose);
+    await user.click(choose);
+    expect(api.chooseNotesFolder).toHaveBeenCalledTimes(2);
 
-  it("raises a toast at startup when the saved folder is missing", async () => {
-    api.getNotesFolder.mockResolvedValue({
-      path: "/data/notes",
-      missing: "/home/x/Gone",
-    });
-    await renderLoaded();
-
-    expect(await screen.findByRole("alert")).toHaveTextContent(
-      "Couldn't find /home/x/Gone. Showing the default notes folder.",
+    // A pick ends the pick.
+    await act(async () => answers[1]("/home/x/Other"));
+    await screen.findByRole("treeitem", { name: "Quests" });
+    api.chooseNotesFolder.mockImplementation(
+      () =>
+        new Promise((_, reject) => {
+          fail = reject;
+        }),
     );
-    expect(
-      screen.getByRole("button", { name: "Choose notes folder" }),
-    ).toHaveAttribute("title", "Choose notes folder (/data/notes)");
+    await user.click(choose);
+    await user.click(choose);
+    expect(api.chooseNotesFolder).toHaveBeenCalledTimes(3);
+
+    // An error ends the pick.
+    await act(async () => fail("Couldn't save the notes folder."));
+    api.chooseNotesFolder.mockResolvedValue(null);
+    await user.click(choose);
+    expect(api.chooseNotesFolder).toHaveBeenCalledTimes(4);
   });
 });

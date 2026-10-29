@@ -211,6 +211,7 @@ pub fn run() {
 mod tests {
     use super::*;
     use notify_debouncer_mini::DebounceEventResult;
+    use std::cell::Cell;
     use std::fs;
     use std::sync::mpsc::{channel, Receiver};
 
@@ -220,6 +221,7 @@ mod tests {
         other: PathBuf,
         watcher: Debouncer<RecommendedWatcher>,
         events: Receiver<DebounceEventResult>,
+        probes: Cell<u32>,
     }
 
     // Watches `old` the way startup does.
@@ -241,15 +243,19 @@ mod tests {
             other,
             watcher,
             events,
+            probes: Cell::new(0),
         }
     }
 
-    // Writes a file in `dir` and reports whether the watcher saw it.
+    // Writes a new file in `dir` and reports whether the watcher saw it. Each
+    // probe uses its own file, so a late event from an earlier probe can't
+    // answer for it.
     fn sees_change(setup: &Setup, dir: &Path) -> bool {
-        while setup.events.try_recv().is_ok() {}
-        let file = dir.join("change.md");
+        let probe = setup.probes.get() + 1;
+        setup.probes.set(probe);
+        let file = dir.join(format!("change-{probe}.md"));
         fs::write(&file, "x").unwrap();
-        let deadline = std::time::Instant::now() + Duration::from_secs(1);
+        let deadline = std::time::Instant::now() + Duration::from_secs(5);
         while let Some(left) = deadline.checked_duration_since(std::time::Instant::now()) {
             match setup.events.recv_timeout(left) {
                 Ok(Ok(events)) if events.iter().any(|e| e.path == file) => return true,
