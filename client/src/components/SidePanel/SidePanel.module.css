@@ -15,15 +15,25 @@
   overflow-y: auto;
 }
 
-.close {
+.head {
+  composes: head from "@/styles/panel-header.module.css";
   position: sticky;
-  top: var(--space-2);
+  top: 0;
   z-index: 1;
+  padding: 0 var(--space-2) 0 var(--space-4);
+  background: var(--sunken);
+}
+
+.title {
+  composes: title from "@/styles/panel-header.module.css";
+}
+
+.close {
   display: grid;
   place-items: center;
   width: 32px;
   height: 32px;
-  margin: var(--space-2) var(--space-2) 0 auto;
+  margin-left: auto;
   padding: 0;
   color: var(--ink-muted);
   background: var(--sunken);

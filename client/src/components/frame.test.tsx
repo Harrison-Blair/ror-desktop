@@ -18,12 +18,19 @@ describe("frame components", () => {
   });
 
   it("SidePanel without onClose has no close button", () => {
-    render(<SidePanel>Body</SidePanel>);
+    render(<SidePanel title="Dice">Body</SidePanel>);
 
     expect(
-      screen.getByRole("complementary", { name: "Side panel" }),
+      screen.getByRole("complementary", { name: "Dice" }),
     ).toBeInTheDocument();
     expect(screen.queryByRole("button")).not.toBeInTheDocument();
+  });
+
+  it("SidePanel names itself and its close button from the title", () => {
+    render(<SidePanel title="Dice" onClose={() => {}} />);
+
+    expect(screen.getByRole("complementary", { name: "Dice" })).toBeVisible();
+    expect(screen.getByRole("button", { name: "Close Dice" })).toBeVisible();
   });
 
   it("Rail without onToggleRailPanel has no rail panel toggle", () => {
@@ -49,7 +56,7 @@ describe("frame components", () => {
 
   it("SidePanel renders nothing when closed", () => {
     const { container } = render(
-      <SidePanel open={false} onClose={() => {}}>
+      <SidePanel title="Dice" open={false} onClose={() => {}}>
         Body
       </SidePanel>,
     );

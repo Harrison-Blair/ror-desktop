@@ -1,11 +1,18 @@
 import { Dices, Globe, NotebookPen, Settings, Users } from "lucide-react";
-import { useEffect, useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import styles from "@/App.module.css";
+import {
+  DICE_HISTORY_LENGTH,
+  DicePanel,
+  type DiceRoll,
+} from "@/components/DicePanel/DicePanel";
 import { MainPanel } from "@/components/MainPanel/MainPanel";
 import { Rail, type RailItem } from "@/components/Rail/Rail";
 import { RailPanel } from "@/components/RailPanel/RailPanel";
 import { ResizeHandle } from "@/components/ResizeHandle/ResizeHandle";
 import { SidePanel } from "@/components/SidePanel/SidePanel";
+import { ToastProvider, useToast } from "@/components/Toast/Toast";
+import type { DiceResult } from "@/lib/dice";
 
 const railItems: RailItem[] = [
   { id: "session", label: "Session", icon: Users },
@@ -24,10 +31,24 @@ const PANEL_WIDTH = { default: 360, min: 280 };
 const RAIL_WIDTH = 52;
 
 export default function App() {
+  return (
+    <ToastProvider>
+      <Shell />
+    </ToastProvider>
+  );
+}
+
+// Inside the ToastProvider so it can raise toasts.
+function Shell() {
+  const notify = useToast();
   const [activeId, setActiveId] = useState("session");
   const [railPanelOpen, setRailPanelOpen] = useState(true);
   const [railPanelItemId, setRailPanelItemId] = useState("p1");
-  const [panelOpen, setPanelOpen] = useState(true);
+  const [panelOpen, setPanelOpen] = useState(false);
+  // Kept here so the history survives closing the Dice panel.
+  const [rolls, setRolls] = useState<DiceRoll[]>([]);
+  const [latestRoll, setLatestRoll] = useState<DiceRoll>();
+  const nextRollId = useRef(1);
   const [railPanelWidth, setRailPanelWidth] = useState(
     RAIL_PANEL_WIDTH.default,
   );
@@ -49,7 +70,6 @@ export default function App() {
   const drawnRailPanelWidth = clampWidth(railPanelWidth, RAIL_PANEL_WIDTH.min);
   const drawnPanelWidth = clampWidth(panelWidth, PANEL_WIDTH.min);
 
-  // Settings does nothing yet.
   const bottomItems: RailItem[] = [
     {
       id: "dice",
@@ -58,10 +78,22 @@ export default function App() {
       pressed: panelOpen,
       onClick: () => setPanelOpen((open) => !open),
     },
-    { id: "settings", label: "Settings", icon: Settings },
+    {
+      id: "settings",
+      label: "Settings",
+      icon: Settings,
+      onClick: () =>
+        notify({ kind: "error", message: "Settings is not implemented yet." }),
+    },
   ];
 
   const activeItem = railItems.find((item) => item.id === activeId);
+
+  const addRoll = (result: DiceResult) => {
+    const roll = { id: nextRollId.current++, time: new Date(), result };
+    setLatestRoll(roll);
+    setRolls((previous) => [roll, ...previous].slice(0, DICE_HISTORY_LENGTH));
+  };
 
   const selectRailItem = (id: string) => {
     if (id === activeId) {
@@ -106,6 +138,7 @@ export default function App() {
       <SidePanel
         open={panelOpen}
         onClose={() => setPanelOpen(false)}
+        title="Dice"
         width={drawnPanelWidth}
         resizeHandle={
           <ResizeHandle
@@ -118,7 +151,14 @@ export default function App() {
             onReset={() => setPanelWidth(PANEL_WIDTH.default)}
           />
         }
-      />
+      >
+        <DicePanel
+          rolls={rolls}
+          latest={latestRoll}
+          onRoll={addRoll}
+          onClearHistory={() => setRolls([])}
+        />
+      </SidePanel>
     </div>
   );
 }

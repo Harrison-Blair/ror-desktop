@@ -26,7 +26,7 @@ describe("App frame", () => {
     ]);
   });
 
-  it("Settings is not a tab and clicking it changes nothing", async () => {
+  it("Settings is not a tab and clicking it shows a not-implemented error", async () => {
     const user = renderApp();
     const settings = screen.getByRole("button", { name: "Settings" });
     expect(settings).not.toHaveAttribute("aria-pressed");
@@ -34,45 +34,72 @@ describe("App frame", () => {
     await user.click(settings);
 
     expect(
+      within(screen.getByRole("region", { name: "Notifications" })).getByRole(
+        "alert",
+      ),
+    ).toHaveTextContent("Settings is not implemented yet.");
+    expect(
       screen.getByRole("button", { name: "Session", pressed: true }),
     ).toBeInTheDocument();
     expect(
       screen.getByRole("region", { name: "Session rail panel" }),
     ).toBeInTheDocument();
     expect(
-      screen.getByRole("complementary", { name: "Side panel" }),
-    ).toBeInTheDocument();
+      screen.queryByRole("complementary", { name: "Dice" }),
+    ).not.toBeInTheDocument();
     expect(settings).not.toHaveAttribute("aria-pressed");
   });
 
-  it("Dice closes and reopens the side panel and shows pressed while it is open", async () => {
+  it("the Dice panel starts closed, and Dice opens and closes it", async () => {
     const user = renderApp();
-    const dice = screen.getByRole("button", { name: "Dice", pressed: true });
+    const dice = screen.getByRole("button", { name: "Dice", pressed: false });
+    expect(
+      screen.queryByRole("complementary", { name: "Dice" }),
+    ).not.toBeInTheDocument();
 
     await user.click(dice);
     expect(
-      screen.queryByRole("complementary", { name: "Side panel" }),
-    ).not.toBeInTheDocument();
-    expect(dice).toHaveAttribute("aria-pressed", "false");
+      screen.getByRole("complementary", { name: "Dice" }),
+    ).toBeInTheDocument();
+    expect(dice).toHaveAttribute("aria-pressed", "true");
     expect(
       screen.getByRole("button", { name: "Session", pressed: true }),
     ).toBeInTheDocument();
 
     await user.click(dice);
     expect(
-      screen.getByRole("complementary", { name: "Side panel" }),
-    ).toBeInTheDocument();
-    expect(dice).toHaveAttribute("aria-pressed", "true");
+      screen.queryByRole("complementary", { name: "Dice" }),
+    ).not.toBeInTheDocument();
+    expect(dice).toHaveAttribute("aria-pressed", "false");
   });
 
-  it("closing the side panel unpresses Dice", async () => {
+  it("closing the Dice panel with its X removes it and unpresses Dice", async () => {
     const user = renderApp();
+    await user.click(screen.getByRole("button", { name: "Dice" }));
 
-    await user.click(screen.getByRole("button", { name: "Close Side panel" }));
+    await user.click(screen.getByRole("button", { name: "Close Dice" }));
 
+    expect(
+      screen.queryByRole("complementary", { name: "Dice" }),
+    ).not.toBeInTheDocument();
     expect(
       screen.getByRole("button", { name: "Dice", pressed: false }),
     ).toBeInTheDocument();
+  });
+
+  it("keeps the dice history after the Dice panel closes and reopens", async () => {
+    const user = renderApp();
+    const dice = screen.getByRole("button", { name: "Dice" });
+    await user.click(dice);
+    await user.click(screen.getByRole("button", { name: /Roll d100/ }));
+    const history = () =>
+      within(screen.getByRole("region", { name: "Last 10 rolls" }));
+    expect(history().getAllByRole("listitem")).toHaveLength(1);
+
+    await user.click(dice);
+    await user.click(dice);
+
+    expect(history().getAllByRole("listitem")).toHaveLength(1);
   });
 
   it("selecting another rail item activates it and opens its rail panel", async () => {
@@ -147,18 +174,5 @@ describe("App frame", () => {
     expect(
       screen.getByRole("button", { name: "Panel item 1", pressed: false }),
     ).toBeInTheDocument();
-  });
-
-  it("closing the side panel removes it", async () => {
-    const user = renderApp();
-    expect(
-      screen.getByRole("complementary", { name: "Side panel" }),
-    ).toBeInTheDocument();
-
-    await user.click(screen.getByRole("button", { name: "Close Side panel" }));
-
-    expect(
-      screen.queryByRole("complementary", { name: "Side panel" }),
-    ).not.toBeInTheDocument();
   });
 });
