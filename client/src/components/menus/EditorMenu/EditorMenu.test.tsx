@@ -381,6 +381,19 @@ describe("EditorMenu links", () => {
     expect(onOpenNote).not.toHaveBeenCalled();
   });
 
+  it("stays on the note when its edit can't be saved before a link opens", async () => {
+    api.writeNote.mockRejectedValue({ code: "io", message: "Disk full." });
+    await type("b.md", "!");
+
+    await ctrlClick("note");
+
+    expect(onOpenNote).not.toHaveBeenCalled();
+    expect(editor("b.md").state.doc.toString()).toMatch(/!$/);
+    expect(
+      screen.getByText("Couldn't save “b.md”, so the link wasn't opened."),
+    ).toBeInTheDocument();
+  });
+
   it("refuses a link with another scheme", async () => {
     await ctrlClick("script");
     expect(screen.getByRole("alert")).toHaveTextContent(

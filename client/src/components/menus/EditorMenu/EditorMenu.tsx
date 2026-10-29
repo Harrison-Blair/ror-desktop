@@ -105,8 +105,19 @@ export function EditorMenu({ ref, path, onOpenNote }: EditorMenuProps) {
       notify({ kind: "error", message: errorMessage(e) });
       return;
     }
-    if (target !== null && found) onOpenNote?.(target);
-    else notify({ kind: "error", message: `Couldn't find “${href}”.` });
+    if (target === null || !found) {
+      notify({ kind: "error", message: `Couldn't find “${href}”.` });
+      return;
+    }
+    // Opening another note closes this one, so its edit is saved first.
+    if (!(await (note.current?.flush() ?? true))) {
+      notify({
+        kind: "error",
+        message: `Couldn't save “${name}”, so the link wasn't opened.`,
+      });
+      return;
+    }
+    onOpenNote?.(target);
   };
 
   return (

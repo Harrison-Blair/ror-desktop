@@ -51,6 +51,56 @@ const hide = Decoration.replace({});
 
 type SyntaxNode = ReturnType<typeof syntaxTree>["topNode"];
 
+// A link label as CommonMark matches it: without brackets, case and runs of
+// whitespace ignored.
+const normalLabel = (label: string) =>
+  label.slice(1, -1).trim().replace(/\s+/g, " ").toLowerCase();
+
+// A target may be written in angle brackets.
+const urlText = (state: EditorState, url: SyntaxNode) =>
+  state.sliceDoc(url.from, url.to).replace(/^<(.*)>$/, "$1");
+
+// The targets of the link reference definitions, by normal label. The first
+// definition of a label wins.
+function definitions(state: EditorState) {
+  const targets = new Map<string, string>();
+  syntaxTree(state).iterate({
+    enter: (node) => {
+      if (node.name === "Paragraph") return false;
+      if (node.name !== "LinkReference") return;
+      const label = node.node.getChild("LinkLabel");
+      const url = node.node.getChild("URL");
+      if (label && url) {
+        const key = normalLabel(state.sliceDoc(label.from, label.to));
+        if (!targets.has(key)) targets.set(key, urlText(state, url));
+      }
+      return false;
+    },
+  });
+  return targets;
+}
+
+// The target of a Link or Autolink node. A reference link ([text][label],
+// [label][] or [label]) takes its definition's target, and is null without
+// one.
+function linkTarget(
+  state: EditorState,
+  link: SyntaxNode,
+  targets: Map<string, string>,
+) {
+  const url = link.getChild("URL");
+  if (url) return urlText(state, url);
+  const marks = link.getChildren("LinkMark");
+  // An inline link with no destination, such as [text]().
+  if (link.name !== "Link" || marks.length !== 2) return null;
+  const label = link.getChild("LinkLabel");
+  const text =
+    label && label.to - label.from > 2
+      ? state.sliceDoc(label.from, label.to)
+      : state.sliceDoc(marks[0].from, marks[1].to);
+  return targets.get(normalLabel(text)) ?? null;
+}
+
 // Text shown in place of a marker, such as a bullet or a rule.
 class MarkerWidget extends WidgetType {
   constructor(
@@ -202,6 +252,8 @@ export function livePreviewDecorations(state: EditorState): DecorationSet {
   };
 
   const decorations: Range<Decoration>[] = [];
+  // Found on the first link, since most text has none.
+  let targets: Map<string, string> | undefined;
   syntaxTree(state).iterate({
     enter: (node) => {
       const { name, from, to } = node;
@@ -273,10 +325,12 @@ export function livePreviewDecorations(state: EditorState): DecorationSet {
           }).range(from, to),
         );
       } else if (LINKS.includes(name)) {
+        targets ??= definitions(state);
+        const opens = linkTarget(state, node.node, targets) !== null;
         decorations.push(
           Decoration.mark({
             class: MARK_CLASSES[name],
-            attributes: { title: OPEN_LINK_TITLE },
+            attributes: opens ? { title: OPEN_LINK_TITLE } : undefined,
           }).range(from, to),
         );
         if (name === "Link") {
@@ -309,15 +363,12 @@ const livePreviewField = StateField.define<DecorationSet>({
 });
 
 // The target of the link that `element` draws, or null when it has none.
-function linkTarget(view: EditorView, element: Element) {
+function linkAt(view: EditorView, element: Element) {
   const tree = syntaxTree(view.state);
   let node: SyntaxNode | null = tree.resolveInner(view.posAtDOM(element), 1);
   for (; node; node = node.parent) {
     if (LINKS.includes(node.name)) {
-      const url = node.getChild("URL");
-      if (!url) return null;
-      // A target may be written in angle brackets.
-      return view.state.sliceDoc(url.from, url.to).replace(/^<(.*)>$/, "$1");
+      return linkTarget(view.state, node, definitions(view.state));
     }
   }
   return null;
@@ -367,7 +418,7 @@ export const livePreview = (onOpenLink?: (href: string) => void) => [
       const link =
         event.target instanceof Element &&
         event.target.closest(`.${styles.link}`);
-      const href = link ? linkTarget(view, link) : null;
+      const href = link ? linkAt(view, link) : null;
       if (href === null) return false;
       event.preventDefault();
       onOpenLink(href);

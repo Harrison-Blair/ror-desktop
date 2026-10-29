@@ -11,11 +11,11 @@ beforeAll(() => {
   Range.prototype.getBoundingClientRect = () => new DOMRect();
 });
 
-function renderEditor(raw = false) {
+function renderEditor(raw = false, value = text) {
   const onOpenLink = vi.fn();
   const view = render(
     <MarkdownEditor
-      value={text}
+      value={value}
       onChange={() => {}}
       raw={raw}
       label="Note"
@@ -38,6 +38,34 @@ describe("MarkdownEditor links", () => {
     fireEvent.mouseDown(autolink, { button: 0, ctrlKey: true });
     expect(onOpenLink).toHaveBeenLastCalledWith("https://a.b");
     expect(onOpenLink).toHaveBeenCalledTimes(2);
+  });
+
+  it("opens a reference link through its definition", () => {
+    const { onOpenLink, links } = renderEditor(
+      false,
+      [
+        "[site][ref] [x][] [Two  Words] [none][missing]",
+        "",
+        "[REF]: https://example.com",
+        "[x]: <a b.md>",
+        "[two\n words]: two.md",
+      ].join("\n"),
+    );
+    const [full, collapsed, shortcut, missing] = links();
+    for (const [link, href] of [
+      [full, "https://example.com"],
+      [collapsed, "a b.md"],
+      [shortcut, "two.md"],
+    ] as const) {
+      expect(link).toHaveAttribute("title", "Ctrl+click to open");
+      fireEvent.mouseDown(link, { button: 0, ctrlKey: true });
+      expect(onOpenLink).toHaveBeenLastCalledWith(href);
+    }
+
+    expect(missing).toHaveTextContent("none");
+    expect(missing).not.toHaveAttribute("title");
+    fireEvent.mouseDown(missing, { button: 0, ctrlKey: true });
+    expect(onOpenLink).toHaveBeenCalledTimes(3);
   });
 
   it("does not open a link on a plain click", () => {
