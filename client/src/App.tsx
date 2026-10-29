@@ -7,6 +7,10 @@ import {
   type DiceRoll,
 } from "@/components/menus/DiceMenu/DiceMenu";
 import {
+  EditorMenu,
+  type EditorMenuHandle,
+} from "@/components/menus/EditorMenu/EditorMenu";
+import {
   NotesMenu,
   NotesMenuActions,
   type NotesMenuHandle,
@@ -50,6 +54,7 @@ function Shell() {
   const [latestRoll, setLatestRoll] = useState<DiceRoll>();
   const nextRollId = useRef(1);
   const notesMenu = useRef<NotesMenuHandle>(null);
+  const editorMenu = useRef<EditorMenuHandle>(null);
   // Kept here so the folder, open folders and the selection survive closing
   // the rail panel.
   const [notesFolder, setNotesFolder] = useState<string>();
@@ -189,10 +194,20 @@ function Shell() {
             setExpanded={setNotesExpanded}
             selected={notesSelected}
             setSelected={setNotesSelected}
+            // A pending edit is saved to the open note's old path first.
+            saveOpenNote={() =>
+              editorMenu.current?.flush() ?? Promise.resolve(true)
+            }
           />
         )}
       </RailPanel>
-      <MainPanel />
+      <MainPanel>
+        <EditorMenu
+          ref={editorMenu}
+          path={notesSelected}
+          onOpenNote={setNotesSelected}
+        />
+      </MainPanel>
       <SidePanel
         open={panelOpen}
         onClose={() => setPanelOpen(false)}

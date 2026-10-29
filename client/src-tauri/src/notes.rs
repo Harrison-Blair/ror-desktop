@@ -1,5 +1,6 @@
 use serde::{Deserialize, Serialize};
 use std::fs;
+use std::io::Write;
 use std::path::{Path, PathBuf};
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
@@ -289,6 +290,49 @@ pub fn move_item(root: &Path, path: &str, new_parent: &str) -> Result<String> {
     refuse_existing(&dest, || format!("“{name}” is already in {place}."))?;
     fs::rename(&abs, dest).map_err(|e| io_err("move", name, e))?;
     Ok(join(new_parent, name))
+}
+
+fn resolve_file(root: &Path, rel: &str) -> Result<PathBuf> {
+    match resolve_item(root, rel)? {
+        (abs, Kind::File) => Ok(abs),
+        (_, Kind::Folder) => Err(err(
+            Code::NotFound,
+            format!("“{}” isn't a file.", last_segment(rel)),
+        )),
+    }
+}
+
+pub fn read(root: &Path, path: &str) -> Result<String> {
+    let abs = resolve_file(root, path)?;
+    let name = last_segment(path);
+    let bytes = fs::read(&abs).map_err(|e| io_err("read", name, e))?;
+    String::from_utf8(bytes).map_err(|_| {
+        err(
+            Code::Io,
+            format!("Couldn't read “{name}”: it isn't UTF-8 text."),
+        )
+    })
+}
+
+pub fn write(root: &Path, path: &str, text: &str) -> Result<()> {
+    let abs = resolve_file(root, path)?;
+    let name = last_segment(path);
+    let save_err = |e: std::io::Error| io_err("save", name, e);
+    let permissions = fs::metadata(&abs).map_err(save_err)?.permissions();
+    // Writes a new file beside the note and renames it over the note, so a
+    // failed write keeps the old text. The file is made for this save alone
+    // and is removed if the save fails. The dot keeps it out of the list.
+    let mut temp = tempfile::Builder::new()
+        .prefix(&format!(".{name}."))
+        .suffix(".tmp")
+        .tempfile_in(abs.parent().unwrap_or(root))
+        .map_err(save_err)?;
+    temp.write_all(text.as_bytes()).map_err(save_err)?;
+    temp.as_file()
+        .set_permissions(permissions)
+        .map_err(save_err)?;
+    temp.persist(&abs).map_err(|e| save_err(e.error))?;
+    Ok(())
 }
 
 pub fn delete(root: &Path, path: &str) -> Result<()> {
@@ -848,6 +892,142 @@ mod tests {
         assert_eq!(move_item(r, "n.md", "Lore").unwrap(), "Lore/n.md");
         assert!(r.join("Lore/n.md").is_file());
         assert!(!r.join("n.md").exists());
+    }
+
+    #[test]
+    fn write_then_read_round_trips_the_text() {
+        let dir = root();
+        let r = dir.path();
+        mkdir(r, "Lore");
+        touch(r, "Lore/plot.md");
+        let text = "# Plot\n\nÜnïcode — “quotes”\n";
+        write(r, "Lore/plot.md", text).unwrap();
+        assert_eq!(read(r, "Lore/plot.md").unwrap(), text);
+        assert_eq!(fs::read_to_string(r.join("Lore/plot.md")).unwrap(), text);
+    }
+
+    #[test]
+    fn an_empty_file_reads_and_writes_as_empty_text() {
+        let dir = root();
+        let r = dir.path();
+        touch(r, "a.md");
+        assert_eq!(read(r, "a.md").unwrap(), "");
+        fs::write(r.join("b.md"), "old").unwrap();
+        write(r, "b.md", "").unwrap();
+        assert_eq!(fs::read(r.join("b.md")).unwrap(), b"");
+    }
+
+    #[test]
+    fn a_write_keeps_siblings_and_leaves_no_temp_file() {
+        let dir = root();
+        let r = dir.path();
+        fs::write(r.join("a.md"), "old").unwrap();
+        fs::write(r.join("b.md"), "sibling").unwrap();
+        write(r, "a.md", "new").unwrap();
+        let mut names: Vec<String> = fs::read_dir(r)
+            .unwrap()
+            .map(|e| e.unwrap().file_name().to_string_lossy().into_owned())
+            .collect();
+        names.sort();
+        assert_eq!(names, ["a.md", "b.md"]);
+        assert_eq!(fs::read_to_string(r.join("b.md")).unwrap(), "sibling");
+        assert_eq!(fs::read_to_string(r.join("a.md")).unwrap(), "new");
+    }
+
+    #[test]
+    fn a_write_leaves_a_hidden_sibling_with_a_temp_name_alone() {
+        let dir = root();
+        let r = dir.path();
+        fs::write(r.join("a.md"), "old").unwrap();
+        fs::write(r.join(".a.md.tmp"), "keep").unwrap();
+        write(r, "a.md", "new").unwrap();
+        assert_eq!(fs::read_to_string(r.join("a.md")).unwrap(), "new");
+        assert_eq!(fs::read_to_string(r.join(".a.md.tmp")).unwrap(), "keep");
+    }
+
+    #[cfg(unix)]
+    #[test]
+    fn a_write_does_not_follow_a_symlink_with_a_temp_name() {
+        let dir = root();
+        let r = dir.path().join("notes");
+        mkdir(&r, "");
+        fs::write(r.join("a.md"), "old").unwrap();
+        fs::write(dir.path().join("target.md"), "secret").unwrap();
+        std::os::unix::fs::symlink(dir.path().join("target.md"), r.join(".a.md.tmp")).unwrap();
+        write(&r, "a.md", "new").unwrap();
+        assert_eq!(fs::read_to_string(r.join("a.md")).unwrap(), "new");
+        assert_eq!(
+            fs::read_to_string(dir.path().join("target.md")).unwrap(),
+            "secret"
+        );
+        assert!(r.join(".a.md.tmp").is_symlink());
+    }
+
+    #[cfg(unix)]
+    #[test]
+    fn a_write_keeps_the_note_permissions() {
+        use std::os::unix::fs::PermissionsExt;
+        let dir = root();
+        let r = dir.path();
+        for mode in [0o600, 0o644] {
+            fs::write(r.join("a.md"), "old").unwrap();
+            fs::set_permissions(r.join("a.md"), fs::Permissions::from_mode(mode)).unwrap();
+            write(r, "a.md", "new").unwrap();
+            let after = fs::metadata(r.join("a.md")).unwrap().permissions().mode();
+            assert_eq!(after & 0o777, mode, "{mode:o}");
+        }
+    }
+
+    #[test]
+    fn read_and_write_refuse_folders_outside_paths_and_missing_files() {
+        let dir = root();
+        let r = dir.path().join("notes");
+        mkdir(&r, "Lore");
+        fs::write(dir.path().join("outside.md"), "secret").unwrap();
+        for path in ["Lore", "../outside.md", "", "gone.md"] {
+            assert_eq!(read(&r, path).unwrap_err().code, Code::NotFound, "{path:?}");
+            assert_eq!(
+                write(&r, path, "x").unwrap_err().code,
+                Code::NotFound,
+                "{path:?}"
+            );
+        }
+        assert_eq!(
+            read(&r, "Lore").unwrap_err().message,
+            "“Lore” isn't a file."
+        );
+        assert_eq!(
+            fs::read_to_string(dir.path().join("outside.md")).unwrap(),
+            "secret"
+        );
+        assert!(!r.join("gone.md").exists());
+    }
+
+    #[cfg(unix)]
+    #[test]
+    fn read_and_write_refuse_symlinks() {
+        let dir = root();
+        let r = dir.path().join("notes");
+        mkdir(&r, "");
+        fs::write(dir.path().join("target.md"), "secret").unwrap();
+        std::os::unix::fs::symlink(dir.path().join("target.md"), r.join("link.md")).unwrap();
+        assert_eq!(read(&r, "link.md").unwrap_err().code, Code::NotFound);
+        assert_eq!(write(&r, "link.md", "x").unwrap_err().code, Code::NotFound);
+        assert_eq!(
+            fs::read_to_string(dir.path().join("target.md")).unwrap(),
+            "secret"
+        );
+        assert!(r.join("link.md").is_symlink());
+    }
+
+    #[test]
+    fn read_refuses_text_that_is_not_utf8() {
+        let dir = root();
+        let r = dir.path();
+        fs::write(r.join("bin.md"), b"ok \xff\xfe").unwrap();
+        let e = read(r, "bin.md").unwrap_err();
+        assert_eq!(e.code, Code::Io);
+        assert_eq!(e.message, "Couldn't read “bin.md”: it isn't UTF-8 text.");
     }
 
     #[test]

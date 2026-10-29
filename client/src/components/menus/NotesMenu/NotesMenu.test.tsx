@@ -397,7 +397,9 @@ describe("NotesTree", () => {
     fireEvent.pointerDown(row("Places"), { button: 0, clientX: 0, clientY: 0 });
     fireEvent.pointerMove(window, { clientX: 20, clientY: 20 });
     fireEvent.pointerUp(window, { clientX: 20, clientY: 20 });
-    expect(api.moveEntry).toHaveBeenCalledWith("Places", "People");
+    await waitFor(() =>
+      expect(api.moveEntry).toHaveBeenCalledWith("Places", "People"),
+    );
   });
 
   it("a rename that resolves late leaves a newer name box open", async () => {
@@ -699,7 +701,9 @@ describe("NotesTree", () => {
 
       dragTo(row("Chicago.md"), row("Places"));
 
-      expect(api.moveEntry).toHaveBeenCalledWith("Chicago.md", "Places");
+      await waitFor(() =>
+        expect(api.moveEntry).toHaveBeenCalledWith("Chicago.md", "Places"),
+      );
     });
 
     it("dropping on the empty area below the rows moves to the top level", async () => {
@@ -709,7 +713,9 @@ describe("NotesTree", () => {
 
       dragTo(row("Ada.md"), topLevel(container));
 
-      expect(api.moveEntry).toHaveBeenCalledWith("People/Ada.md", "");
+      await waitFor(() =>
+        expect(api.moveEntry).toHaveBeenCalledWith("People/Ada.md", ""),
+      );
     });
 
     it("refuses a folder into its own descendant and ignores its current parent", async () => {
@@ -719,6 +725,7 @@ describe("NotesTree", () => {
       dragTo(row("People"), row("Villains"));
       dragTo(row("People"), row("People"));
       dragTo(row("Ada.md"), row("People"));
+      await act(async () => {});
 
       expect(api.moveEntry).not.toHaveBeenCalled();
     });
@@ -734,6 +741,7 @@ describe("NotesTree", () => {
       });
       fireEvent.pointerMove(window, { clientX: 12, clientY: 11 });
       fireEvent.pointerUp(window, { clientX: 12, clientY: 11 });
+      await act(async () => {});
 
       expect(api.moveEntry).not.toHaveBeenCalled();
     });
