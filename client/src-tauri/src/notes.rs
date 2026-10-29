@@ -635,7 +635,7 @@ mod tests {
             create(&r, "..", Kind::File, "x").unwrap_err().code,
             Code::NotFound
         );
-        assert!(!dir.path().join("x.md").exists());
+        assert!(!dir.path().join("x").exists());
     }
 
     #[cfg(windows)]
