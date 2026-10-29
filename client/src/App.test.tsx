@@ -39,10 +39,10 @@ describe("App frame", () => {
       ),
     ).toHaveTextContent("Settings is not implemented yet.");
     expect(
-      screen.getByRole("button", { name: "Session", pressed: true }),
+      screen.getByRole("button", { name: "Notes", pressed: true }),
     ).toBeInTheDocument();
     expect(
-      screen.getByRole("region", { name: "Session rail panel" }),
+      screen.getByRole("region", { name: "Notes rail panel" }),
     ).toBeInTheDocument();
     expect(
       screen.queryByRole("complementary", { name: "Dice" }),
@@ -63,7 +63,7 @@ describe("App frame", () => {
     ).toBeInTheDocument();
     expect(dice).toHaveAttribute("aria-pressed", "true");
     expect(
-      screen.getByRole("button", { name: "Session", pressed: true }),
+      screen.getByRole("button", { name: "Notes", pressed: true }),
     ).toBeInTheDocument();
 
     await user.click(dice);
@@ -102,43 +102,42 @@ describe("App frame", () => {
     expect(history().getAllByRole("listitem")).toHaveLength(1);
   });
 
-  it("selecting another rail item activates it and opens its rail panel", async () => {
-    const user = renderApp();
-    await user.click(screen.getByRole("button", { name: "Panel item 4" }));
-    await user.click(screen.getByRole("button", { name: "Hide rail panel" }));
+  it.each(["Session", "World"])(
+    "%s is not implemented: clicking it shows an error and leaves Notes active",
+    async (name) => {
+      const user = renderApp();
 
-    await user.click(screen.getByRole("button", { name: "Notes" }));
+      await user.click(screen.getByRole("button", { name }));
 
-    expect(
-      screen.getByRole("button", { name: "Notes", pressed: true }),
-    ).toBeInTheDocument();
-    expect(
-      screen.getByRole("button", { name: "Session", pressed: false }),
-    ).toBeInTheDocument();
-    const railPanel = screen.getByRole("region", {
-      name: "Notes rail panel",
-    });
-    expect(railPanel).toHaveTextContent("Notes");
-    expect(
-      screen.getByRole("button", { name: "Panel item 1", pressed: true }),
-    ).toBeInTheDocument();
-    expect(
-      screen.getByRole("button", { name: "Panel item 4", pressed: false }),
-    ).toBeInTheDocument();
-  });
+      expect(
+        within(screen.getByRole("region", { name: "Notifications" })).getByRole(
+          "alert",
+        ),
+      ).toHaveTextContent(`${name} is not implemented yet.`);
+      expect(
+        screen.getByRole("button", { name, pressed: false }),
+      ).toBeInTheDocument();
+      expect(
+        screen.getByRole("button", { name: "Notes", pressed: true }),
+      ).toBeInTheDocument();
+      expect(
+        screen.getByRole("region", { name: "Notes rail panel" }),
+      ).toBeInTheDocument();
+    },
+  );
 
   it("selecting the active rail item hides and then shows the rail panel", async () => {
     const user = renderApp();
-    const active = screen.getByRole("button", { name: "Session" });
+    const active = screen.getByRole("button", { name: "Notes" });
 
     await user.click(active);
     expect(
-      screen.queryByRole("region", { name: "Session rail panel" }),
+      screen.queryByRole("region", { name: "Notes rail panel" }),
     ).not.toBeInTheDocument();
 
     await user.click(active);
     expect(
-      screen.getByRole("region", { name: "Session rail panel" }),
+      screen.getByRole("region", { name: "Notes rail panel" }),
     ).toBeInTheDocument();
   });
 
@@ -149,14 +148,14 @@ describe("App frame", () => {
       screen.getByRole("button", { name: "Hide rail panel", expanded: true }),
     );
     expect(
-      screen.queryByRole("region", { name: "Session rail panel" }),
+      screen.queryByRole("region", { name: "Notes rail panel" }),
     ).not.toBeInTheDocument();
 
     await user.click(
       screen.getByRole("button", { name: "Show rail panel", expanded: false }),
     );
     expect(
-      screen.getByRole("region", { name: "Session rail panel" }),
+      screen.getByRole("region", { name: "Notes rail panel" }),
     ).toBeInTheDocument();
     expect(
       screen.getByRole("button", { name: "Hide rail panel" }),

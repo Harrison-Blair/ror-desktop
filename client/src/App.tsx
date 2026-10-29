@@ -41,7 +41,7 @@ export default function App() {
 // Inside the ToastProvider so it can raise toasts.
 function Shell() {
   const notify = useToast();
-  const [activeId, setActiveId] = useState("session");
+  const [activeId, setActiveId] = useState("notes");
   const [railPanelOpen, setRailPanelOpen] = useState(true);
   const [railPanelItemId, setRailPanelItemId] = useState("p1");
   const [panelOpen, setPanelOpen] = useState(false);
@@ -96,6 +96,12 @@ function Shell() {
   };
 
   const selectRailItem = (id: string) => {
+    // Only Notes is built so far.
+    if (id !== "notes") {
+      const label = railItems.find((item) => item.id === id)?.label;
+      notify({ kind: "error", message: `${label} is not implemented yet.` });
+      return;
+    }
     if (id === activeId) {
       setRailPanelOpen((open) => !open);
       return;

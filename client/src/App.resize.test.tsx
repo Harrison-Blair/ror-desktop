@@ -18,7 +18,7 @@ function drag(handleName: string, fromX: number, toX: number) {
 }
 
 const railPanel = () =>
-  screen.getByRole("region", { name: "Session rail panel" });
+  screen.getByRole("region", { name: "Notes rail panel" });
 const sidePanel = () => screen.getByRole("complementary", { name: "Dice" });
 const toggleRailPanel = () =>
   fireEvent.click(
