@@ -440,6 +440,42 @@ async fn provider_errors_end_the_turn_with_an_error_line_and_no_key() {
 }
 
 #[tokio::test]
+async fn a_provider_that_cannot_be_reached_gets_a_plain_line_and_the_detail_below() {
+    // A port with nothing listening. The key in the URL shows the detail is
+    // redacted too.
+    let port = TcpListener::bind("127.0.0.1:0")
+        .unwrap()
+        .local_addr()
+        .unwrap()
+        .port();
+    let server = FakeServer {
+        url: format!("http://127.0.0.1:{port}/{KEY}/v1"),
+        requests: Arc::default(),
+    };
+    let host = TestHost::default();
+    let (chat, end) = run(&server, &host, CancellationToken::new()).await;
+
+    assert_eq!(end, TurnEnd::Failed);
+    let Some(Message::Notice {
+        level: NoticeLevel::Error,
+        text,
+    }) = chat.messages.last()
+    else {
+        panic!("no error line: {:?}", chat.messages.last());
+    };
+    let (line, detail) = text.split_once('\n').expect("a detail line");
+    assert_eq!(line, "Could not reach Fake.");
+    assert!(
+        detail.starts_with(&format!(
+            "error sending request for url (http://127.0.0.1:{port}/[key]/v1/chat/completions)"
+        )),
+        "{detail}"
+    );
+    assert!(!text.contains(KEY));
+    assert!(!host.events_json().contains(KEY));
+}
+
+#[tokio::test]
 async fn an_error_inside_the_stream_keeps_the_text_so_far() {
     let server = serve(|_| {
         Reply::Stream(vec![

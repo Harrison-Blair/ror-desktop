@@ -244,7 +244,7 @@ export function ModelMenu({
           <div className={styles.keyRow}>
             <input
               aria-label="Model id"
-              className={styles.keyField}
+              className={styles.textField}
               placeholder="Type a model id"
               value={modelId}
               onChange={(event) => setModelId(event.target.value)}
@@ -480,7 +480,7 @@ export function ModelMenu({
             </label>
             <input
               id={`${id}-url`}
-              className={styles.keyField}
+              className={styles.textField}
               placeholder="http://localhost:11434/v1"
               value={form.baseUrl}
               onChange={(event) =>

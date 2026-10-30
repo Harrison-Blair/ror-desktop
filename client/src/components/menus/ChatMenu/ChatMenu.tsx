@@ -35,6 +35,10 @@ const errorMessage = (e: unknown) =>
     ? String(e.message)
     : String(e);
 
+// The notice `send_error` makes when a provider can't be reached: a fixed
+// first line, then the technical detail. Other notices are shown as they are.
+const UNREACHABLE = /^(Could not reach [^\n]+\.)\n([\s\S]+)$/;
+
 const formatTokens = (n: number) =>
   n < 1000 ? String(n) : `${(n / 1000).toFixed(1)}k`;
 
@@ -221,7 +225,8 @@ function Thread({ chat }: { chat: ChatController }) {
                 )}
               </div>
             );
-          case "notice":
+          case "notice": {
+            const unreachable = UNREACHABLE.exec(message.text);
             return (
               <p
                 key={key}
@@ -229,9 +234,19 @@ function Thread({ chat }: { chat: ChatController }) {
                   message.level === "error" ? styles.error : styles.notice
                 }
               >
-                {message.text}
+                {unreachable ? (
+                  <>
+                    {unreachable[1]}
+                    <span className={styles.noticeDetail}>
+                      {unreachable[2]}
+                    </span>
+                  </>
+                ) : (
+                  message.text
+                )}
               </p>
             );
+          }
           default:
             return null;
         }
@@ -258,6 +273,7 @@ function Composer({ chat }: { chat: ChatController }) {
   const [text, setText] = useState("");
   const [menuOpen, setMenuOpen] = useState(false);
   const total = chat.usage.inputTokens + chat.usage.outputTokens;
+  const usageLabel = `${total} tokens: ${chat.usage.inputTokens} input and ${chat.usage.outputTokens} output`;
 
   const submit = (event?: FormEvent) => {
     event?.preventDefault();
@@ -298,6 +314,7 @@ function Composer({ chat }: { chat: ChatController }) {
             type="button"
             className={styles.toggle}
             aria-label={`Model: ${chat.model ?? "none"}`}
+            title={chat.model ?? undefined}
             aria-expanded={menuOpen}
             aria-haspopup="dialog"
             onClick={() => setMenuOpen((open) => !open)}
@@ -342,9 +359,11 @@ function Composer({ chat }: { chat: ChatController }) {
         {total > 0 && (
           <span
             className={styles.usage}
-            title={`${chat.usage.inputTokens} input and ${chat.usage.outputTokens} output tokens`}
+            role="img"
+            aria-label={usageLabel}
+            title={usageLabel}
           >
-            {formatTokens(total)} tokens
+            {formatTokens(total)}
           </span>
         )}
         {chat.running ? (

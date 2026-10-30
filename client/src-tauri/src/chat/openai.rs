@@ -67,8 +67,20 @@ impl Endpoint {
         self.redact(&text)
     }
 
+    // When the provider can't be reached, the first line says so plainly and
+    // the second holds the technical detail. The chat recognises this first
+    // line and shows the detail muted, so keep the two in step.
     fn send_error(&self, e: &reqwest::Error) -> String {
-        self.redact(&format!("Couldn't reach {}: {e}", self.label))
+        if !e.is_connect() && !e.is_timeout() {
+            return self.redact(&format!("Couldn't reach {}: {e}", self.label));
+        }
+        let mut detail = e.to_string();
+        let mut source = std::error::Error::source(e);
+        while let Some(cause) = source {
+            detail.push_str(&format!(": {cause}"));
+            source = cause.source();
+        }
+        self.redact(&format!("Could not reach {}.\n{detail}", self.label))
     }
 }
 

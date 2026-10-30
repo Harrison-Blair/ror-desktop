@@ -182,7 +182,71 @@ describe("Chat panel", () => {
 
     expect(await screen.findByText("Who are the ogres?")).toBeInTheDocument();
     expect(within(panel()).getByText("giants").tagName).toBe("STRONG");
-    expect(within(panel()).getByText("1.5k tokens")).toBeInTheDocument();
+    const meter = within(panel()).getByRole("img", {
+      name: "1500 tokens: 1200 input and 300 output",
+    });
+    expect(meter).toHaveTextContent(/^1\.5k$/);
+    expect(
+      within(panel()).getByRole("button", { name: "Model: glm-5.3" }),
+    ).toHaveAttribute("title", "glm-5.3");
+    expect(meter).toHaveAttribute(
+      "title",
+      "1500 tokens: 1200 input and 300 output",
+    );
+  });
+
+  it("shows a notice's detail on its own line under the message", async () => {
+    latest = {
+      id: "old",
+      title: "Ogres",
+      createdAt: 1,
+      updatedAt: 2,
+      backend: "opencode-go",
+      model: "glm-5.3",
+      archived: false,
+      messages: [
+        { role: "user", text: "Who are the ogres?" },
+        {
+          role: "notice",
+          level: "error",
+          text: "Could not reach OpenCode Go.\nerror sending request for url (http://127.0.0.1:1/v1)",
+        },
+      ],
+      usage: { inputTokens: 0, outputTokens: 0 },
+    };
+    await openChat();
+
+    const notice = await within(panel()).findByText(
+      "Could not reach OpenCode Go.",
+    );
+    const detail = within(notice).getByText(
+      "error sending request for url (http://127.0.0.1:1/v1)",
+    );
+    expect(detail).not.toBe(notice);
+  });
+
+  it("shows any other multiline notice as one block", async () => {
+    const text = "Fake returned HTTP 500: service failed\nTry another model";
+    latest = {
+      id: "old",
+      title: "Ogres",
+      createdAt: 1,
+      updatedAt: 2,
+      backend: "opencode-go",
+      model: "glm-5.3",
+      archived: false,
+      messages: [
+        { role: "user", text: "Who are the ogres?" },
+        { role: "notice", level: "error", text },
+      ],
+      usage: { inputTokens: 0, outputTokens: 0 },
+    };
+    await openChat();
+
+    const notice = await within(panel()).findByText(
+      (_, element) => element?.tagName === "P" && element.textContent === text,
+    );
+    expect(notice.children).toHaveLength(0);
   });
 
   it("Enter sends, Shift+Enter adds a line, and the reply streams in", async () => {

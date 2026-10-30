@@ -85,6 +85,9 @@
 }
 
 .markdown table {
+  display: block;
+  max-width: 100%;
+  overflow-x: auto;
   border-collapse: collapse;
 }
 
@@ -92,5 +95,6 @@
 .markdown td {
   padding: var(--space-1) var(--space-2);
   text-align: left;
+  overflow-wrap: break-word;
   border: 1px solid var(--line);
 }

@@ -12,10 +12,15 @@
   padding: 0 var(--space-4) var(--space-4);
 }
 
+/* The model menu's text field. */
 .field {
-  composes: field from "@/components/menus/DiceMenu/DiceMenu.module.css";
-  flex: none;
+  composes: textField from "./ChatMenu.module.css";
   width: 100%;
+}
+
+/* More specific than the composed rules, which may load after this file. */
+.filters > .field {
+  flex: none;
 }
 
 .field::placeholder {
@@ -168,10 +173,16 @@
 
 .input {
   composes: input from "@/components/FileTree/FileTree.module.css";
-  margin: 0 2px;
 }
 
-.field:focus-visible,
+/* Inset so the focus ring stays inside the row, with the text where the
+   row's title starts. More specific than the composed rule, which may load
+   after this file. */
+.row > .input {
+  margin: 0 var(--space-1);
+  padding: 0 3px;
+}
+
 .open:focus-visible,
 .action:focus-visible {
   outline: 2px solid var(--focus);
