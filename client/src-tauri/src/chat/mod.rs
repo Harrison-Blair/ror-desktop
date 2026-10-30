@@ -3,9 +3,14 @@
 // calls the model makes through its permission gate, and returns the results.
 
 pub mod agent;
+pub mod codex;
 pub mod openai;
 pub mod store;
 
+#[cfg(test)]
+mod codex_schema;
+#[cfg(test)]
+mod codex_tests;
 #[cfg(test)]
 mod tests;
 
@@ -14,7 +19,7 @@ use crate::secrets;
 use agent::{Backend, ChatEvent, ToolOutput, ToolSpec, Turn, TurnEnd, TurnHost};
 use serde::{Deserialize, Serialize};
 use std::path::{Path, PathBuf};
-use std::sync::Mutex;
+use std::sync::{Arc, Mutex};
 use store::{BackendId, Chat, Message, NoticeLevel, ToolCall};
 use tauri::ipc::Channel;
 use tauri::{AppHandle, Manager, State};
@@ -42,6 +47,7 @@ struct Turns {
 pub struct ChatState {
     client: reqwest::Client,
     turns: Mutex<Turns>,
+    codex: Arc<codex::Codex>,
 }
 
 /// The HTTP client for providers and the web tools. Every request names the
@@ -54,11 +60,23 @@ pub fn http_client() -> reqwest::Client {
 }
 
 impl ChatState {
+    #[cfg(test)]
     pub fn new() -> Self {
+        Self::with_codex_dir(std::env::temp_dir().join("ror-desktop-codex"))
+    }
+
+    /// Codex runs in `dir`, an empty folder of the app's.
+    pub fn with_codex_dir(dir: PathBuf) -> Self {
         ChatState {
             client: http_client(),
             turns: Mutex::default(),
+            codex: Arc::new(codex::Codex::new(Box::new(codex::CodexCommand), dir)),
         }
+    }
+
+    /// Ends the Codex app server, when the app exits.
+    pub fn shutdown(&self) {
+        self.codex.shutdown();
     }
 
     pub fn client(&self) -> &reqwest::Client {
@@ -141,11 +159,12 @@ fn config_file(app: &AppHandle) -> Result<PathBuf, String> {
     crate::config_file(app).map_err(|e| e.to_string())
 }
 
-/// The keychain entry of each backend's key.
-fn key_provider(backend: BackendId) -> &'static str {
+/// The keychain entry of each backend's key. Codex uses `codex login`.
+fn key_provider(backend: BackendId) -> Option<&'static str> {
     match backend {
-        BackendId::OpencodeGo => "opencode-go",
-        BackendId::Custom => "custom",
+        BackendId::OpencodeGo => Some("opencode-go"),
+        BackendId::Custom => Some("custom"),
+        BackendId::Codex => None,
     }
 }
 
@@ -188,6 +207,7 @@ fn endpoint(
                 None,
             )
         }
+        BackendId::Codex => return Err(format!("{} has no endpoint.", codex::LABEL)),
     };
     Ok(openai::Endpoint {
         client: client.clone(),
@@ -207,10 +227,13 @@ async fn endpoint_for(
     session: Option<String>,
 ) -> Result<openai::Endpoint, String> {
     let custom = config::load(&config_file(app)?).custom_provider;
-    let saved = key(key_provider(backend)).await?;
+    let saved = match key_provider(backend) {
+        Some(provider) => key(provider).await?,
+        None => None,
+    };
     let api_key = match backend {
-        BackendId::OpencodeGo => saved,
         BackendId::Custom => custom.as_ref().and_then(|c| custom_key(saved, &c.base_url)),
+        _ => saved,
     };
     endpoint(&state.client, backend, custom, api_key, model, session)
 }
@@ -437,8 +460,23 @@ pub async fn chat_models(
     state: State<'_, ChatState>,
     backend: BackendId,
 ) -> Result<Vec<String>, String> {
+    if backend == BackendId::Codex {
+        return match state.codex.status().await {
+            codex::Status::Ready { models } => Ok(models),
+            codex::Status::SignedOut { .. } => Err(codex::SIGNED_OUT.to_string()),
+            codex::Status::NotInstalled => Err(codex::NOT_INSTALLED.to_string()),
+            codex::Status::Error { message } => Err(message),
+        };
+    }
     let endpoint = endpoint_for(&app, &state, backend, "", None).await?;
     openai::list_models(&endpoint, openai::MODELS_TIMEOUT).await
+}
+
+/// Whether Codex is installed and signed in, and its models. Starts the
+/// app server when it isn't running.
+#[tauri::command]
+pub async fn codex_status(state: State<'_, ChatState>) -> Result<codex::Status, String> {
+    Ok(state.codex.status().await)
 }
 
 #[tauri::command]
@@ -582,6 +620,12 @@ pub async fn chat_send(
             "This chat uses another provider. Start a new chat to use this one.",
         );
         TurnEnd::Failed
+    } else if backend == BackendId::Codex {
+        let session = codex::Session {
+            codex: state.codex.clone(),
+            model: model.clone(),
+        };
+        agent::answer(&Backend::Codex(session), &mut turn, &host).await
     } else {
         match endpoint_for(&app, &state, backend, &model, Some(turn.chat.id.clone())).await {
             Ok(endpoint) => agent::answer(&Backend::OpenAi(endpoint), &mut turn, &host).await,

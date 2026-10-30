@@ -6,6 +6,7 @@
       "!!dist",
       "!!src-tauri/target",
       "!!src-tauri/gen",
+      "!!src-tauri/tests/codex-app-server-*",
       "!!package-lock.json"
     ]
   },

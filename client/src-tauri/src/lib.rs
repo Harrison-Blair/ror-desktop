@@ -231,7 +231,9 @@ pub fn run() {
 
             app.manage(NotesRoot(Mutex::new(start.root)));
             app.manage(MissingNotesDir(start.missing));
-            app.manage(chat::ChatState::new());
+            app.manage(chat::ChatState::with_codex_dir(
+                app.path().app_cache_dir()?.join("codex"),
+            ));
             Ok(())
         })
         .invoke_handler(tauri::generate_handler![
@@ -255,6 +257,7 @@ pub fn run() {
             chat::custom_provider_save,
             chat::custom_provider_remove,
             chat::chat_models,
+            chat::codex_status,
             chat::chat_latest,
             chat::chat_list,
             chat::chat_open,
@@ -267,8 +270,16 @@ pub fn run() {
             web::web_search,
             web::web_fetch
         ])
-        .run(tauri::generate_context!())
-        .expect("error while running Ror Desktop");
+        .build(tauri::generate_context!())
+        .expect("error while running Ror Desktop")
+        .run(|app, event| {
+            // The Codex app server ends with the app.
+            if let tauri::RunEvent::Exit = event {
+                if let Some(chat) = app.try_state::<chat::ChatState>() {
+                    chat.shutdown();
+                }
+            }
+        });
 }
 
 #[cfg(test)]

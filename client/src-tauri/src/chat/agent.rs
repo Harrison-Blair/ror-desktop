@@ -4,8 +4,8 @@
 // model's tool calls through the host until the model answers. The host
 // connects the turn to the app (the webview in the app, a fake in tests).
 
-use super::openai;
 use super::store::{Chat, Message, NoticeLevel, ToolCall, Usage};
+use super::{codex, openai};
 use serde::{Deserialize, Serialize};
 use std::future::Future;
 use tokio_util::sync::CancellationToken;
@@ -125,24 +125,37 @@ impl Turn<'_> {
     }
 }
 
-/// How a chat reaches its model. Wave 3 adds Codex here.
+/// How a chat reaches its model.
 pub enum Backend {
     /// OpenCode Go or the custom provider: both speak the OpenAI API.
     OpenAi(openai::Endpoint),
+    /// The local Codex app server, signed in with `codex login`.
+    Codex(codex::Session),
 }
 
 impl Backend {
     pub async fn run_turn(&self, turn: &mut Turn<'_>, host: &impl TurnHost) -> TurnEnd {
         match self {
             Backend::OpenAi(endpoint) => openai::run_turn(endpoint, turn, host).await,
+            Backend::Codex(session) => codex::run_turn(session, turn, host).await,
         }
     }
 
     /// A short title for the chat from its first exchange, and the tokens
-    /// the request used. Uses no tools.
-    pub async fn title(&self, chat: &Chat) -> Result<(String, Usage), String> {
+    /// the request used. Uses no tools. Stop ends it with an error.
+    pub async fn title(
+        &self,
+        chat: &Chat,
+        cancel: &CancellationToken,
+    ) -> Result<(String, Usage), String> {
         match self {
-            Backend::OpenAi(endpoint) => openai::title(endpoint, chat).await,
+            Backend::OpenAi(endpoint) => tokio::select! {
+                biased;
+                () = cancel.cancelled() => Err(STOPPED.to_string()),
+                result = openai::title(endpoint, chat) => result,
+            },
+            // Codex has a title turn to end when Stop comes.
+            Backend::Codex(session) => codex::title(session, chat, cancel).await,
         }
     }
 }
@@ -175,12 +188,7 @@ async fn auto_title(backend: &Backend, turn: &mut Turn<'_>, host: &impl TurnHost
         return;
     }
     let cancel = turn.cancel.clone();
-    let result = tokio::select! {
-        biased;
-        () = cancel.cancelled() => return,
-        result = backend.title(turn.chat) => result,
-    };
-    let Ok((title, usage)) = result else {
+    let Ok((title, usage)) = backend.title(turn.chat, &cancel).await else {
         return;
     };
     turn.chat.title = title;

@@ -9,7 +9,9 @@ import {
 } from "react";
 import {
   type BackendId,
+  type CodexStatus,
   type CustomProvider,
+  codexStatus,
   getChatSettings,
   isKeySaved,
   type KeyProvider,
@@ -71,6 +73,8 @@ export function ModelMenu({
   const [customModels, setCustomModels] = useState<Models>({
     state: "loading",
   });
+  // null while Codex starts.
+  const [codex, setCodex] = useState<CodexStatus | null>(null);
   // The provider whose key field is open, or the custom provider's form.
   const [adding, setAdding] = useState<KeyProvider | "form" | null>(null);
   const [key, setKey] = useState("");
@@ -82,6 +86,9 @@ export function ModelMenu({
 
   const refresh = useCallback(async () => {
     setGoModels({ state: "loading" });
+    const codexLoaded = codexStatus().then(setCodex, (e) =>
+      setCodex({ state: "error", message: errorMessage(e) }),
+    );
     let saved: Keys;
     let provider: CustomProvider | null;
     try {
@@ -117,6 +124,7 @@ export function ModelMenu({
         ? load("opencode-go", setGoModels)
         : setGoModels({ state: "noKey" }),
       provider && load("custom", setCustomModels),
+      codexLoaded,
     ]);
   }, []);
 
@@ -179,9 +187,14 @@ export function ModelMenu({
   };
 
   const label = (from: BackendId) =>
-    from === "opencode-go" ? "OpenCode Go" : (custom?.name ?? "Custom");
+    from === "opencode-go"
+      ? "OpenCode Go"
+      : from === "codex"
+        ? "Codex"
+        : (custom?.name ?? "Custom");
 
-  const group = (from: BackendId, models: Models) => {
+  // `unavailable`: the models show but can't be chosen.
+  const group = (from: BackendId, models: Models, unavailable = false) => {
     const locked = lockedTo !== null && lockedTo !== from;
     const list = models.state === "ready" ? models.models : [];
     const typeId =
@@ -212,7 +225,7 @@ export function ModelMenu({
                     type="button"
                     className={styles.modelItem}
                     aria-pressed={chosen}
-                    disabled={locked}
+                    disabled={locked || unavailable}
                     onClick={() => onChoose(from, name)}
                   >
                     <span className={styles.modelCheck}>
@@ -250,7 +263,8 @@ export function ModelMenu({
             </button>
           </div>
         )}
-        {locked && (
+        {/* Only under models it locks. */}
+        {locked && list.length > 0 && (
           <p className={styles.menuNote}>
             This chat uses {label(lockedTo)}. Start a new chat to use another
             provider.
@@ -342,6 +356,40 @@ export function ModelMenu({
           </div>
           {group("custom", customModels)}
         </>
+      )}
+      <div className={styles.groupHeading}>
+        <h3 className={styles.heading}>Codex</h3>
+        <span className={styles.headingLabel}>
+          {codex?.state === "ready"
+            ? "Signed in"
+            : codex?.state === "signedOut"
+              ? "Run codex login"
+              : codex?.state === "notInstalled"
+                ? "Install Codex"
+                : ""}
+        </span>
+      </div>
+      {codex?.state === "notInstalled" && (
+        <p className={styles.menuNote}>
+          Install the Codex CLI, then run codex login.
+        </p>
+      )}
+      {codex?.state === "signedOut" && (
+        <p className={styles.menuNote}>
+          Run codex login in a terminal to use these models.
+        </p>
+      )}
+      {group(
+        "codex",
+        codex === null
+          ? { state: "loading" }
+          : codex.state === "error"
+            ? codex
+            : {
+                state: "ready",
+                models: codex.state === "notInstalled" ? [] : codex.models,
+              },
+        codex?.state !== "ready",
       )}
       <hr className={styles.separator} />
       <div className={styles.groupHeading}>

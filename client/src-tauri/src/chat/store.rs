@@ -14,6 +14,9 @@ pub enum BackendId {
     /// The user's own OpenAI-compatible provider.
     #[serde(rename = "custom")]
     Custom,
+    /// The local Codex app server.
+    #[serde(rename = "codex")]
+    Codex,
 }
 
 #[derive(Clone, Debug, PartialEq, Serialize, Deserialize)]

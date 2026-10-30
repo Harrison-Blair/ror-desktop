@@ -24,6 +24,7 @@ let latest: Chat | null = null;
 let keySaved = false;
 let custom: chatApi.CustomProvider | null = null;
 let customKeySaved = false;
+let codex: chatApi.CodexStatus = { state: "notInstalled" };
 vi.mock("@/lib/chat/chatApi", () => ({
   getChatSettings: vi.fn(async () => ({
     model: "glm-5.3",
@@ -59,6 +60,7 @@ vi.mock("@/lib/chat/chatApi", () => ({
     if (backend === "custom") throw "Ollama returned HTTP 404: not found";
     return ["glm-5.3", "kimi-k3"];
   }),
+  codexStatus: vi.fn(async () => codex),
   sendMessage: vi.fn(
     (send: Send) =>
       new Promise((resolve) => {
@@ -117,6 +119,7 @@ beforeEach(() => {
   keySaved = false;
   custom = null;
   customKeySaved = false;
+  codex = { state: "notInstalled" };
 });
 
 async function openChat() {
@@ -680,5 +683,97 @@ describe("Chat panel", () => {
         name: "Remove custom provider key",
       }),
     ).not.toBeInTheDocument();
+  });
+
+  it("the Codex group says when Codex is not installed", async () => {
+    const user = await openChat();
+    await user.click(screen.getByRole("button", { name: "Model: glm-5.3" }));
+    const menu = screen.getByRole("dialog", { name: "Models and keys" });
+    expect(await within(menu).findByText("Install Codex")).toBeInTheDocument();
+    expect(
+      within(menu).getByText("Install the Codex CLI, then run codex login."),
+    ).toBeInTheDocument();
+    expect(within(menu).queryByRole("list", { name: "Codex" })).toBeNull();
+  });
+
+  it("the Codex group asks for codex login and disables its models when signed out", async () => {
+    codex = { state: "signedOut", models: ["gpt-6.1-sol", "gpt-5.6-terra"] };
+    const user = await openChat();
+    await user.click(screen.getByRole("button", { name: "Model: glm-5.3" }));
+    const menu = screen.getByRole("dialog", { name: "Models and keys" });
+    expect(
+      await within(menu).findByText("Run codex login"),
+    ).toBeInTheDocument();
+    expect(
+      within(menu).getByText(
+        "Run codex login in a terminal to use these models.",
+      ),
+    ).toBeInTheDocument();
+    const models = within(menu).getByRole("list", { name: "Codex" });
+    expect(
+      within(models).getByRole("button", { name: "gpt-6.1-sol" }),
+    ).toBeDisabled();
+    expect(
+      within(models).getByRole("button", { name: "gpt-5.6-terra" }),
+    ).toBeDisabled();
+  });
+
+  it("picks a Codex model when signed in and locks the chat to Codex", async () => {
+    keySaved = true;
+    codex = { state: "ready", models: ["gpt-6.1-sol", "gpt-5.6-terra"] };
+    const user = await openChat();
+    await user.click(screen.getByRole("button", { name: "Model: glm-5.3" }));
+    let menu = screen.getByRole("dialog", { name: "Models and keys" });
+    expect(await within(menu).findByText("Signed in")).toBeInTheDocument();
+    await user.click(
+      await within(menu).findByRole("button", { name: "gpt-6.1-sol" }),
+    );
+    expect(api.saveChatModel).toHaveBeenCalledWith("codex", "gpt-6.1-sol");
+
+    await user.type(
+      screen.getByRole("textbox", { name: "Message" }),
+      "Hi{Enter}",
+    );
+    expect(turn?.send).toMatchObject({
+      backend: "codex",
+      model: "gpt-6.1-sol",
+    });
+
+    await user.click(
+      screen.getByRole("button", { name: "Model: gpt-6.1-sol" }),
+    );
+    menu = screen.getByRole("dialog", { name: "Models and keys" });
+    expect(
+      await within(menu).findByRole("button", { name: "kimi-k3" }),
+    ).toBeDisabled();
+    expect(
+      within(menu).getByText(
+        "This chat uses Codex. Start a new chat to use another provider.",
+      ),
+    ).toBeInTheDocument();
+    expect(
+      await within(menu).findByRole("button", { name: "gpt-5.6-terra" }),
+    ).toBeEnabled();
+  });
+
+  it("a chat on OpenCode Go shows the Codex models locked", async () => {
+    keySaved = true;
+    codex = { state: "ready", models: ["gpt-6.1-sol"] };
+    const user = await openChat();
+    await user.type(
+      screen.getByRole("textbox", { name: "Message" }),
+      "Hi{Enter}",
+    );
+    expect(turn?.send).toMatchObject({ backend: "opencode-go" });
+    await user.click(screen.getByRole("button", { name: "Model: glm-5.3" }));
+    const menu = screen.getByRole("dialog", { name: "Models and keys" });
+    expect(
+      await within(menu).findByRole("button", { name: "gpt-6.1-sol" }),
+    ).toBeDisabled();
+    expect(
+      within(menu).getByText(
+        "This chat uses OpenCode Go. Start a new chat to use another provider.",
+      ),
+    ).toBeInTheDocument();
   });
 });

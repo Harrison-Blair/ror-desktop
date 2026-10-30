@@ -4,7 +4,7 @@ import type { ToolSpec } from "@/lib/chat/registry";
 
 // These types match the chat files and events in src-tauri/src/chat.
 
-export type BackendId = "opencode-go" | "custom";
+export type BackendId = "opencode-go" | "custom" | "codex";
 
 export type Message =
   | { role: "user"; text: string }
@@ -92,6 +92,15 @@ export const removeCustomProvider = () =>
 
 export const listModels = (backend: BackendId) =>
   invoke<string[]>("chat_models", { backend });
+
+// Codex signs in with `codex login`. Signed out, it may still list models.
+export type CodexStatus =
+  | { state: "ready"; models: string[] }
+  | { state: "signedOut"; models: string[] }
+  | { state: "notInstalled" }
+  | { state: "error"; message: string };
+
+export const codexStatus = () => invoke<CodexStatus>("codex_status");
 
 // The most recently updated chat that is not archived, if any.
 export const latestChat = () => invoke<Chat | null>("chat_latest");

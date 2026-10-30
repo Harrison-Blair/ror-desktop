@@ -292,7 +292,7 @@ async fn stream_reply(
     ))
 }
 
-const TITLE_PROMPT: &str = "Write a title of at most 6 words for this conversation. \
+pub(super) const TITLE_PROMPT: &str = "Write a title of at most 6 words for this conversation. \
 Reply with the title only, without quotes.";
 const TITLE_WORDS: usize = 6;
 const TITLE_LENGTH: usize = 60;
@@ -302,7 +302,7 @@ const TITLE_CONTEXT: usize = 2000;
 // The first line of the model's answer, without quotes or Markdown marks,
 // cut to the word and length limits. Not redacted: the provider already holds
 // the key, so its echo of the key is outside the threat model.
-fn clean_title(text: &str) -> Option<String> {
+pub(super) fn clean_title(text: &str) -> Option<String> {
     let line = text.lines().map(str::trim).find(|l| !l.is_empty())?;
     let line = line
         .trim_start_matches(['#', '*', '_', ' '])
@@ -314,9 +314,8 @@ fn clean_title(text: &str) -> Option<String> {
     (!title.is_empty()).then(|| title.to_string())
 }
 
-/// Asks the chat's model for a short title for its first exchange, in one
-/// request without tools.
-pub async fn title(endpoint: &Endpoint, chat: &Chat) -> Result<(String, Usage), String> {
+/// What the title request sends: the chat's first exchange.
+pub(super) fn title_exchange(chat: &Chat) -> String {
     let cut = |text: Option<&String>| -> String {
         text.map(|t| t.chars().take(TITLE_CONTEXT).collect())
             .unwrap_or_default()
@@ -330,11 +329,17 @@ pub async fn title(endpoint: &Endpoint, chat: &Chat) -> Result<(String, Usage), 
         Message::Assistant { text, .. } if !text.is_empty() => Some(text),
         _ => None,
     }));
+    format!("User: {user}\n\nAssistant: {assistant}")
+}
+
+/// Asks the chat's model for a short title for its first exchange, in one
+/// request without tools.
+pub async fn title(endpoint: &Endpoint, chat: &Chat) -> Result<(String, Usage), String> {
     let body = json!({
         "model": endpoint.model,
         "messages": [
             { "role": "system", "content": TITLE_PROMPT },
-            { "role": "user", "content": format!("User: {user}\n\nAssistant: {assistant}") },
+            { "role": "user", "content": title_exchange(chat) },
         ],
         "stream": false,
     });
@@ -366,8 +371,8 @@ pub async fn title(endpoint: &Endpoint, chat: &Chat) -> Result<(String, Usage), 
     Ok((title, usage))
 }
 
-const NOT_RUN_STOPPED: &str = "Not run: the user stopped the turn.";
-const NOT_RUN_LIMIT: &str = "Not run: the turn reached its tool call limit.";
+pub(super) const NOT_RUN_STOPPED: &str = "Not run: the user stopped the turn.";
+pub(super) const NOT_RUN_LIMIT: &str = "Not run: the turn reached its tool call limit.";
 
 pub async fn run_turn(endpoint: &Endpoint, turn: &mut Turn<'_>, host: &impl TurnHost) -> TurnEnd {
     let mut calls_run = 0;
