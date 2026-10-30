@@ -3,6 +3,9 @@
 // to its own code and adds them here.
 
 import { type Tool, ToolRegistry } from "@/lib/chat/registry";
+import { diceRoll } from "@/lib/dice.tools";
+import { notesTools } from "@/lib/notes.tools";
+import { webFetchTool, webSearchTool } from "@/lib/web.tools";
 
 export type ChatFeature = {
   name: string;
@@ -11,17 +14,39 @@ export type ChatFeature = {
   tools: Tool[];
 };
 
+// The app as a whole: what is open and which features exist.
+export const appContext: Tool = {
+  name: "app_context",
+  description:
+    "Returns the open note, the notes folder on disk, and the app's features.",
+  inputSchema: { type: "object", properties: {}, additionalProperties: false },
+  kind: "read",
+  run: (_input, { app }) =>
+    [
+      `Open note: ${app.openNote() ?? "none"}`,
+      `Notes folder: ${app.notesFolder() ?? "not loaded yet"}`,
+      "Features:",
+      ...features.map((feature) => `- ${feature.name}: ${feature.summary}`),
+    ].join("\n"),
+};
+
 export const features: ChatFeature[] = [
   {
     name: "Notes",
     summary:
-      "Notes is a folder of Markdown files that the user writes and links together.",
-    tools: [],
+      "Notes is a folder of Markdown files that the user writes and links together. The notes tools list, read, search, create, edit, rename, move, delete and open them.",
+    tools: [...notesTools, appContext],
   },
   {
     name: "Dice",
-    summary: "Dice rolls dice from notation such as 2d6 + 3.",
-    tools: [],
+    summary:
+      "Dice rolls dice from notation such as 2d6 + 3 and keeps a history of rolls.",
+    tools: [diceRoll],
+  },
+  {
+    name: "Web",
+    summary: "Web searches the internet and reads web pages.",
+    tools: [webSearchTool, webFetchTool],
   },
   {
     name: "Session",

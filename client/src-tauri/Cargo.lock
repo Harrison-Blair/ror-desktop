@@ -3402,6 +3402,7 @@ name = "ror-desktop"
 version = "0.1.0"
 dependencies = [
  "keyring",
+ "keyring-core",
  "notify-debouncer-mini",
  "reqwest",
  "serde",

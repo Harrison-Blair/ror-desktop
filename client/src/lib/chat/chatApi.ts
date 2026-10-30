@@ -4,7 +4,7 @@ import type { ToolSpec } from "@/lib/chat/registry";
 
 // These types match the chat files and events in src-tauri/src/chat.
 
-export type BackendId = "opencode-go";
+export type BackendId = "opencode-go" | "custom";
 
 export type Message =
   | { role: "user"; text: string }
@@ -47,24 +47,24 @@ export type ChatEvent =
 
 export type TurnEnd = "done" | "stopped" | "toolLimit" | "failed";
 
+// The user's own OpenAI-compatible provider. Its key is in the keychain.
+export type CustomProvider = { name: string; baseUrl: string };
+
 export type ChatSettings = {
   model: string | null;
-  permissionMode: PermissionMode;
-};
-
-export type ModelGroup = {
+  // The backend of `model`.
   backend: BackendId;
-  label: string;
-  models: string[];
+  permissionMode: PermissionMode;
+  customProvider: CustomProvider | null;
 };
 
 // The providers that hold a key in the system keychain.
-export type KeyProvider = "opencode-go";
+export type KeyProvider = "opencode-go" | "tavily" | "custom";
 
 export const getChatSettings = () => invoke<ChatSettings>("chat_settings");
 
-export const saveChatModel = (model: string) =>
-  invoke<void>("chat_set_model", { model });
+export const saveChatModel = (backend: BackendId, model: string) =>
+  invoke<void>("chat_set_model", { backend, model });
 
 export const savePermissionMode = (mode: PermissionMode) =>
   invoke<void>("chat_set_permission_mode", { mode });
@@ -76,7 +76,22 @@ export const isKeySaved = (provider: KeyProvider) =>
 export const saveKey = (provider: KeyProvider, key: string) =>
   invoke<void>("key_save", { provider, key });
 
-export const listModels = () => invoke<ModelGroup[]>("chat_models");
+export const removeKey = (provider: KeyProvider) =>
+  invoke<void>("key_remove", { provider });
+
+// A null or empty key keeps the saved key.
+export const saveCustomProvider = (
+  name: string,
+  baseUrl: string,
+  key: string | null,
+) => invoke<CustomProvider>("custom_provider_save", { name, baseUrl, key });
+
+// Removes the custom provider's name, URL and key.
+export const removeCustomProvider = () =>
+  invoke<void>("custom_provider_remove");
+
+export const listModels = (backend: BackendId) =>
+  invoke<string[]>("chat_models", { backend });
 
 // The most recently updated chat that is not archived, if any.
 export const latestChat = () => invoke<Chat | null>("chat_latest");
@@ -86,6 +101,8 @@ export type Send = {
   turnId: string;
   // null starts a new chat.
   chatId: string | null;
+  // A chat stays on the backend it started on.
+  backend: BackendId;
   text: string;
   model: string;
   system: string;

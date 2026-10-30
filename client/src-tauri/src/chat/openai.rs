@@ -4,25 +4,38 @@
 use super::agent::{ChatEvent, Turn, TurnEnd, TurnHost, MAX_TOOL_CALLS, STOPPED};
 use super::store::{Message, NoticeLevel, ToolCall};
 use serde_json::{json, Value};
+use std::time::Duration;
 
 pub const OPENCODE_GO_URL: &str = "https://opencode.ai/zen/go/v1";
 pub const OPENCODE_GO_LABEL: &str = "OpenCode Go";
+/// How long a model list may take. After it, the menu offers a typed model id.
+pub const MODELS_TIMEOUT: Duration = Duration::from_secs(10);
 
 /// Where requests go. Holds the API key, so it is never serialized.
 pub struct Endpoint {
     pub client: reqwest::Client,
     pub base_url: String,
-    pub label: &'static str,
+    pub label: String,
+    /// Empty when the provider needs no key.
     pub api_key: String,
     pub model: String,
     /// Sent as `x-opencode-session`, so OpenCode Go can route and cache each
-    /// conversation. Other providers ignore it.
+    /// conversation. Set for OpenCode Go only.
     pub session: Option<String>,
 }
 
 impl Endpoint {
     fn url(&self, path: &str) -> String {
         format!("{}/{path}", self.base_url.trim_end_matches('/'))
+    }
+
+    // Sends the key only when there is one: some providers need none.
+    fn authorize(&self, request: reqwest::RequestBuilder) -> reqwest::RequestBuilder {
+        if self.api_key.is_empty() {
+            request
+        } else {
+            request.bearer_auth(&self.api_key)
+        }
     }
 
     // Keeps the key out of error text, even if a provider echoes it back.
@@ -36,7 +49,7 @@ impl Endpoint {
     }
 
     fn http_error(&self, status: reqwest::StatusCode, body: &str) -> String {
-        let label = self.label;
+        let label = &self.label;
         let code = status.as_u16();
         let text = match code {
             401 | 403 => {
@@ -60,16 +73,26 @@ impl Endpoint {
 }
 
 /// The ids of the models the endpoint offers.
-pub async fn list_models(endpoint: &Endpoint) -> Result<Vec<String>, String> {
+pub async fn list_models(endpoint: &Endpoint, timeout: Duration) -> Result<Vec<String>, String> {
+    let error = |e: reqwest::Error| {
+        if e.is_timeout() {
+            format!(
+                "{} took longer than {} seconds to list its models.",
+                endpoint.label,
+                timeout.as_secs_f32()
+            )
+        } else {
+            endpoint.send_error(&e)
+        }
+    };
     let response = endpoint
-        .client
-        .get(endpoint.url("models"))
-        .bearer_auth(&endpoint.api_key)
+        .authorize(endpoint.client.get(endpoint.url("models")))
+        .timeout(timeout)
         .send()
         .await
-        .map_err(|e| endpoint.send_error(&e))?;
+        .map_err(error)?;
     let status = response.status();
-    let body = response.text().await.map_err(|e| endpoint.send_error(&e))?;
+    let body = response.text().await.map_err(error)?;
     if !status.is_success() {
         return Err(endpoint.http_error(status, &body));
     }
@@ -219,10 +242,7 @@ async fn stream_reply(
     reply: &mut Reply,
     host: &impl TurnHost,
 ) -> Result<(), String> {
-    let mut request = endpoint
-        .client
-        .post(endpoint.url("chat/completions"))
-        .bearer_auth(&endpoint.api_key);
+    let mut request = endpoint.authorize(endpoint.client.post(endpoint.url("chat/completions")));
     if let Some(session) = &endpoint.session {
         request = request.header("x-opencode-session", session);
     }

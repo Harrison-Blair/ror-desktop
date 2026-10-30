@@ -1,8 +1,14 @@
 // The permission gate: every tool call from the model runs through here.
-// Read tools always run. In Manual mode a write tool waits for the user to
-// approve it. In Auto mode every tool runs.
+// Read tools run at once, unless they ask. In Manual mode a write tool, or a
+// tool that asks, waits for the user to approve it. In Auto mode every tool
+// runs.
 
-import type { Tool, ToolPreview, ToolRegistry } from "@/lib/chat/registry";
+import type {
+  Tool,
+  ToolContext,
+  ToolPreview,
+  ToolRegistry,
+} from "@/lib/chat/registry";
 
 export type PermissionMode = "manual" | "auto";
 
@@ -22,6 +28,7 @@ export type GateOptions = {
   approve: (request: ApprovalRequest) => Promise<boolean>;
   // Aborted when the turn stops. A stopped call never runs.
   signal?: AbortSignal;
+  context: ToolContext;
 };
 
 export const REJECTED = "The user rejected this call.";
@@ -29,12 +36,16 @@ export const STOPPED = "Not run: the user stopped the turn.";
 
 const failure = (content: string): ToolOutput => ({ content, isError: true });
 
-const errorText = (e: unknown) => (e instanceof Error ? e.message : String(e));
+// Rust commands reject with objects that carry a message.
+const errorText = (e: unknown) =>
+  typeof e === "object" && e !== null && "message" in e
+    ? String(e.message)
+    : String(e);
 
 export async function runToolCall(
   registry: ToolRegistry,
   call: ToolCall,
-  { mode, approve, signal }: GateOptions,
+  { mode, approve, signal, context }: GateOptions,
 ): Promise<ToolOutput> {
   const tool = registry.get(call.name);
   if (!tool) return failure(`There is no tool named ${call.name}.`);
@@ -50,15 +61,19 @@ export async function runToolCall(
   const args = input as Record<string, unknown>;
   const stopped = () => signal?.aborted === true;
   try {
-    if (tool.kind === "write" && mode === "manual") {
+    let approved: ToolPreview | undefined;
+    if ((tool.kind === "write" || tool.ask) && mode === "manual") {
       if (stopped()) return failure(STOPPED);
-      const preview = (await tool.preview?.(args)) ?? { target: call.name };
+      const preview = (await tool.preview?.(args, context)) ?? {
+        target: call.name,
+      };
       // The preview may take a while: Stop during it shows no card.
       if (stopped()) return failure(STOPPED);
       if (!(await approve({ call, tool, preview }))) return failure(REJECTED);
+      approved = preview;
     }
     if (stopped()) return failure(STOPPED);
-    return { content: await tool.run(args), isError: false };
+    return { content: await tool.run(args, context, approved), isError: false };
   } catch (e) {
     return failure(errorText(e));
   }

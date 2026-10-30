@@ -5,14 +5,60 @@ use keyring::{Entry, Error};
 
 const SERVICE: &str = "ror-desktop";
 
-/// The providers that can hold a key.
-pub const PROVIDERS: &[&str] = &["opencode-go"];
+/// The providers that can hold a key. `custom` is the user's own provider.
+pub const PROVIDERS: &[&str] = &["opencode-go", "tavily", "custom"];
 
 fn entry(provider: &str) -> Result<Entry, String> {
     if !PROVIDERS.contains(&provider) {
         return Err(format!("Unknown key provider {provider}."));
     }
-    Entry::new(SERVICE, provider).map_err(|e| unavailable(&e))
+    new_entry(provider).map_err(|e| unavailable(&e))
+}
+
+#[cfg(not(test))]
+fn new_entry(provider: &str) -> keyring::Result<Entry> {
+    Entry::new(SERVICE, provider)
+}
+
+// Tests use keyring's in-memory store: CI has no keychain. Each test thread
+// gets its own entries, as tests run at the same time.
+#[cfg(test)]
+fn new_entry(provider: &str) -> keyring::Result<Entry> {
+    static STORE: std::sync::Once = std::sync::Once::new();
+    STORE.call_once(|| keyring_core::set_default_store(keyring_core::mock::Store::new().unwrap()));
+    let thread = std::thread::current();
+    let service = format!("{SERVICE}-{}", thread.name().unwrap_or("test"));
+    Ok(Entry {
+        inner: keyring_core::Entry::new(&service, provider)?,
+    })
+}
+
+#[cfg(test)]
+thread_local! {
+    static FAIL: std::cell::Cell<Option<(&'static str, usize)>> =
+        const { std::cell::Cell::new(None) };
+}
+
+/// Makes a later `set` or `remove` on this thread fail, after `after` calls
+/// of `op` that work.
+#[cfg(test)]
+pub fn fail(op: &'static str, after: usize) {
+    FAIL.set(Some((op, after)));
+}
+
+#[cfg(test)]
+fn injected(op: &'static str) -> Result<(), String> {
+    match FAIL.get() {
+        Some((o, 0)) if o == op => {
+            FAIL.set(None);
+            Err("Couldn't use the system keychain: test failure.".to_string())
+        }
+        Some((o, n)) if o == op => {
+            FAIL.set(Some((o, n - 1)));
+            Ok(())
+        }
+        _ => Ok(()),
+    }
 }
 
 fn unavailable(e: &Error) -> String {
@@ -33,31 +79,50 @@ pub fn set(provider: &str, key: &str) -> Result<(), String> {
     if key.is_empty() {
         return Err("Enter a key.".to_string());
     }
+    #[cfg(test)]
+    injected("set")?;
     entry(provider)?
         .set_password(key)
         .map_err(|e| unavailable(&e))
+}
+
+/// Deletes the saved key. Removing a key that isn't saved does nothing.
+pub fn remove(provider: &str) -> Result<(), String> {
+    #[cfg(test)]
+    injected("remove")?;
+    match entry(provider)?.delete_credential() {
+        Ok(()) | Err(Error::NoEntry) => Ok(()),
+        Err(e) => Err(unavailable(&e)),
+    }
 }
 
 #[cfg(test)]
 mod tests {
     use super::*;
 
-    // The keychain itself is not available in CI, so only the checks before
-    // it are tested here.
     #[test]
     fn unknown_providers_are_refused() {
-        assert_eq!(
-            get("other").unwrap_err(),
-            "Unknown key provider other.".to_string()
-        );
-        assert_eq!(
-            set("other", "k").unwrap_err(),
-            "Unknown key provider other.".to_string()
-        );
+        for result in [get("other").map(|_| ()), set("other", "k"), remove("other")] {
+            assert_eq!(result.unwrap_err(), "Unknown key provider other.");
+        }
     }
 
     #[test]
     fn an_empty_key_is_refused() {
         assert_eq!(set("opencode-go", "  ").unwrap_err(), "Enter a key.");
+    }
+
+    // Each test uses its own provider: the store is shared by the tests.
+    #[test]
+    fn remove_deletes_a_saved_key_and_leaves_the_others() {
+        set("tavily", " tvly-1 ").unwrap();
+        set("custom", "sk-custom").unwrap();
+        assert_eq!(get("tavily").unwrap().as_deref(), Some("tvly-1"));
+
+        remove("tavily").unwrap();
+        assert_eq!(get("tavily").unwrap(), None);
+        assert_eq!(get("custom").unwrap().as_deref(), Some("sk-custom"));
+        // Removing again is not an error.
+        remove("tavily").unwrap();
     }
 }

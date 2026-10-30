@@ -306,10 +306,13 @@ function Composer({ chat }: { chat: ChatController }) {
           {menuOpen && (
             <ModelMenu
               model={chat.model}
-              onChoose={(model) => {
-                chat.chooseModel(model);
+              backend={chat.backend}
+              lockedTo={chat.chatBackend}
+              onChoose={(backend, model) => {
+                chat.chooseModel(backend, model);
                 setMenuOpen(false);
               }}
+              onProviderRemoved={chat.providerRemoved}
               onClose={() => setMenuOpen(false)}
             />
           )}

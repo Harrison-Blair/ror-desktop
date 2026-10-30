@@ -22,25 +22,43 @@ const slow = vi.hoisted(() => ({
 let turn: { send: Send; end: (chatId?: string) => void } | null = null;
 let latest: Chat | null = null;
 let keySaved = false;
+let custom: chatApi.CustomProvider | null = null;
+let customKeySaved = false;
 vi.mock("@/lib/chat/chatApi", () => ({
   getChatSettings: vi.fn(async () => ({
     model: "glm-5.3",
+    backend: "opencode-go",
     permissionMode: "manual",
+    customProvider: custom,
   })),
   latestChat: vi.fn(async () => latest),
   saveChatModel: vi.fn(async () => {}),
   savePermissionMode: vi.fn(async () => {}),
-  isKeySaved: vi.fn(async () => keySaved),
+  isKeySaved: vi.fn(async (provider: string) =>
+    provider === "opencode-go"
+      ? keySaved
+      : provider === "custom"
+        ? customKeySaved
+        : false,
+  ),
   saveKey: vi.fn(async () => {
     keySaved = true;
   }),
-  listModels: vi.fn(async () => [
-    {
-      backend: "opencode-go",
-      label: "OpenCode Go",
-      models: ["glm-5.3", "kimi-k3"],
-    },
-  ]),
+  removeKey: vi.fn(async () => {
+    keySaved = false;
+  }),
+  saveCustomProvider: vi.fn(async (name: string, baseUrl: string) => {
+    custom = { name, baseUrl };
+    return custom;
+  }),
+  removeCustomProvider: vi.fn(async () => {
+    custom = null;
+    customKeySaved = false;
+  }),
+  listModels: vi.fn(async (backend: string) => {
+    if (backend === "custom") throw "Ollama returned HTTP 404: not found";
+    return ["glm-5.3", "kimi-k3"];
+  }),
   sendMessage: vi.fn(
     (send: Send) =>
       new Promise((resolve) => {
@@ -97,6 +115,8 @@ beforeEach(() => {
   turn = null;
   latest = null;
   keySaved = false;
+  custom = null;
+  customKeySaved = false;
 });
 
 async function openChat() {
@@ -326,16 +346,23 @@ describe("Chat panel", () => {
     const user = await openChat();
     await user.click(screen.getByRole("button", { name: "Model: glm-5.3" }));
     const menu = screen.getByRole("dialog", { name: "Models and keys" });
-    expect(await within(menu).findByText("Not set")).toBeInTheDocument();
-
+    await user.click(
+      await within(menu).findByRole("button", { name: "Add OpenCode Go key" }),
+    );
     await user.type(within(menu).getByLabelText("OpenCode Go key"), "sk-1");
     await user.click(within(menu).getByRole("button", { name: "Save" }));
     expect(api.saveKey).toHaveBeenCalledWith("opencode-go", "sk-1");
-    expect(await within(menu).findByText("Saved")).toBeInTheDocument();
-    expect(within(menu).getByLabelText("OpenCode Go key")).toHaveValue("");
+    expect(
+      await within(menu).findByRole("button", {
+        name: "Remove OpenCode Go key",
+      }),
+    ).toBeInTheDocument();
+    expect(
+      within(menu).queryByLabelText("OpenCode Go key"),
+    ).not.toBeInTheDocument();
 
     await user.click(within(menu).getByRole("button", { name: "kimi-k3" }));
-    expect(api.saveChatModel).toHaveBeenCalledWith("kimi-k3");
+    expect(api.saveChatModel).toHaveBeenCalledWith("opencode-go", "kimi-k3");
     expect(
       screen.getByRole("button", { name: "Model: kimi-k3" }),
     ).toBeInTheDocument();
@@ -416,7 +443,12 @@ describe("Chat panel", () => {
       () =>
         new Promise((resolve) => {
           loadSettings = () =>
-            resolve({ model: "glm-5.3", permissionMode: "auto" });
+            resolve({
+              model: "glm-5.3",
+              backend: "opencode-go",
+              permissionMode: "auto",
+              customProvider: null,
+            });
         }),
     );
     const user = userEvent.setup();
@@ -454,15 +486,199 @@ describe("Chat panel", () => {
     await user.type(field, "Draft");
     await user.click(screen.getByRole("button", { name: "Model: glm-5.3" }));
     const menu = screen.getByRole("dialog", { name: "Models and keys" });
-    const key = within(menu).getByLabelText("OpenCode Go key");
+    const add = () =>
+      within(menu).findByRole("button", { name: "Add OpenCode Go key" });
 
-    await user.type(key, "sk-1");
+    await user.click(await add());
+    await user.type(within(menu).getByLabelText("OpenCode Go key"), "sk-1");
     await user.click(within(menu).getByRole("button", { name: "Save" }));
-    await user.type(key, "sk-2{Enter}");
+    await user.click(
+      await within(menu).findByRole("button", {
+        name: "Remove OpenCode Go key",
+      }),
+    );
+    await user.click(await add());
+    await user.type(
+      within(menu).getByLabelText("OpenCode Go key"),
+      "sk-2{Enter}",
+    );
 
     expect(api.saveKey).toHaveBeenNthCalledWith(1, "opencode-go", "sk-1");
     expect(api.saveKey).toHaveBeenNthCalledWith(2, "opencode-go", "sk-2");
     expect(api.sendMessage).not.toHaveBeenCalled();
     expect(field).toHaveValue("Draft");
+  });
+
+  it("Remove deletes a saved key", async () => {
+    keySaved = true;
+    const user = await openChat();
+    await user.click(screen.getByRole("button", { name: "Model: glm-5.3" }));
+    const menu = screen.getByRole("dialog", { name: "Models and keys" });
+
+    await user.click(
+      await within(menu).findByRole("button", {
+        name: "Remove OpenCode Go key",
+      }),
+    );
+    expect(api.removeKey).toHaveBeenCalledWith("opencode-go");
+    expect(
+      await within(menu).findByRole("button", { name: "Add OpenCode Go key" }),
+    ).toBeInTheDocument();
+    expect(
+      within(menu).getByText("Add a key below to list the models."),
+    ).toBeInTheDocument();
+  });
+
+  it("adds a custom provider, takes a typed model id when /models fails, and locks the chat to it", async () => {
+    keySaved = true;
+    const user = await openChat();
+    await user.click(screen.getByRole("button", { name: "Model: glm-5.3" }));
+    let menu = screen.getByRole("dialog", { name: "Models and keys" });
+    await user.click(
+      await within(menu).findByRole("button", { name: "Add custom provider" }),
+    );
+    await user.type(within(menu).getByLabelText("Name"), "Ollama");
+    await user.type(
+      within(menu).getByLabelText("Base URL"),
+      "http://localhost:11434/v1",
+    );
+    await user.click(within(menu).getByRole("button", { name: "Save" }));
+    expect(api.saveCustomProvider).toHaveBeenCalledWith(
+      "Ollama",
+      "http://localhost:11434/v1",
+      null,
+    );
+
+    expect(
+      await within(menu).findByText(
+        "Could not list models from this provider.",
+      ),
+    ).toBeInTheDocument();
+    expect(api.listModels).toHaveBeenCalledWith("custom");
+    expect(within(menu).getByText("No key")).toBeInTheDocument();
+    await user.type(within(menu).getByLabelText("Model id"), "llama3");
+    await user.click(within(menu).getByRole("button", { name: "Use" }));
+    expect(api.saveChatModel).toHaveBeenCalledWith("custom", "llama3");
+
+    await user.type(
+      screen.getByRole("textbox", { name: "Message" }),
+      "Hi{Enter}",
+    );
+    expect(turn?.send).toMatchObject({ backend: "custom", model: "llama3" });
+
+    // The chat stays on the custom provider.
+    await user.click(screen.getByRole("button", { name: "Model: llama3" }));
+    menu = screen.getByRole("dialog", { name: "Models and keys" });
+    expect(
+      await within(menu).findByRole("button", { name: "kimi-k3" }),
+    ).toBeDisabled();
+    expect(
+      within(menu).getByText(
+        "This chat uses Ollama. Start a new chat to use another provider.",
+      ),
+    ).toBeInTheDocument();
+
+    await user.click(
+      within(menu).getByRole("button", { name: "Remove custom provider" }),
+    );
+    expect(api.removeCustomProvider).toHaveBeenCalled();
+    expect(
+      await within(menu).findByRole("button", { name: "Add custom provider" }),
+    ).toBeInTheDocument();
+    expect(within(menu).getByText("Custom provider")).toBeInTheDocument();
+    // Its model is no longer chosen.
+    expect(
+      screen.getByRole("button", { name: "Model: none" }),
+    ).toBeInTheDocument();
+  });
+
+  it("disables Save and Remove while a provider change runs", async () => {
+    keySaved = true;
+    custom = { name: "Ollama", baseUrl: "http://localhost:11434/v1" };
+    let finish = () => {};
+    api.removeCustomProvider.mockImplementationOnce(
+      () =>
+        new Promise<void>((resolve) => {
+          finish = () => {
+            custom = null;
+            resolve();
+          };
+        }),
+    );
+    const user = await openChat();
+    await user.click(screen.getByRole("button", { name: "Model: glm-5.3" }));
+    const menu = screen.getByRole("dialog", { name: "Models and keys" });
+    const remove = await within(menu).findByRole("button", {
+      name: "Remove custom provider",
+    });
+
+    await user.click(remove);
+    expect(remove).toBeDisabled();
+    expect(
+      within(menu).getByRole("button", { name: "Remove OpenCode Go key" }),
+    ).toBeDisabled();
+    await user.click(
+      within(menu).getByRole("button", { name: "Edit custom provider" }),
+    );
+    expect(within(menu).getByRole("button", { name: "Save" })).toBeDisabled();
+    await user.click(remove);
+    expect(api.removeCustomProvider).toHaveBeenCalledTimes(1);
+
+    act(() => finish());
+    expect(
+      await within(menu).findByRole("button", { name: "Add custom provider" }),
+    ).toBeInTheDocument();
+    expect(
+      within(menu).getByRole("button", { name: "Remove OpenCode Go key" }),
+    ).toBeEnabled();
+  });
+
+  it("shows the key a failed first save left, with Remove, at once", async () => {
+    const error =
+      "Couldn't save the provider: disk full. Its key also couldn't be put back (keychain locked). Save the provider again, or remove it to delete the key.";
+    api.saveCustomProvider.mockImplementationOnce(async () => {
+      customKeySaved = true;
+      throw { message: error };
+    });
+    const user = await openChat();
+    await user.click(screen.getByRole("button", { name: "Model: glm-5.3" }));
+    const menu = screen.getByRole("dialog", { name: "Models and keys" });
+    await user.click(
+      await within(menu).findByRole("button", { name: "Add custom provider" }),
+    );
+    await user.type(within(menu).getByLabelText("Name"), "Ollama");
+    await user.type(
+      within(menu).getByLabelText("Base URL"),
+      "http://localhost:11434/v1",
+    );
+    await user.type(within(menu).getByLabelText("API key (optional)"), "sk-1");
+    await user.click(within(menu).getByRole("button", { name: "Save" }));
+
+    expect(await within(menu).findByText("Key only")).toBeInTheDocument();
+    expect(
+      within(menu).getByRole("button", { name: "Remove custom provider key" }),
+    ).toBeEnabled();
+    expect(within(menu).getByText(error)).toBeInTheDocument();
+  });
+
+  it("offers Remove for a custom key left without a provider", async () => {
+    customKeySaved = true;
+    const user = await openChat();
+    await user.click(screen.getByRole("button", { name: "Model: glm-5.3" }));
+    const menu = screen.getByRole("dialog", { name: "Models and keys" });
+    expect(await within(menu).findByText("Key only")).toBeInTheDocument();
+
+    await user.click(
+      within(menu).getByRole("button", { name: "Remove custom provider key" }),
+    );
+    expect(api.removeCustomProvider).toHaveBeenCalled();
+    await vi.waitFor(() =>
+      expect(within(menu).queryByText("Key only")).not.toBeInTheDocument(),
+    );
+    expect(
+      within(menu).queryByRole("button", {
+        name: "Remove custom provider key",
+      }),
+    ).not.toBeInTheDocument();
   });
 });

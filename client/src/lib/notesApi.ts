@@ -40,6 +40,15 @@ export const readNote = (path: string) =>
 export const writeNote = (path: string, text: string) =>
   invoke<void>("notes_write", { path, text });
 
+export type SearchMatch = { path: string; line: number; snippet: string };
+
+// Finds text in the Markdown notes, ignoring case. `truncated` is true when
+// there were more matches than were returned.
+export const searchNotes = (query: string) =>
+  invoke<{ matches: SearchMatch[]; truncated: boolean }>("notes_search", {
+    query,
+  });
+
 export const deleteEntry = (path: string) =>
   invoke<void>("notes_delete", { path });
 

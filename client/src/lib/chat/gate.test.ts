@@ -6,7 +6,10 @@ import {
   runToolCall,
   STOPPED,
 } from "@/lib/chat/gate";
-import { type Tool, ToolRegistry } from "@/lib/chat/registry";
+import { type Tool, type ToolContext, ToolRegistry } from "@/lib/chat/registry";
+
+// The gate passes the context through untouched.
+const context = { reads: new Map() } as unknown as ToolContext;
 
 // Test-only tools: the app registers no real tools yet.
 const readTool = (): Tool<{ path: string }> => ({
@@ -55,7 +58,7 @@ describe("the permission gate", () => {
     const output = await runToolCall(
       new ToolRegistry([tool]),
       call("test_read", { path: "Ada.md" }),
-      { mode: "manual", approve },
+      { mode: "manual", approve, context },
     );
 
     expect(output).toEqual({ content: "text of Ada.md", isError: false });
@@ -68,7 +71,7 @@ describe("the permission gate", () => {
     const result = runToolCall(
       new ToolRegistry([tool]),
       call("test_write", { path: "Ada.md", text: "Hello" }),
-      { mode: "manual", approve },
+      { mode: "manual", approve, context },
     );
 
     await flush();
@@ -88,7 +91,7 @@ describe("the permission gate", () => {
     const result = runToolCall(
       new ToolRegistry([tool]),
       call("test_write", { path: "Ada.md", text: "Hello" }),
-      { mode: "manual", approve },
+      { mode: "manual", approve, context },
     );
 
     await flush();
@@ -103,7 +106,7 @@ describe("the permission gate", () => {
     const output = await runToolCall(
       new ToolRegistry([tool]),
       call("test_write", { path: "Ada.md", text: "Hello" }),
-      { mode: "auto", approve },
+      { mode: "auto", approve, context },
     );
 
     expect(output).toEqual({ content: "wrote Ada.md", isError: false });
@@ -116,7 +119,7 @@ describe("the permission gate", () => {
     const result = runToolCall(
       new ToolRegistry([tool]),
       call("test_write", { path: "Ada.md", text: "" }),
-      { mode: "manual", approve },
+      { mode: "manual", approve, context },
     );
     await flush();
     expect(requests[0].preview).toEqual({ target: "test_write" });
@@ -137,7 +140,7 @@ describe("the permission gate", () => {
       "The arguments must be a JSON object.",
     ],
   ])("returns a tool error for %s", async (_, badCall, content) => {
-    const options: GateOptions = { mode: "auto", approve: vi.fn() };
+    const options: GateOptions = { mode: "auto", approve: vi.fn(), context };
     const output = await runToolCall(
       new ToolRegistry([readTool()]),
       badCall,
@@ -160,7 +163,7 @@ describe("the permission gate", () => {
     const output = runToolCall(
       new ToolRegistry([tool]),
       call("test_write", { path: "Ada.md" }),
-      { mode: "manual", approve, signal: stop.signal },
+      { mode: "manual", approve, signal: stop.signal, context },
     );
 
     await flush();
@@ -179,7 +182,7 @@ describe("the permission gate", () => {
     const output = runToolCall(
       new ToolRegistry([tool]),
       call("test_write", { path: "Ada.md", text: "Hi" }),
-      { mode: "manual", approve, signal: stop.signal },
+      { mode: "manual", approve, signal: stop.signal, context },
     );
 
     await flush();
@@ -197,7 +200,7 @@ describe("the permission gate", () => {
     const output = await runToolCall(
       new ToolRegistry([tool]),
       call("test_read", { path: "Ada.md" }),
-      { mode: "auto", approve: vi.fn(), signal: stop.signal },
+      { mode: "auto", approve: vi.fn(), signal: stop.signal, context },
     );
 
     expect(output).toEqual({ content: STOPPED, isError: true });
@@ -214,7 +217,7 @@ describe("the permission gate", () => {
     const output = await runToolCall(
       new ToolRegistry([tool]),
       call("test_read", { path: "x" }),
-      { mode: "auto", approve: vi.fn() },
+      { mode: "auto", approve: vi.fn(), context },
     );
     expect(output).toEqual({ content: "Note not found.", isError: true });
   });

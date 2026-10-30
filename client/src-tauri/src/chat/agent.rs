@@ -5,7 +5,7 @@
 // connects the turn to the app (the webview in the app, a fake in tests).
 
 use super::openai;
-use super::store::{BackendId, Chat, Message, NoticeLevel, ToolCall, Usage};
+use super::store::{Chat, Message, NoticeLevel, ToolCall, Usage};
 use serde::{Deserialize, Serialize};
 use std::future::Future;
 use tokio_util::sync::CancellationToken;
@@ -127,16 +127,11 @@ impl Turn<'_> {
 
 /// How a chat reaches its model. Wave 3 adds Codex here.
 pub enum Backend {
+    /// OpenCode Go or the custom provider: both speak the OpenAI API.
     OpenAi(openai::Endpoint),
 }
 
 impl Backend {
-    pub fn id(&self) -> BackendId {
-        match self {
-            Backend::OpenAi(_) => BackendId::OpencodeGo,
-        }
-    }
-
     pub async fn run_turn(&self, turn: &mut Turn<'_>, host: &impl TurnHost) -> TurnEnd {
         match self {
             Backend::OpenAi(endpoint) => openai::run_turn(endpoint, turn, host).await,

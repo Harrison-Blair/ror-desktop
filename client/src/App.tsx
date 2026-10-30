@@ -91,6 +91,37 @@ function Shell() {
     openNote: notesSelected?.toLowerCase().endsWith(".md")
       ? notesSelected
       : null,
+    app: {
+      notesFolder: () => notesFolder ?? null,
+      openNote: () => notesSelected,
+      flushOpenNote: () => editorMenu.current?.flush() ?? Promise.resolve(true),
+      showNote: (path) => {
+        setNotesSelected(path);
+        // Shows the note in the tree too.
+        const parts = path.split("/").slice(0, -1);
+        const folders = parts.map((_, i) => parts.slice(0, i + 1).join("/"));
+        setNotesExpanded((prev) => new Set([...prev, ...folders]));
+      },
+      pathChanged: (from, to) => {
+        const moved = (path: string) =>
+          path !== from && !path.startsWith(`${from}/`)
+            ? path
+            : to === null
+              ? null
+              : to + path.slice(from.length);
+        setNotesSelected((path) => (path === null ? null : moved(path)));
+        setNotesExpanded(
+          (prev) =>
+            new Set(
+              [...prev].flatMap((path) => {
+                const next = moved(path);
+                return next === null ? [] : [next];
+              }),
+            ),
+        );
+      },
+      addRoll: (result) => addRoll(result),
+    },
   });
   const loadChat = chat.load;
 

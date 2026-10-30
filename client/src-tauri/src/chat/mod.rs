@@ -9,13 +9,13 @@ pub mod store;
 #[cfg(test)]
 mod tests;
 
-use crate::config::{self, PermissionMode};
+use crate::config::{self, CustomProvider, PermissionMode};
 use crate::secrets;
 use agent::{Backend, ChatEvent, ToolOutput, ToolSpec, Turn, TurnEnd, TurnHost};
-use serde::Serialize;
-use std::path::PathBuf;
+use serde::{Deserialize, Serialize};
+use std::path::{Path, PathBuf};
 use std::sync::Mutex;
-use store::{Chat, Message, NoticeLevel, ToolCall};
+use store::{BackendId, Chat, Message, NoticeLevel, ToolCall};
 use tauri::ipc::Channel;
 use tauri::{AppHandle, Manager, State};
 use tokio::sync::oneshot;
@@ -44,16 +44,25 @@ pub struct ChatState {
     turns: Mutex<Turns>,
 }
 
+/// The HTTP client for providers and the web tools. Every request names the
+/// app, as OpenCode Go asks.
+pub fn http_client() -> reqwest::Client {
+    reqwest::Client::builder()
+        .user_agent(concat!("ror-desktop/", env!("CARGO_PKG_VERSION")))
+        .build()
+        .unwrap_or_default()
+}
+
 impl ChatState {
     pub fn new() -> Self {
         ChatState {
-            // OpenCode Go asks each client to name itself.
-            client: reqwest::Client::builder()
-                .user_agent(concat!("ror-desktop/", env!("CARGO_PKG_VERSION")))
-                .build()
-                .unwrap_or_default(),
+            client: http_client(),
             turns: Mutex::default(),
         }
+    }
+
+    pub fn client(&self) -> &reqwest::Client {
+        &self.client
     }
 
     // Starts turn `id`. Its token is already cancelled when Stop for `id`
@@ -132,36 +141,218 @@ fn config_file(app: &AppHandle) -> Result<PathBuf, String> {
     crate::config_file(app).map_err(|e| e.to_string())
 }
 
-const OPENCODE_GO: &str = "opencode-go";
+/// The keychain entry of each backend's key.
+fn key_provider(backend: BackendId) -> &'static str {
+    match backend {
+        BackendId::OpencodeGo => "opencode-go",
+        BackendId::Custom => "custom",
+    }
+}
 
 // Reads the key off the main thread: the keychain may ask the user to unlock.
-async fn key(provider: &'static str) -> Result<Option<String>, String> {
+pub async fn key(provider: &'static str) -> Result<Option<String>, String> {
     tauri::async_runtime::spawn_blocking(move || secrets::get(provider))
         .await
         .map_err(|e| e.to_string())?
 }
 
-fn opencode_go(
-    state: &ChatState,
-    api_key: String,
+/// Where requests for `backend` go. `session` names the chat for OpenCode
+/// Go, which alone gets the `x-opencode-session` header.
+fn endpoint(
+    client: &reqwest::Client,
+    backend: BackendId,
+    custom: Option<CustomProvider>,
+    api_key: Option<String>,
     model: &str,
     session: Option<String>,
-) -> openai::Endpoint {
-    openai::Endpoint {
-        client: state.client.clone(),
-        base_url: openai::OPENCODE_GO_URL.to_string(),
-        label: openai::OPENCODE_GO_LABEL,
+) -> Result<openai::Endpoint, String> {
+    let (base_url, label, api_key, session) = match backend {
+        BackendId::OpencodeGo => {
+            let Some(api_key) = api_key else {
+                return Err(format!(
+                    "Add an {} key in the model menu.",
+                    openai::OPENCODE_GO_LABEL
+                ));
+            };
+            let label = openai::OPENCODE_GO_LABEL.to_string();
+            (openai::OPENCODE_GO_URL.to_string(), label, api_key, session)
+        }
+        BackendId::Custom => {
+            let Some(custom) = custom else {
+                return Err("Add a custom provider in the model menu.".to_string());
+            };
+            (
+                custom.base_url,
+                custom.name,
+                api_key.unwrap_or_default(),
+                None,
+            )
+        }
+    };
+    Ok(openai::Endpoint {
+        client: client.clone(),
+        base_url,
+        label,
         api_key,
         model: model.to_string(),
         session,
+    })
+}
+
+async fn endpoint_for(
+    app: &AppHandle,
+    state: &ChatState,
+    backend: BackendId,
+    model: &str,
+    session: Option<String>,
+) -> Result<openai::Endpoint, String> {
+    let custom = config::load(&config_file(app)?).custom_provider;
+    let saved = key(key_provider(backend)).await?;
+    let api_key = match backend {
+        BackendId::OpencodeGo => saved,
+        BackendId::Custom => custom.as_ref().and_then(|c| custom_key(saved, &c.base_url)),
+    };
+    endpoint(&state.client, backend, custom, api_key, model, session)
+}
+
+/// Checks a provider's base URL. Returns it without a trailing slash.
+pub fn base_url(url: &str) -> Result<String, String> {
+    let refused = || "Enter an http or https URL, such as http://localhost:11434/v1.".to_string();
+    let url = url.trim().trim_end_matches('/');
+    let parsed = reqwest::Url::parse(url).map_err(|_| refused())?;
+    if !matches!(parsed.scheme(), "http" | "https") || parsed.host().is_none() {
+        return Err(refused());
     }
+    // The URL is saved in the config and shown in the menu: a key must not be.
+    if !parsed.username().is_empty() || parsed.password().is_some() {
+        return Err("Put the key in the API key field, not in the URL.".to_string());
+    }
+    // Paths such as /models are added to the end of the URL.
+    if parsed.query().is_some() || parsed.fragment().is_some() {
+        return Err(
+            "Enter the base URL without a ? or # part, such as http://localhost:11434/v1."
+                .to_string(),
+        );
+    }
+    Ok(url.to_string())
+}
+
+// The custom provider's key is saved with the base URL it was given for, so
+// it is never sent to another host, even after a failed save.
+#[derive(Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+struct CustomKey {
+    base_url: String,
+    key: String,
+}
+
+/// The saved custom key, when it was saved for `base_url`.
+fn custom_key(saved: Option<String>, base_url: &str) -> Option<String> {
+    let saved: CustomKey = serde_json::from_str(&saved?).ok()?;
+    (saved.base_url == base_url).then_some(saved.key)
+}
+
+// Save and remove each change the keychain and then the config. One runs at
+// a time, so their steps never interleave.
+static CUSTOM: Mutex<()> = Mutex::new(());
+
+// Runs between the keychain step and the config step, for tests.
+#[cfg(test)]
+thread_local! {
+    pub static BETWEEN_STEPS: std::cell::RefCell<Option<Box<dyn FnMut()>>> =
+        std::cell::RefCell::new(None);
+}
+
+fn between_steps() {
+    #[cfg(test)]
+    BETWEEN_STEPS.with_borrow_mut(|hook| {
+        if let Some(hook) = hook {
+            hook()
+        }
+    });
+}
+
+/// Saves the custom provider. An empty `key` keeps the saved key, which then
+/// goes with the new URL. A new provider without a key keeps no old key.
+pub fn save_custom(
+    config_file: &Path,
+    name: &str,
+    base_url: &str,
+    key: Option<String>,
+) -> Result<CustomProvider, String> {
+    let name = name.trim().to_string();
+    if name.is_empty() {
+        return Err("Enter a name.".to_string());
+    }
+    let provider = CustomProvider {
+        name,
+        base_url: self::base_url(base_url)?,
+    };
+    let _one_at_a_time = CUSTOM.lock().unwrap_or_else(|e| e.into_inner());
+    let old = secrets::get("custom")?;
+    let key = key
+        .map(|k| k.trim().to_string())
+        .filter(|k| !k.is_empty())
+        .or_else(|| {
+            let editing = config::load(config_file).custom_provider?;
+            custom_key(old.clone(), &editing.base_url)
+        });
+    // The key changes first. If the config then can't change, the old key
+    // goes back. Should that fail too, the new key stays bound to the new
+    // URL, so it is not sent to the old provider.
+    match key {
+        Some(key) => {
+            let bound = CustomKey {
+                base_url: provider.base_url.clone(),
+                key,
+            };
+            secrets::set("custom", &serde_json::to_string(&bound).unwrap_or_default())?;
+        }
+        None => secrets::remove("custom")?,
+    }
+    between_steps();
+    let saved = provider.clone();
+    if let Err(e) = config::update(config_file, |c| c.custom_provider = Some(saved)) {
+        let rollback = match old {
+            Some(old) => secrets::set("custom", &old),
+            None => secrets::remove("custom"),
+        };
+        // The key left behind is bound to the new URL. Saving the provider
+        // again, or Remove, replaces or deletes it.
+        return Err(match rollback {
+            Ok(()) => format!("Couldn't save the provider: {e}."),
+            Err(r) => format!(
+                "Couldn't save the provider: {e}. Its key also couldn't be put back ({r}). Save the provider again, or remove it to delete the key."
+            ),
+        });
+    }
+    Ok(provider)
+}
+
+/// Removes the custom provider: its key, then its name and URL. If the
+/// config can't change, the provider stays without a key and Remove can run
+/// again.
+pub fn remove_custom(config_file: &Path) -> Result<(), String> {
+    let _one_at_a_time = CUSTOM.lock().unwrap_or_else(|e| e.into_inner());
+    secrets::remove("custom")?;
+    between_steps();
+    config::update(config_file, |c| {
+        c.custom_provider = None;
+        if c.chat_backend == Some(BackendId::Custom) {
+            c.chat_model = None;
+            c.chat_backend = None;
+        }
+    })
+    .map_err(|e| format!("Couldn't remove the provider: {e}. Its key was removed."))
 }
 
 #[derive(Serialize)]
 #[serde(rename_all = "camelCase")]
 pub struct ChatSettings {
     model: Option<String>,
+    backend: BackendId,
     permission_mode: PermissionMode,
+    custom_provider: Option<CustomProvider>,
 }
 
 #[tauri::command]
@@ -169,14 +360,42 @@ pub fn chat_settings(app: AppHandle) -> Result<ChatSettings, String> {
     let config = config::load(&config_file(&app)?);
     Ok(ChatSettings {
         model: config.chat_model,
+        backend: config.chat_backend.unwrap_or(BackendId::OpencodeGo),
         permission_mode: config.permission_mode,
+        custom_provider: config.custom_provider,
     })
 }
 
 #[tauri::command]
-pub fn chat_set_model(app: AppHandle, model: String) -> Result<(), String> {
-    config::update(&config_file(&app)?, |c| c.chat_model = Some(model))
-        .map_err(|e| format!("Couldn't save the model: {e}."))
+pub fn chat_set_model(app: AppHandle, backend: BackendId, model: String) -> Result<(), String> {
+    config::update(&config_file(&app)?, |c| {
+        c.chat_model = Some(model);
+        c.chat_backend = Some(backend);
+    })
+    .map_err(|e| format!("Couldn't save the model: {e}."))
+}
+
+/// Saves the custom provider. An empty `key` keeps the saved key.
+#[tauri::command]
+pub async fn custom_provider_save(
+    app: AppHandle,
+    name: String,
+    base_url: String,
+    key: Option<String>,
+) -> Result<CustomProvider, String> {
+    let file = config_file(&app)?;
+    tauri::async_runtime::spawn_blocking(move || save_custom(&file, &name, &base_url, key))
+        .await
+        .map_err(|e| e.to_string())?
+}
+
+/// Removes the custom provider: its name, URL and key.
+#[tauri::command]
+pub async fn custom_provider_remove(app: AppHandle) -> Result<(), String> {
+    let file = config_file(&app)?;
+    tauri::async_runtime::spawn_blocking(move || remove_custom(&file))
+        .await
+        .map_err(|e| e.to_string())?
 }
 
 #[tauri::command]
@@ -195,37 +414,31 @@ pub async fn key_saved(provider: String) -> Result<bool, String> {
 
 #[tauri::command]
 pub async fn key_save(provider: String, key: String) -> Result<(), String> {
+    if provider == "custom" {
+        return Err("Save the custom provider's key in its form.".to_string());
+    }
     tauri::async_runtime::spawn_blocking(move || secrets::set(&provider, &key))
         .await
         .map_err(|e| e.to_string())?
 }
 
-#[derive(Serialize)]
-#[serde(rename_all = "camelCase")]
-pub struct ModelGroup {
-    backend: store::BackendId,
-    label: &'static str,
-    models: Vec<String>,
-}
-
+/// Deletes the provider's key from the keychain.
 #[tauri::command]
-pub async fn chat_models(state: State<'_, ChatState>) -> Result<Vec<ModelGroup>, String> {
-    let Some(api_key) = key(OPENCODE_GO).await? else {
-        return Err(missing_key());
-    };
-    let endpoint = opencode_go(&state, api_key, "", None);
-    Ok(vec![ModelGroup {
-        backend: store::BackendId::OpencodeGo,
-        label: openai::OPENCODE_GO_LABEL,
-        models: openai::list_models(&endpoint).await?,
-    }])
+pub async fn key_remove(provider: String) -> Result<(), String> {
+    tauri::async_runtime::spawn_blocking(move || secrets::remove(&provider))
+        .await
+        .map_err(|e| e.to_string())?
 }
 
-fn missing_key() -> String {
-    format!(
-        "Add an {} key in the model menu.",
-        openai::OPENCODE_GO_LABEL
-    )
+/// The ids of the models `backend` offers.
+#[tauri::command]
+pub async fn chat_models(
+    app: AppHandle,
+    state: State<'_, ChatState>,
+    backend: BackendId,
+) -> Result<Vec<String>, String> {
+    let endpoint = endpoint_for(&app, &state, backend, "", None).await?;
+    openai::list_models(&endpoint, openai::MODELS_TIMEOUT).await
 }
 
 #[tauri::command]
@@ -293,6 +506,7 @@ pub async fn chat_send(
     state: State<'_, ChatState>,
     turn_id: String,
     chat_id: Option<String>,
+    backend: BackendId,
     text: String,
     model: String,
     system: String,
@@ -305,7 +519,7 @@ pub async fn chat_send(
 
     let mut chat = match &chat_id {
         Some(id) => store::load(&dir, id).map_err(|e| format!("Couldn't open the chat: {e}."))?,
-        None => Chat::new(store::BackendId::OpencodeGo, &model),
+        None => Chat::new(backend, &model),
     };
     chat.model = model.clone();
     let host = TauriHost {
@@ -326,30 +540,21 @@ pub async fn chat_send(
     let end = if turn.cancel.is_cancelled() {
         turn.notice(&host, NoticeLevel::Info, agent::STOPPED);
         TurnEnd::Stopped
+    } else if backend != turn.chat.backend {
+        // A chat stays on its backend.
+        turn.notice(
+            &host,
+            NoticeLevel::Error,
+            "This chat uses another provider. Start a new chat to use this one.",
+        );
+        TurnEnd::Failed
     } else {
-        match key(OPENCODE_GO).await {
-            Ok(Some(api_key)) => {
-                let backend = Backend::OpenAi(opencode_go(
-                    &state,
-                    api_key,
-                    &model,
-                    Some(turn.chat.id.clone()),
-                ));
-                if backend.id() != turn.chat.backend {
-                    turn.notice(&host, NoticeLevel::Error, "This chat uses another backend.");
-                    TurnEnd::Failed
-                } else {
-                    backend.run_turn(&mut turn, &host).await
-                }
-            }
-            Ok(None) => {
-                let message = missing_key();
+        match endpoint_for(&app, &state, backend, &model, Some(turn.chat.id.clone())).await {
+            Ok(endpoint) => Backend::OpenAi(endpoint).run_turn(&mut turn, &host).await,
+            // A missing key or provider: the user must fix it in the model menu.
+            Err(message) => {
                 turn.notice(&host, NoticeLevel::Error, &message);
                 host.emit(ChatEvent::Toast { message });
-                TurnEnd::Failed
-            }
-            Err(e) => {
-                turn.notice(&host, NoticeLevel::Error, &e);
                 TurnEnd::Failed
             }
         }

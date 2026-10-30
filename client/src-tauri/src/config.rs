@@ -1,3 +1,4 @@
+use crate::chat::store::BackendId;
 use serde::{Deserialize, Serialize};
 use std::fs;
 use std::io;
@@ -12,8 +13,21 @@ pub struct Config {
     /// The last model chosen in the chat panel.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub chat_model: Option<String>,
+    /// The backend of `chat_model`.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub chat_backend: Option<BackendId>,
     #[serde(default)]
     pub permission_mode: PermissionMode,
+    /// The user's own OpenAI-compatible provider. Its key is in the keychain.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub custom_provider: Option<CustomProvider>,
+}
+
+#[derive(Clone, Debug, PartialEq, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct CustomProvider {
+    pub name: String,
+    pub base_url: String,
 }
 
 /// Whether the chat agent asks before it runs a write tool.
@@ -205,6 +219,40 @@ mod tests {
         let start = notes_start(&dirs.config_file, &dirs.default).unwrap();
         assert_eq!(start.root, dirs.other);
         assert_eq!(start.missing, None);
+    }
+
+    #[test]
+    fn the_custom_provider_and_model_backend_round_trip() {
+        let dirs = dirs();
+        let provider = CustomProvider {
+            name: "Ollama".into(),
+            base_url: "http://localhost:11434/v1".into(),
+        };
+        update(&dirs.config_file, |c| {
+            c.custom_provider = Some(provider.clone());
+            c.chat_model = Some("llama3".into());
+            c.chat_backend = Some(BackendId::Custom);
+        })
+        .unwrap();
+        let saved: serde_json::Value =
+            serde_json::from_str(&fs::read_to_string(&dirs.config_file).unwrap()).unwrap();
+        assert_eq!(
+            saved,
+            serde_json::json!({
+                "notesDir": null,
+                "chatModel": "llama3",
+                "chatBackend": "custom",
+                "permissionMode": "manual",
+                "customProvider": { "name": "Ollama", "baseUrl": "http://localhost:11434/v1" }
+            })
+        );
+        let config = load(&dirs.config_file);
+        assert_eq!(config.custom_provider, Some(provider));
+        assert_eq!(config.chat_backend, Some(BackendId::Custom));
+
+        update(&dirs.config_file, |c| c.custom_provider = None).unwrap();
+        let text = fs::read_to_string(&dirs.config_file).unwrap();
+        assert!(!text.contains("customProvider"), "{text}");
     }
 
     #[test]

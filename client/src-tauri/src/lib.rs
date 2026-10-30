@@ -2,6 +2,7 @@ mod chat;
 mod config;
 mod notes;
 mod secrets;
+mod web;
 
 use notes::{Entry, Kind, NotesError};
 use notify_debouncer_mini::{
@@ -155,6 +156,11 @@ fn notes_move(
 }
 
 #[tauri::command]
+fn notes_search(root: State<NotesRoot>, query: String) -> Result<notes::SearchResult, NotesError> {
+    notes::search(&root.get(), &query)
+}
+
+#[tauri::command]
 fn notes_read(root: State<NotesRoot>, path: String) -> Result<String, NotesError> {
     notes::read(&root.get(), &path)
 }
@@ -236,6 +242,7 @@ pub fn run() {
             notes_delete,
             notes_read,
             notes_write,
+            notes_search,
             notes_folder,
             notes_choose_folder,
             open_web_link,
@@ -244,11 +251,16 @@ pub fn run() {
             chat::chat_set_permission_mode,
             chat::key_saved,
             chat::key_save,
+            chat::key_remove,
+            chat::custom_provider_save,
+            chat::custom_provider_remove,
             chat::chat_models,
             chat::chat_latest,
             chat::chat_send,
             chat::chat_tool_result,
-            chat::chat_stop
+            chat::chat_stop,
+            web::web_search,
+            web::web_fetch
         ])
         .run(tauri::generate_context!())
         .expect("error while running Ror Desktop");

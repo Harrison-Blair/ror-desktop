@@ -1,6 +1,7 @@
 import { useCallback, useEffect, useRef, useState } from "react";
 import { useToast } from "@/components/Toast/Toast";
 import {
+  type BackendId,
   type ChatEvent,
   getChatSettings,
   latestChat,
@@ -18,7 +19,7 @@ import {
   type PermissionMode,
   runToolCall,
 } from "@/lib/chat/gate";
-import type { ToolRegistry } from "@/lib/chat/registry";
+import type { AppBridge, ToolContext, ToolRegistry } from "@/lib/chat/registry";
 
 export type PendingApproval = ApprovalRequest & {
   // The token Rust gave the call.
@@ -37,10 +38,13 @@ const errorMessage = (e: unknown) =>
 // approvals survive closing the panel.
 export function useChat({
   openNote,
+  app,
   registry = toolRegistry,
 }: {
   // The path of the open note, if any.
   openNote: string | null;
+  // What the tools may use in the app.
+  app: AppBridge;
   registry?: ToolRegistry;
 }) {
   const notify = useToast();
@@ -52,10 +56,28 @@ export function useChat({
   const [usage, setUsage] = useState<Usage>(NO_USAGE);
   const [approvals, setApprovals] = useState<PendingApproval[]>([]);
   const [model, setModel] = useState<string | null>(null);
+  // The backend of `model`.
+  const [backend, setBackend] = useState<BackendId>("opencode-go");
+  // The backend the current chat is on, or null before its first message.
+  const [chatBackend, setChatBackend] = useState<BackendId | null>(null);
   const [mode, setMode] = useState<PermissionMode>("manual");
   // Read when a tool call arrives, so a switch applies to the next call.
   const modeRef = useRef(mode);
   const openNoteRef = useRef(openNote);
+  const appRef = useRef(app);
+  // Tools see the app as it is when they run, such as a note the turn
+  // opened, not as it was when the turn began.
+  const liveApp = useRef<AppBridge>({
+    notesFolder: () => appRef.current.notesFolder(),
+    openNote: () => appRef.current.openNote(),
+    flushOpenNote: () => appRef.current.flushOpenNote(),
+    showNote: (path) => appRef.current.showNote(path),
+    pathChanged: (from, to) => appRef.current.pathChanged(from, to),
+    addRoll: (result) => appRef.current.addRoll(result),
+  }).current;
+  // The notes the agent read in this chat, for notes_write. A chat that
+  // starts or reopens begins with none.
+  const reads = useRef(new Map<string, string>());
   // Counts New chats, so a turn from an old chat leaves the new one alone.
   const generation = useRef(0);
   // The running turn. Its controller is aborted when it stops or ends, so
@@ -66,10 +88,16 @@ export function useChat({
   const loaded = useRef(false);
   // A mode the user picks wins over the saved one that loads later.
   const modeChosen = useRef(false);
+  // So does a model the user picks or the reopened chat's model.
+  const modelChosen = useRef(false);
 
   useEffect(() => {
     openNoteRef.current = openNote;
   }, [openNote]);
+
+  useEffect(() => {
+    appRef.current = app;
+  }, [app]);
 
   const fail = useCallback(
     (e: unknown) => notify({ kind: "error", message: errorMessage(e) }),
@@ -83,7 +111,10 @@ export function useChat({
     loaded.current = true;
     const start = generation.current;
     getChatSettings().then((settings) => {
-      setModel((current) => current ?? settings.model);
+      if (!modelChosen.current) {
+        setModel(settings.model);
+        setBackend(settings.backend);
+      }
       if (modeChosen.current) return;
       modeRef.current = settings.permissionMode;
       setMode(settings.permissionMode);
@@ -94,6 +125,12 @@ export function useChat({
       setChatId(chat.id);
       setMessages(chat.messages);
       setUsage(chat.usage);
+      // The chat continues on its own backend and model.
+      modelChosen.current = true;
+      setChatBackend(chat.backend);
+      setBackend(chat.backend);
+      setModel(chat.model);
+      reads.current = new Map();
     }, fail);
   }, [fail]);
 
@@ -128,6 +165,17 @@ export function useChat({
     const { signal } = controller;
     const turnId = crypto.randomUUID();
     activeTurn.current = { id: turnId, abort: controller };
+    const toasts = new Set<string>();
+    const context: ToolContext = {
+      app: liveApp,
+      reads: reads.current,
+      notifyOnce: (message) => {
+        if (toasts.has(message)) return;
+        toasts.add(message);
+        notify({ kind: "error", message });
+      },
+    };
+    setChatBackend(backend);
     setRunning(true);
     setStreaming("");
     const onEvent = (event: ChatEvent) => {
@@ -157,6 +205,7 @@ export function useChat({
             mode: modeRef.current,
             approve,
             signal,
+            context,
           })
             .then((output) => {
               if (!signal.aborted) return sendToolResult(token, output);
@@ -175,6 +224,7 @@ export function useChat({
     sendMessage({
       turnId,
       chatId,
+      backend,
       text,
       model,
       system: systemPrompt(openNoteRef.current),
@@ -209,11 +259,20 @@ export function useChat({
     setMessages([]);
     setStreaming("");
     setUsage(NO_USAGE);
+    setChatBackend(null);
+    reads.current = new Map();
   };
 
-  const chooseModel = (next: string) => {
+  const chooseModel = (nextBackend: BackendId, next: string) => {
+    modelChosen.current = true;
+    setBackend(nextBackend);
     setModel(next);
-    saveChatModel(next).catch(fail);
+    saveChatModel(nextBackend, next).catch(fail);
+  };
+
+  // A removed provider's model can't be sent to any more.
+  const providerRemoved = (from: BackendId) => {
+    if (backend === from) setModel(null);
   };
 
   const chooseMode = (next: PermissionMode) => {
@@ -231,6 +290,8 @@ export function useChat({
     usage,
     approvals,
     model,
+    backend,
+    chatBackend,
     mode,
     load,
     send,
@@ -238,6 +299,7 @@ export function useChat({
     newChat,
     answer,
     chooseModel,
+    providerRemoved,
     chooseMode,
   };
 }

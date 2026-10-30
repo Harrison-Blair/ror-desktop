@@ -11,6 +11,9 @@ use std::time::{SystemTime, UNIX_EPOCH};
 pub enum BackendId {
     #[serde(rename = "opencode-go")]
     OpencodeGo,
+    /// The user's own OpenAI-compatible provider.
+    #[serde(rename = "custom")]
+    Custom,
 }
 
 #[derive(Clone, Debug, PartialEq, Serialize, Deserialize)]
