@@ -23,6 +23,7 @@ import {
   saveKey,
 } from "@/lib/chat/chatApi";
 import { errorMessage } from "@/lib/errorMessage";
+import { runningChange, startChange } from "./changeGuard";
 import styles from "./SettingsMenu.module.css";
 
 type Models =
@@ -111,9 +112,9 @@ export function ProvidersSettings({
     at: KeyProvider | "load";
     message: string;
   } | null>(null);
-  // A key or provider change is running: Save and Remove wait for it.
-  const [busy, setBusy] = useState(false);
-  const running = useRef(false);
+  // A key or provider change is running, maybe from a page left earlier:
+  // Save and Remove wait for it.
+  const [busy, setBusy] = useState(() => runningChange() !== null);
   // The first load has ended: until then nothing can be saved, so no change
   // overlaps it.
   const [loaded, setLoaded] = useState(false);
@@ -191,7 +192,16 @@ export function ProvidersSettings({
   );
 
   useEffect(() => {
-    refresh(true);
+    // Loads what a change still running leaves, once it ends.
+    const pending = runningChange();
+    if (pending) {
+      pending.then(() => {
+        setBusy(false);
+        refresh(true);
+      });
+    } else {
+      refresh(true);
+    }
     checkCodex();
   }, [refresh, checkCodex]);
 
@@ -203,32 +213,33 @@ export function ProvidersSettings({
     act: () => Promise<unknown>,
     sent?: string,
   ) => {
-    if (running.current || !loaded) return;
-    running.current = true;
-    setBusy(true);
-    // The form is sent as it is now; only later typing outlives the fill.
-    if (at === "custom") edited.current.clear();
-    try {
-      await act();
-      if (at !== "custom") {
-        // A removal sends no key.
-        if (sent === undefined || typedKeys.current[at] === sent) {
-          setReplacing((open) => (open === at ? null : open));
-          setDrafts((typed) => ({ ...typed, [at]: "" }));
-        } else {
-          // A key typed during the save stays open to be saved.
-          setReplacing(at);
+    if (!loaded) return;
+    const run = startChange(async () => {
+      // The form is sent as it is now; only later typing outlives the fill.
+      if (at === "custom") edited.current.clear();
+      try {
+        await act();
+        if (at !== "custom") {
+          // A removal sends no key.
+          if (sent === undefined || typedKeys.current[at] === sent) {
+            setReplacing((open) => (open === at ? null : open));
+            setDrafts((typed) => ({ ...typed, [at]: "" }));
+          } else {
+            // A key typed during the save stays open to be saved.
+            setReplacing(at);
+          }
         }
+        await refresh(at === "custom");
+      } catch (e) {
+        const message = errorMessage(e);
+        await refresh(false);
+        setError({ at, message });
       }
-      await refresh(at === "custom");
-    } catch (e) {
-      const message = errorMessage(e);
-      await refresh(false);
-      setError({ at, message });
-    } finally {
-      running.current = false;
-      setBusy(false);
-    }
+    });
+    if (!run) return;
+    setBusy(true);
+    await run;
+    setBusy(false);
   };
 
   const removeProvider = () =>

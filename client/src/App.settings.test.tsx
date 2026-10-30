@@ -2,6 +2,7 @@ import { act, render, screen, within } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import { beforeEach, describe, expect, it, vi } from "vitest";
 import App from "@/App";
+import { resetChangeGuard } from "@/components/menus/SettingsMenu/changeGuard";
 import type { Send } from "@/lib/chat/chatApi";
 import * as chatApi from "@/lib/chat/chatApi";
 
@@ -68,6 +69,7 @@ const api = vi.mocked(chatApi);
 
 beforeEach(() => {
   vi.clearAllMocks();
+  resetChangeGuard();
   turn = null;
   keys = {};
   custom = null;
@@ -573,6 +575,51 @@ describe("Settings", () => {
 
     act(() => finish());
     expect(await within(built).findByText("No key")).toBeInTheDocument();
+  });
+
+  it("a change still running when Settings is left and reopened holds the new page until it ends", async () => {
+    let finish = () => {};
+    api.saveKey.mockImplementationOnce(
+      (provider: string) =>
+        new Promise<void>((resolve) => {
+          finish = () => {
+            keys[provider] = true;
+            resolve();
+          };
+        }),
+    );
+    const user = await openSettings();
+    await user.type(
+      await within(section("Built in")).findByLabelText("OpenCode Go key"),
+      "sk-1",
+    );
+    await user.click(
+      within(section("Built in")).getByRole("button", {
+        name: "Save OpenCode Go key",
+      }),
+    );
+    await user.click(screen.getByRole("button", { name: "Notes" }));
+    await user.click(screen.getByRole("button", { name: "Settings" }));
+
+    // The new page can't start a second change while the first runs.
+    const form = section("Custom provider");
+    await user.type(within(form).getByLabelText("Name"), "Ollama");
+    await user.type(
+      within(form).getByLabelText("Base URL"),
+      "http://localhost:11434/v1{Enter}",
+    );
+    expect(
+      within(form).getByRole("button", { name: "Save custom provider" }),
+    ).toBeDisabled();
+    expect(api.saveCustomProvider).not.toHaveBeenCalled();
+    expect(within(section("Built in")).queryByText("No key")).toBeNull();
+
+    act(() => finish());
+    // It loads the keys as the change left them.
+    expect(
+      await within(section("Built in")).findByText("Key saved"),
+    ).toBeInTheDocument();
+    expect(within(form).getByLabelText("Name")).toHaveValue("Ollama");
   });
 
   it("disables Save and Remove while a provider change runs", async () => {
