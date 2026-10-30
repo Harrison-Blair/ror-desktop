@@ -175,18 +175,6 @@
   cursor: default;
 }
 
-.form {
-  display: grid;
-  grid-template-columns: 120px 1fr;
-  gap: var(--space-2) var(--space-3);
-  align-items: center;
-}
-
-.label {
-  color: var(--ink-muted);
-  font: 500 13px / 16px var(--font-sans);
-}
-
 .field {
   box-sizing: border-box;
   width: 100%;
@@ -215,12 +203,6 @@
 .keyLine .field {
   flex: 1;
   min-width: 0;
-}
-
-.formFoot {
-  display: flex;
-  justify-content: flex-end;
-  gap: var(--space-2);
 }
 
 .models {

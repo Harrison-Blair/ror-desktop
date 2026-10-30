@@ -5,8 +5,8 @@ use keyring::{Entry, Error};
 
 const SERVICE: &str = "ror-desktop";
 
-/// The providers that can hold a key. `custom` is the user's own provider.
-pub const PROVIDERS: &[&str] = &["opencode-go", "tavily", "custom"];
+/// The providers that can hold a key.
+pub const PROVIDERS: &[&str] = &["opencode-go", "tavily"];
 
 fn entry(provider: &str) -> Result<Entry, String> {
     if !PROVIDERS.contains(&provider) {
@@ -33,34 +33,6 @@ fn new_entry(provider: &str) -> keyring::Result<Entry> {
     })
 }
 
-#[cfg(test)]
-thread_local! {
-    static FAIL: std::cell::Cell<Option<(&'static str, usize)>> =
-        const { std::cell::Cell::new(None) };
-}
-
-/// Makes a later `set` or `remove` on this thread fail, after `after` calls
-/// of `op` that work.
-#[cfg(test)]
-pub fn fail(op: &'static str, after: usize) {
-    FAIL.set(Some((op, after)));
-}
-
-#[cfg(test)]
-fn injected(op: &'static str) -> Result<(), String> {
-    match FAIL.get() {
-        Some((o, 0)) if o == op => {
-            FAIL.set(None);
-            Err("Couldn't use the system keychain: test failure.".to_string())
-        }
-        Some((o, n)) if o == op => {
-            FAIL.set(Some((o, n - 1)));
-            Ok(())
-        }
-        _ => Ok(()),
-    }
-}
-
 fn unavailable(e: &Error) -> String {
     format!("Couldn't use the system keychain: {e}.")
 }
@@ -79,8 +51,6 @@ pub fn set(provider: &str, key: &str) -> Result<(), String> {
     if key.is_empty() {
         return Err("Enter a key.".to_string());
     }
-    #[cfg(test)]
-    injected("set")?;
     entry(provider)?
         .set_password(key)
         .map_err(|e| unavailable(&e))
@@ -88,8 +58,6 @@ pub fn set(provider: &str, key: &str) -> Result<(), String> {
 
 /// Deletes the saved key. Removing a key that isn't saved does nothing.
 pub fn remove(provider: &str) -> Result<(), String> {
-    #[cfg(test)]
-    injected("remove")?;
     match entry(provider)?.delete_credential() {
         Ok(()) | Err(Error::NoEntry) => Ok(()),
         Err(e) => Err(unavailable(&e)),
@@ -116,12 +84,12 @@ mod tests {
     #[test]
     fn remove_deletes_a_saved_key_and_leaves_the_others() {
         set("tavily", " tvly-1 ").unwrap();
-        set("custom", "sk-custom").unwrap();
+        set("opencode-go", "sk-go").unwrap();
         assert_eq!(get("tavily").unwrap().as_deref(), Some("tvly-1"));
 
         remove("tavily").unwrap();
         assert_eq!(get("tavily").unwrap(), None);
-        assert_eq!(get("custom").unwrap().as_deref(), Some("sk-custom"));
+        assert_eq!(get("opencode-go").unwrap().as_deref(), Some("sk-go"));
         // Removing again is not an error.
         remove("tavily").unwrap();
     }

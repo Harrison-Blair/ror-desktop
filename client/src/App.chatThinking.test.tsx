@@ -18,7 +18,6 @@ vi.mock("@/lib/chat/chatApi", () => ({
     model: "glm-5.3",
     backend: "opencode-go",
     permissionMode: "manual",
-    customProvider: null,
   })),
   latestChat: vi.fn(async () => latest),
   saveChatModel: vi.fn(async () => {}),

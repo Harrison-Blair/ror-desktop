@@ -304,7 +304,7 @@ function Shell() {
       </RailPanel>
       <MainPanel>
         {settings === "providers" ? (
-          <ProvidersSettings onProviderRemoved={chat.providerRemoved} />
+          <ProvidersSettings />
         ) : (
           <EditorMenu
             ref={editorMenu}

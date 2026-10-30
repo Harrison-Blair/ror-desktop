@@ -127,7 +127,7 @@ impl Turn<'_> {
 
 /// How a chat reaches its model.
 pub enum Backend {
-    /// OpenCode Go or the custom provider: both speak the OpenAI API.
+    /// OpenCode Go, which speaks the OpenAI API.
     OpenAi(openai::Endpoint),
     /// The local Codex app server, signed in with `codex login`.
     Codex(codex::Session),

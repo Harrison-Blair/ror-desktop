@@ -1,17 +1,9 @@
 import { Check } from "lucide-react";
-import {
-  type KeyboardEvent,
-  useCallback,
-  useEffect,
-  useRef,
-  useState,
-} from "react";
+import { useCallback, useEffect, useRef, useState } from "react";
 import {
   type BackendId,
   type CodexStatus,
-  type CustomProvider,
   codexStatus,
-  getChatSettings,
   isKeySaved,
   listModels,
 } from "@/lib/chat/chatApi";
@@ -24,17 +16,7 @@ type Models =
   | { state: "error"; message: string }
   | { state: "ready"; models: string[] };
 
-// Enter in a field acts on the menu, never on the composer's form.
-const onEnter =
-  (act: () => void) => (event: KeyboardEvent<HTMLInputElement>) => {
-    if (event.key === "Enter") {
-      event.preventDefault();
-      act();
-    }
-  };
-
-// Lists the models live from each provider. Keys and the custom provider
-// are set up in Settings.
+// Lists the models live from each provider. Keys are set up in Settings.
 export function ModelMenu({
   model,
   backend,
@@ -52,15 +34,10 @@ export function ModelMenu({
   const menu = useRef<HTMLDivElement>(null);
   // null until the key is checked.
   const [goKey, setGoKey] = useState<boolean | null>(null);
-  const [custom, setCustom] = useState<CustomProvider | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [goModels, setGoModels] = useState<Models>({ state: "loading" });
-  const [customModels, setCustomModels] = useState<Models>({
-    state: "loading",
-  });
   // null while Codex starts.
   const [codex, setCodex] = useState<CodexStatus | null>(null);
-  const [modelId, setModelId] = useState("");
 
   const refresh = useCallback(async () => {
     setGoModels({ state: "loading" });
@@ -68,38 +45,27 @@ export function ModelMenu({
       setCodex({ state: "error", message: errorMessage(e) }),
     );
     let saved: boolean;
-    let provider: CustomProvider | null;
     try {
-      const [go, settings] = await Promise.all([
-        isKeySaved("opencode-go"),
-        getChatSettings(),
-      ]);
-      saved = go;
-      provider = settings.customProvider;
+      saved = await isKeySaved("opencode-go");
       setGoKey(saved);
-      setCustom(provider);
       setError(null);
     } catch (e) {
       setError(errorMessage(e));
       setGoModels({ state: "noKey" });
       return;
     }
-    const load = async (
-      from: BackendId,
-      set: (models: Models) => void,
-    ): Promise<void> => {
-      set({ state: "loading" });
+    const loadGo = async () => {
       try {
-        set({ state: "ready", models: await listModels(from) });
+        setGoModels({
+          state: "ready",
+          models: await listModels("opencode-go"),
+        });
       } catch (e) {
-        set({ state: "error", message: errorMessage(e) });
+        setGoModels({ state: "error", message: errorMessage(e) });
       }
     };
     await Promise.all([
-      saved
-        ? load("opencode-go", setGoModels)
-        : setGoModels({ state: "noKey" }),
-      provider && load("custom", setCustomModels),
+      saved ? loadGo() : setGoModels({ state: "noKey" }),
       codexLoaded,
     ]);
   }, []);
@@ -122,31 +88,20 @@ export function ModelMenu({
   }, [onClose]);
 
   const label = (from: BackendId) =>
-    from === "opencode-go"
-      ? "OpenCode Go"
-      : from === "codex"
-        ? "Codex"
-        : (custom?.name ?? "Custom");
+    from === "opencode-go" ? "OpenCode Go" : "Codex";
 
   // `unavailable`: the models show but can't be chosen.
   const group = (from: BackendId, models: Models, unavailable = false) => {
     const locked = lockedTo !== null && lockedTo !== from;
     const list = models.state === "ready" ? models.models : [];
-    const typeId =
-      from === "custom" && models.state !== "loading" && list.length === 0;
     return (
       <>
         {models.state === "loading" && (
           <p className={styles.menuNote}>Loading models…</p>
         )}
-        {models.state === "error" &&
-          (from === "custom" ? (
-            <p className={styles.menuNote} title={models.message}>
-              Could not list models from this provider.
-            </p>
-          ) : (
-            <p className={styles.menuError}>{models.message}</p>
-          ))}
+        {models.state === "error" && (
+          <p className={styles.menuError}>{models.message}</p>
+        )}
         {list.length > 0 && (
           <ul className={styles.modelList} aria-label={label(from)}>
             {list.map((name) => {
@@ -171,29 +126,6 @@ export function ModelMenu({
               );
             })}
           </ul>
-        )}
-        {typeId && !locked && (
-          <div className={styles.keyRow}>
-            <input
-              aria-label="Model id"
-              className={styles.textField}
-              placeholder="Type a model id"
-              value={modelId}
-              onChange={(event) => setModelId(event.target.value)}
-              onKeyDown={onEnter(() => {
-                if (modelId.trim()) onChoose("custom", modelId.trim());
-              })}
-            />
-            <button
-              type="button"
-              className={styles.keySave}
-              onClick={() => {
-                if (modelId.trim()) onChoose("custom", modelId.trim());
-              }}
-            >
-              Use
-            </button>
-          </div>
         )}
         {/* Only under models it locks. */}
         {locked && list.length > 0 && (
@@ -223,15 +155,6 @@ export function ModelMenu({
         </span>
       </div>
       {group("opencode-go", goModels)}
-      {custom && (
-        <>
-          <div className={styles.groupHeading}>
-            <h3 className={styles.heading}>{custom.name}</h3>
-            <span className={styles.headingLabel}>Custom</span>
-          </div>
-          {group("custom", customModels)}
-        </>
-      )}
       <div className={styles.groupHeading}>
         <h3 className={styles.heading}>Codex</h3>
         <span className={styles.headingLabel}>

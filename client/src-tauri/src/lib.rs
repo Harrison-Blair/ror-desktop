@@ -254,8 +254,6 @@ pub fn run() {
             chat::key_saved,
             chat::key_save,
             chat::key_remove,
-            chat::custom_provider_save,
-            chat::custom_provider_remove,
             chat::chat_models,
             chat::codex_status,
             chat::chat_latest,

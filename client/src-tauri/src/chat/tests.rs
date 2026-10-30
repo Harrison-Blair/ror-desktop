@@ -5,7 +5,6 @@ use super::agent::{
 };
 use super::openai::Endpoint;
 use super::store::{BackendId, Chat, Message, NoticeLevel, ToolCall, Usage};
-use crate::config::CustomProvider;
 use serde_json::{json, Value};
 use std::io::{BufRead, BufReader, Read, Write};
 use std::net::TcpListener;
@@ -798,60 +797,12 @@ async fn one_turn(backend: BackendId, endpoint: Endpoint, server: &FakeServer) -
     chat
 }
 
-fn ollama(url: &str) -> CustomProvider {
-    CustomProvider {
-        name: "Ollama".into(),
-        base_url: url.into(),
-    }
-}
-
-#[tokio::test]
-async fn the_custom_provider_gets_no_opencode_session_and_no_key_when_it_has_none() {
-    let server = serve(|_| Reply::Stream(vec![text("Hello.")]));
-    let endpoint = super::endpoint(
-        &super::http_client(),
-        BackendId::Custom,
-        Some(ollama(&server.url)),
-        None,
-        "llama3",
-        Some("chat-id".into()),
-    )
-    .unwrap();
-    assert_eq!(endpoint.label, "Ollama");
-    one_turn(BackendId::Custom, endpoint, &server).await;
-
-    let requests = server.requests.lock().unwrap();
-    assert_eq!(requests[0].session, "");
-    assert_eq!(requests[0].authorization, "");
-    assert!(requests[0].user_agent.starts_with("ror-desktop/"));
-    assert_eq!(requests[0].body["model"], "llama3");
-}
-
-#[tokio::test]
-async fn the_custom_provider_key_is_sent_when_saved() {
-    let server = serve(|_| Reply::Stream(vec![text("Hello.")]));
-    let endpoint = super::endpoint(
-        &super::http_client(),
-        BackendId::Custom,
-        Some(ollama(&server.url)),
-        Some(KEY.into()),
-        "m",
-        Some("chat-id".into()),
-    )
-    .unwrap();
-    one_turn(BackendId::Custom, endpoint, &server).await;
-    let requests = server.requests.lock().unwrap();
-    assert_eq!(requests[0].authorization, format!("Bearer {KEY}"));
-    assert_eq!(requests[0].session, "");
-}
-
 #[tokio::test]
 async fn opencode_go_gets_its_session_header_and_the_user_agent() {
     let server = serve(|_| Reply::Stream(vec![text("Hello.")]));
     let mut endpoint = super::endpoint(
         &super::http_client(),
         BackendId::OpencodeGo,
-        Some(ollama("http://unused")),
         Some(KEY.into()),
         "glm-5.3",
         Some("chat-id".into()),
@@ -866,72 +817,12 @@ async fn opencode_go_gets_its_session_header_and_the_user_agent() {
 }
 
 #[test]
-fn an_endpoint_needs_its_key_or_provider() {
+fn an_endpoint_needs_its_key() {
     let client = super::http_client();
-    let error = |backend, custom| {
-        super::endpoint(&client, backend, custom, None, "m", None)
-            .err()
-            .unwrap()
-    };
-    assert_eq!(
-        error(BackendId::OpencodeGo, Some(ollama("http://x"))),
-        "Add an OpenCode Go key in Settings."
-    );
-    assert_eq!(
-        error(BackendId::Custom, None),
-        "Add a custom provider in Settings."
-    );
-}
-
-#[test]
-fn a_base_url_must_be_http_or_https() {
-    assert_eq!(
-        super::base_url(" http://localhost:11434/v1/ ").unwrap(),
-        "http://localhost:11434/v1"
-    );
-    assert_eq!(
-        super::base_url("https://api.example.com/v1").unwrap(),
-        "https://api.example.com/v1"
-    );
-    for url in [
-        "",
-        "localhost:11434",
-        "file:///etc",
-        "ftp://x.y",
-        "javascript:alert(1)",
-        "http://",
-    ] {
-        assert_eq!(
-            super::base_url(url),
-            Err("Enter an http or https URL, such as http://localhost:11434/v1.".to_string()),
-            "{url}"
-        );
-    }
-}
-
-#[test]
-fn a_base_url_has_no_key_query_or_fragment() {
-    for url in ["https://user:secret@host/v1", "https://user@host/v1"] {
-        assert_eq!(
-            super::base_url(url),
-            Err("Put the key in the API key field, not in the URL.".to_string()),
-            "{url}"
-        );
-    }
-    for url in [
-        "https://host/v1?foo=bar",
-        "https://host/v1#top",
-        "https://host/v1?",
-    ] {
-        assert_eq!(
-            super::base_url(url),
-            Err(
-                "Enter the base URL without a ? or # part, such as http://localhost:11434/v1."
-                    .to_string()
-            ),
-            "{url}"
-        );
-    }
+    let error = super::endpoint(&client, BackendId::OpencodeGo, None, "m", None)
+        .err()
+        .unwrap();
+    assert_eq!(error, "Add an OpenCode Go key in Settings.");
 }
 
 // Runs `work` on its own thread and fails the test if it takes longer than
@@ -962,15 +853,14 @@ fn a_stalled_model_list_gives_up_after_the_timeout() {
         let held: Vec<_> = listener.incoming().collect();
         drop(held);
     });
-    let endpoint = super::endpoint(
-        &super::http_client(),
-        BackendId::Custom,
-        Some(ollama(&url)),
-        None,
-        "",
-        None,
-    )
-    .unwrap();
+    let endpoint = Endpoint {
+        client: super::http_client(),
+        base_url: url,
+        label: "Ollama".into(),
+        api_key: String::new(),
+        model: String::new(),
+        session: None,
+    };
     let error = within(std::time::Duration::from_secs(2), move || {
         tokio::runtime::Builder::new_current_thread()
             .enable_all()
@@ -986,216 +876,6 @@ fn a_stalled_model_list_gives_up_after_the_timeout() {
         error,
         "Ollama took longer than 0.3 seconds to list its models."
     );
-}
-
-// The custom provider's config and its keychain entry change together.
-mod custom_provider {
-    use super::super::{custom_key, remove_custom, save_custom, BETWEEN_STEPS, CUSTOM};
-    use crate::config;
-    use crate::secrets;
-    use std::path::PathBuf;
-
-    const A: &str = "http://a.test/v1";
-    const B: &str = "http://b.test/v1";
-
-    struct Setup {
-        _temp: tempfile::TempDir,
-        file: PathBuf,
-    }
-
-    // A config with no provider and a keychain with no custom key.
-    fn setup() -> Setup {
-        let temp = tempfile::tempdir().unwrap();
-        let file = temp.path().join("config.json");
-        secrets::remove("custom").unwrap();
-        Setup { _temp: temp, file }
-    }
-
-    impl Setup {
-        // The config can be read but no longer written.
-        fn break_writes(&self) {
-            std::fs::create_dir(self.file.with_extension("json.tmp")).unwrap();
-        }
-
-        fn provider_url(&self) -> Option<String> {
-            config::load(&self.file).custom_provider.map(|p| p.base_url)
-        }
-
-        // The key a request to `url` gets.
-        fn key_for(&self, url: &str) -> Option<String> {
-            custom_key(secrets::get("custom").unwrap(), url)
-        }
-    }
-
-    #[test]
-    fn a_saved_key_is_sent_only_to_its_url() {
-        let s = setup();
-        save_custom(&s.file, "A", A, Some(" sk-a ".into())).unwrap();
-        assert_eq!(s.provider_url().as_deref(), Some(A));
-        assert_eq!(s.key_for(A).as_deref(), Some("sk-a"));
-        assert_eq!(s.key_for(B), None);
-
-        // Edit with an empty key keeps the key, now for the new URL.
-        save_custom(&s.file, "B", B, None).unwrap();
-        assert_eq!(s.key_for(B).as_deref(), Some("sk-a"));
-        assert_eq!(s.key_for(A), None);
-    }
-
-    #[test]
-    fn a_failed_save_puts_the_old_key_back() {
-        let s = setup();
-        save_custom(&s.file, "A", A, Some("sk-a".into())).unwrap();
-        s.break_writes();
-
-        assert!(save_custom(&s.file, "B", B, Some("sk-b".into()))
-            .unwrap_err()
-            .starts_with("Couldn't save the provider:"));
-        assert_eq!(s.provider_url().as_deref(), Some(A));
-        assert_eq!(s.key_for(A).as_deref(), Some("sk-a"));
-    }
-
-    #[test]
-    fn when_the_key_cannot_go_back_the_new_key_is_not_sent_to_the_old_url() {
-        let s = setup();
-        save_custom(&s.file, "A", A, Some("sk-a".into())).unwrap();
-        s.break_writes();
-        // The new key saves; putting the old one back fails.
-        secrets::fail("set", 1);
-
-        assert!(save_custom(&s.file, "B", B, Some("sk-b".into())).is_err());
-        assert_eq!(s.provider_url().as_deref(), Some(A));
-        assert_eq!(s.key_for(A), None);
-    }
-
-    #[test]
-    fn a_failed_first_save_leaves_no_key() {
-        let s = setup();
-        s.break_writes();
-        assert!(save_custom(&s.file, "A", A, Some("sk-a".into())).is_err());
-        assert_eq!(s.provider_url(), None);
-        assert_eq!(secrets::get("custom").unwrap(), None);
-    }
-
-    #[test]
-    fn a_key_left_by_a_failed_first_save_is_reported_and_cleared_later() {
-        let s = setup();
-        s.break_writes();
-        // Taking the new key back out fails too.
-        secrets::fail("remove", 0);
-        let error = save_custom(&s.file, "A", A, Some("sk-a".into())).unwrap_err();
-        assert!(
-            error.contains("Its key also couldn't be put back")
-                && error.ends_with("Save the provider again, or remove it to delete the key."),
-            "{error}"
-        );
-        assert_eq!(s.provider_url(), None);
-        assert_eq!(s.key_for(A).as_deref(), Some("sk-a"));
-        std::fs::remove_dir(s.file.with_extension("json.tmp")).unwrap();
-
-        // Remove deletes it, with no provider saved.
-        remove_custom(&s.file).unwrap();
-        assert_eq!(secrets::get("custom").unwrap(), None);
-
-        // So does the next save without a key.
-        s.break_writes();
-        secrets::fail("remove", 0);
-        save_custom(&s.file, "A", A, Some("sk-a".into())).unwrap_err();
-        std::fs::remove_dir(s.file.with_extension("json.tmp")).unwrap();
-        save_custom(&s.file, "A", A, None).unwrap();
-        assert_eq!(secrets::get("custom").unwrap(), None);
-    }
-
-    // True while another save or remove would have to wait.
-    fn locked() -> bool {
-        matches!(CUSTOM.try_lock(), Err(std::sync::TryLockError::WouldBlock))
-    }
-
-    #[test]
-    fn save_and_remove_hold_the_lock_across_both_steps() {
-        let s = setup();
-        let held = std::rc::Rc::new(std::cell::Cell::new(None));
-        let seen = held.clone();
-        BETWEEN_STEPS.set(Some(Box::new(move || seen.set(Some(locked())))));
-        save_custom(&s.file, "A", A, Some("sk-a".into())).unwrap();
-        assert_eq!(held.take(), Some(true));
-        remove_custom(&s.file).unwrap();
-        assert_eq!(held.take(), Some(true));
-        BETWEEN_STEPS.set(None);
-    }
-
-    #[test]
-    fn a_remove_during_a_save_waits_for_it() {
-        let s = setup();
-        save_custom(&s.file, "A", A, Some("sk-a".into())).unwrap();
-        let file = s.file.clone();
-        let remover = std::rc::Rc::new(std::cell::RefCell::new(None));
-        let started = remover.clone();
-        // While the save is between its steps, a remove starts on another
-        // thread that shares this test's keychain.
-        BETWEEN_STEPS.set(Some(Box::new(move || {
-            let file = file.clone();
-            let name = std::thread::current().name().unwrap().to_string();
-            let handle = std::thread::Builder::new()
-                .name(name)
-                .spawn(move || remove_custom(&file))
-                .unwrap();
-            std::thread::sleep(std::time::Duration::from_millis(200));
-            // The remove hasn't touched the new key.
-            assert_eq!(
-                custom_key(secrets::get("custom").unwrap(), B).as_deref(),
-                Some("sk-b")
-            );
-            *started.borrow_mut() = Some(handle);
-        })));
-        save_custom(&s.file, "B", B, Some("sk-b".into())).unwrap();
-        BETWEEN_STEPS.set(None);
-        let handle = remover.borrow_mut().take().unwrap();
-        handle.join().unwrap().unwrap();
-
-        // The remove ran after the save: nothing is left.
-        assert_eq!(s.provider_url(), None);
-        assert_eq!(secrets::get("custom").unwrap(), None);
-    }
-
-    #[test]
-    fn a_new_provider_without_a_key_drops_a_key_left_from_before() {
-        let s = setup();
-        secrets::set("custom", &format!(r#"{{"baseUrl":"{A}","key":"sk-old"}}"#)).unwrap();
-        save_custom(&s.file, "A", A, None).unwrap();
-        assert_eq!(secrets::get("custom").unwrap(), None);
-    }
-
-    #[test]
-    fn a_failed_key_save_changes_nothing() {
-        let s = setup();
-        save_custom(&s.file, "A", A, Some("sk-a".into())).unwrap();
-        secrets::fail("set", 0);
-        assert!(save_custom(&s.file, "B", B, Some("sk-b".into())).is_err());
-        assert_eq!(s.provider_url().as_deref(), Some(A));
-        assert_eq!(s.key_for(A).as_deref(), Some("sk-a"));
-    }
-
-    #[test]
-    fn remove_takes_the_key_first_and_keeps_the_provider_when_that_fails() {
-        let s = setup();
-        save_custom(&s.file, "A", A, Some("sk-a".into())).unwrap();
-        secrets::fail("remove", 0);
-        assert!(remove_custom(&s.file).is_err());
-        assert_eq!(s.provider_url().as_deref(), Some(A));
-        assert_eq!(s.key_for(A).as_deref(), Some("sk-a"));
-
-        // The config can't change: the key is gone, the provider stays.
-        s.break_writes();
-        assert!(remove_custom(&s.file)
-            .unwrap_err()
-            .ends_with("Its key was removed."));
-        assert_eq!(s.provider_url().as_deref(), Some(A));
-        assert_eq!(secrets::get("custom").unwrap(), None);
-
-        std::fs::remove_dir(s.file.with_extension("json.tmp")).unwrap();
-        remove_custom(&s.file).unwrap();
-        assert_eq!(s.provider_url(), None);
-    }
 }
 
 fn fake_backend(server: &FakeServer, chat: &Chat) -> Backend {
@@ -1274,91 +954,6 @@ async fn the_first_reply_titles_the_chat_once() {
     answer(&server, &host, &mut chat, "And the traps?").await;
     assert_eq!(server.requests.lock().unwrap().len(), 3);
     assert_eq!(chat.title, "Ambush at the ogre camp tonight");
-}
-
-#[tokio::test]
-async fn a_custom_provider_chat_is_titled_without_an_opencode_session() {
-    let server = serve(|n| match n {
-        0 => Reply::Stream(vec![text("The ogres wait.")]),
-        _ => title_reply("Ogre ambush"),
-    });
-    let host = TestHost::default();
-    let mut chat = Chat::new(BackendId::Custom, "llama3");
-    // The endpoint `chat_send` builds for a custom provider chat.
-    let backend = Backend::OpenAi(
-        super::endpoint(
-            &super::http_client(),
-            BackendId::Custom,
-            Some(ollama(&server.url)),
-            Some(KEY.into()),
-            "llama3",
-            Some(chat.id.clone()),
-        )
-        .unwrap(),
-    );
-    chat.push(Message::User {
-        text: "Plan an ambush".into(),
-    });
-    let mut turn = Turn {
-        chat: &mut chat,
-        system: String::new(),
-        tools: Vec::new(),
-        cancel: CancellationToken::new(),
-    };
-
-    super::agent::answer(&backend, &mut turn, &host).await;
-
-    assert_eq!(chat.title, "Ogre ambush");
-    let requests = server.requests.lock().unwrap();
-    assert_eq!(requests.len(), 2);
-    assert_eq!(requests[1].body["stream"], false);
-    assert_eq!(requests[1].body["model"], "llama3");
-    assert_eq!(requests[1].session, "");
-    assert_eq!(requests[1].authorization, format!("Bearer {KEY}"));
-}
-
-#[tokio::test]
-async fn a_keyless_custom_provider_chat_is_titled_without_an_authorization_header() {
-    // Like a local server that refuses any key it wasn't set up with.
-    let server = serve_requests(|n, request| {
-        if !request.authorization.is_empty() {
-            Reply::Status(401, r#"{"error":{"message":"bad key"}}"#.into())
-        } else if n == 0 {
-            Reply::Stream(vec![text("The ogres wait.")])
-        } else {
-            title_reply("Ogre ambush")
-        }
-    });
-    let host = TestHost::default();
-    let mut chat = Chat::new(BackendId::Custom, "llama3");
-    let backend = Backend::OpenAi(
-        super::endpoint(
-            &super::http_client(),
-            BackendId::Custom,
-            Some(ollama(&server.url)),
-            None,
-            "llama3",
-            Some(chat.id.clone()),
-        )
-        .unwrap(),
-    );
-    chat.push(Message::User {
-        text: "Plan an ambush".into(),
-    });
-    let mut turn = Turn {
-        chat: &mut chat,
-        system: String::new(),
-        tools: Vec::new(),
-        cancel: CancellationToken::new(),
-    };
-
-    assert_eq!(
-        super::agent::answer(&backend, &mut turn, &host).await,
-        TurnEnd::Done
-    );
-
-    assert_eq!(server.requests.lock().unwrap().len(), 2);
-    assert_eq!(chat.title, "Ogre ambush");
 }
 
 #[tokio::test]
