@@ -166,6 +166,68 @@ describe("Thinking indicator", () => {
     expect(thinking()).toHaveTextContent("Thinking… 0s");
   });
 
+  it("hides once the turn's final reply arrives, before the turn ends", async () => {
+    await send("Hi");
+    emit({ type: "message", message: { role: "user", text: "Hi" } });
+    emit({ type: "textDelta", text: "Hello" });
+    emit({ type: "message", message: { role: "assistant", text: "Hello" } });
+    // The turn still runs until Rust ends it.
+    expect(screen.getByRole("button", { name: "Stop" })).toBeInTheDocument();
+    expect(thinking()).not.toBeInTheDocument();
+  });
+
+  it("the running tool step spins like the Thinking row", async () => {
+    await send("Edit");
+    const spinner = thinking()?.querySelector("svg")?.getAttribute("class");
+    expect(spinner).toBeTruthy();
+    emit({
+      type: "message",
+      message: { role: "assistant", text: "", toolCalls: [call] },
+    });
+    const running = screen.getByLabelText("running");
+    expect(running).toHaveAttribute("class", spinner);
+    emit({
+      type: "message",
+      message: {
+        role: "tool",
+        callId: call.id,
+        name: call.name,
+        content: "wrote",
+        isError: false,
+      },
+    });
+    expect(screen.getByLabelText("done")).not.toHaveAttribute("class", spinner);
+  });
+
+  it("a reply that ended an earlier turn does not hide it", async () => {
+    latest = {
+      id: "old",
+      title: "Old",
+      createdAt: 1,
+      updatedAt: 2,
+      backend: "opencode-go",
+      model: "glm-5.3",
+      archived: false,
+      messages: [
+        { role: "user", text: "Hi" },
+        { role: "assistant", text: "Hello" },
+      ],
+      usage: { inputTokens: 0, outputTokens: 0 },
+    };
+    await send("Again");
+    // Before any event of the new turn.
+    expect(thinking()).toHaveTextContent("Thinking… 0s");
+  });
+
+  it("a new chat hides its hint at Send", async () => {
+    await send("Hi");
+    // Before any event of the turn.
+    expect(
+      screen.queryByText("Ask about your campaign."),
+    ).not.toBeInTheDocument();
+    expect(thinking()).toHaveTextContent("Thinking… 0s");
+  });
+
   it("hides while an approval waits", async () => {
     await send("Edit");
     emit({ type: "toolCall", call, token: "token-1" });

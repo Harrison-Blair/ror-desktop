@@ -76,7 +76,12 @@ function ToolStep({ call, result }: { call: ToolCall; result?: ToolResult }) {
   const state = !result ? "running" : result.isError ? "failed" : "done";
   return (
     <li className={styles.toolStep} data-state={state}>
-      <Icon size={14} strokeWidth={1.75} aria-label={state} />
+      <Icon
+        className={!result ? styles.spinner : undefined}
+        size={14}
+        strokeWidth={1.75}
+        aria-label={state}
+      />
       <span>{call.name}</span>
       <code className={styles.toolArgument}>{call.arguments}</code>
     </li>
@@ -208,17 +213,20 @@ function Thread({ chat }: { chat: ChatController }) {
       .filter((m): m is ToolResult => m.role === "tool")
       .map((m) => [m.callId, m]),
   );
-  // A tool call of this turn that has no result yet. Calls before the
-  // turn's start belong to ended turns.
-  const toolRunning = messages
-    .slice(chat.turnStart)
-    .some(
-      (m) =>
-        m.role === "assistant" &&
-        m.toolCalls?.some((call) => !results.has(call.id)),
-    );
+  // The messages since this Send. Earlier ones belong to ended turns.
+  const turn = messages.slice(chat.turnStart);
+  // A tool call of this turn that has no result yet.
+  const toolRunning = turn.some(
+    (m) =>
+      m.role === "assistant" &&
+      m.toolCalls?.some((call) => !results.has(call.id)),
+  );
+  // A final reply: the turn ends once Rust has saved it. A reply with tool
+  // calls is never last once they run, since their results follow it.
+  const replied = turn.at(-1)?.role === "assistant";
   const thinking =
     chat.running &&
+    !replied &&
     !chat.stopped &&
     !streaming &&
     !toolRunning &&
@@ -226,7 +234,7 @@ function Thread({ chat }: { chat: ChatController }) {
 
   return (
     <div className={styles.thread}>
-      {messages.length === 0 && !streaming && (
+      {messages.length === 0 && !streaming && !chat.running && (
         <p className={styles.empty}>Ask about your campaign.</p>
       )}
       {messages.map((message, i) => {
