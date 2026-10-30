@@ -356,6 +356,68 @@ describe("Settings", () => {
     ).toBeInTheDocument();
   });
 
+  // Holds the custom provider's model list until the test lets it go.
+  const slowCustomModels = () => {
+    let release = () => {};
+    api.listModels.mockImplementationOnce(async (backend: string) => {
+      if (backend !== "custom") return goModels;
+      await new Promise<void>((resolve) => {
+        release = resolve;
+      });
+      return ["qwen3:14b"];
+    });
+    return () => act(() => release());
+  };
+
+  it("fills the provider form before the models load, and keeps what is typed meanwhile", async () => {
+    custom = { name: "Ollama", baseUrl: "http://localhost:11434/v1" };
+    const release = slowCustomModels();
+    const user = await openSettings();
+    const form = section("Custom provider");
+    const name = within(form).getByLabelText("Name");
+    await vi.waitFor(() => expect(name).toHaveValue("Ollama"));
+    expect(within(form).getByLabelText("Base URL")).toHaveValue(
+      "http://localhost:11434/v1",
+    );
+
+    await user.type(name, " 2");
+    await release();
+    expect(await within(form).findByText("qwen3:14b")).toBeInTheDocument();
+    expect(name).toHaveValue("Ollama 2");
+    expect(within(form).getByLabelText("Base URL")).toHaveValue(
+      "http://localhost:11434/v1",
+    );
+  });
+
+  it("keeps a field typed while a provider save lists the models", async () => {
+    const release = slowCustomModels();
+    const user = await openSettings();
+    const form = section("Custom provider");
+    await user.type(within(form).getByLabelText("Name"), "Ollama");
+    await user.type(
+      within(form).getByLabelText("Base URL"),
+      "http://localhost:11434/v1",
+    );
+    await user.type(within(form).getByLabelText("API key (optional)"), "sk-1");
+    await user.click(
+      within(form).getByRole("button", { name: "Save custom provider" }),
+    );
+    await vi.waitFor(() =>
+      expect(api.listModels).toHaveBeenCalledWith("custom"),
+    );
+
+    await user.clear(within(form).getByLabelText("Name"));
+    await user.type(within(form).getByLabelText("Name"), "Lab");
+    await release();
+    expect(await within(form).findByText("qwen3:14b")).toBeInTheDocument();
+    expect(within(form).getByLabelText("Name")).toHaveValue("Lab");
+    // Fields not touched since Save show the saved provider.
+    expect(within(form).getByLabelText("Base URL")).toHaveValue(
+      "http://localhost:11434/v1",
+    );
+    expect(within(form).getByLabelText("API key (optional)")).toHaveValue("");
+  });
+
   it("disables Save and Remove while a provider change runs", async () => {
     keys["opencode-go"] = true;
     custom = { name: "Ollama", baseUrl: "http://localhost:11434/v1" };

@@ -327,6 +327,31 @@ describe("App frame", () => {
       expect(await shownText("Ada.md")).toBe("Hello!");
     });
 
+    it("stays on the note, with its edit, when the edit can't be saved before Settings opens", async () => {
+      notesList = [{ kind: "file", name: "Ada.md", path: "Ada.md" }];
+      const user = await editAda();
+      diskFull = true;
+
+      await user.click(screen.getByRole("button", { name: "Settings" }));
+
+      expect(await toast().findByText("Disk full.")).toBeInTheDocument();
+      expect(screen.getByRole("button", { name: "Settings" })).toHaveAttribute(
+        "aria-pressed",
+        "false",
+      );
+      expect(
+        screen.queryByRole("heading", { name: "Providers and keys" }),
+      ).not.toBeInTheDocument();
+      expect(await shownText("Ada.md")).toBe("Hello!");
+
+      diskFull = false;
+      await user.click(screen.getByRole("button", { name: "Settings" }));
+      expect(
+        await screen.findByRole("heading", { name: "Providers and keys" }),
+      ).toBeInTheDocument();
+      expect(disk).toEqual({ "Ada.md": "Hello!" });
+    });
+
     it("keeps an edit made just before a rename", async () => {
       notesList = [{ kind: "file", name: "Ada.md", path: "Ada.md" }];
       const user = await editAda();

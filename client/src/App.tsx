@@ -199,8 +199,15 @@ function Shell() {
       label: "Settings",
       icon: Settings,
       pressed: settings !== null,
-      onClick: () => {
-        setSettings((open) => (open ? null : "providers"));
+      onClick: async () => {
+        if (settings !== null) {
+          setSettings(null);
+          return;
+        }
+        // Settings replaces the editor, so the open note's edit is saved
+        // first. A failed save keeps the editor and its text.
+        if (!(await (editorMenu.current?.flush() ?? true))) return;
+        setSettings("providers");
         setRailPanelOpen(true);
       },
     },

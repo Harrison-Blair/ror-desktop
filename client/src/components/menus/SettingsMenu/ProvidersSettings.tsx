@@ -40,8 +40,10 @@ const MODEL_CAP = 10;
 // The providers that take a key and nothing else.
 type KeyOnly = Exclude<KeyProvider, "custom">;
 
+type Form = { name: string; baseUrl: string; key: string };
+
 // The form shows the provider as it is now.
-const formOf = (provider: CustomProvider | null) => ({
+const formOf = (provider: CustomProvider | null): Form => ({
   name: provider?.name ?? "",
   baseUrl: provider?.baseUrl ?? "",
   key: "",
@@ -102,6 +104,8 @@ export function ProvidersSettings({
     tavily: "",
   });
   const [form, setForm] = useState(formOf(null));
+  // The form fields typed in since the form was last filled.
+  const edited = useRef(new Set<keyof Form>());
   // Shown under the provider whose change failed.
   const [error, setError] = useState<{
     at: KeyProvider | "load";
@@ -118,48 +122,59 @@ export function ProvidersSettings({
     );
   }, []);
 
-  // Loads the keys and the provider, then lists the models. Returns the
-  // provider, or undefined when the load failed.
-  const refresh = useCallback(async () => {
-    let saved: Keys;
-    let provider: CustomProvider | null;
-    try {
-      const [go, tavily, customKey, settings] = await Promise.all([
-        isKeySaved("opencode-go"),
-        isKeySaved("tavily"),
-        isKeySaved("custom"),
-        getChatSettings(),
-      ]);
-      saved = { "opencode-go": go, tavily, custom: customKey };
-      provider = settings.customProvider;
-      setKeys(saved);
-      setCustom(provider);
-      setError(null);
-    } catch (e) {
-      setError({ at: "load", message: errorMessage(e) });
-      return undefined;
-    }
-    const load = async (from: BackendId, set: (models: Models) => void) => {
-      set({ state: "loading" });
-      try {
-        set({ state: "ready", models: await listModels(from) });
-      } catch (e) {
-        set({ state: "error", message: errorMessage(e) });
-      }
-    };
-    if (!saved["opencode-go"]) setGoModels(null);
-    if (!provider) setCustomModels(null);
-    await Promise.all([
-      saved["opencode-go"] && load("opencode-go", setGoModels),
-      provider && load("custom", setCustomModels),
-    ]);
-    return provider;
+  // Shows the provider in the form, but keeps the fields typed in since the
+  // last fill.
+  const fillForm = useCallback((provider: CustomProvider | null) => {
+    const next = formOf(provider);
+    setForm((typed) => {
+      for (const field of edited.current) next[field] = typed[field];
+      return next;
+    });
   }, []);
 
+  // Loads the keys and the provider, fills the form when asked, then lists
+  // the models.
+  const refresh = useCallback(
+    async (fill: boolean) => {
+      let saved: Keys;
+      let provider: CustomProvider | null;
+      try {
+        const [go, tavily, customKey, settings] = await Promise.all([
+          isKeySaved("opencode-go"),
+          isKeySaved("tavily"),
+          isKeySaved("custom"),
+          getChatSettings(),
+        ]);
+        saved = { "opencode-go": go, tavily, custom: customKey };
+        provider = settings.customProvider;
+        setKeys(saved);
+        setCustom(provider);
+        setError(null);
+      } catch (e) {
+        setError({ at: "load", message: errorMessage(e) });
+        return;
+      }
+      if (fill) fillForm(provider);
+      const load = async (from: BackendId, set: (models: Models) => void) => {
+        set({ state: "loading" });
+        try {
+          set({ state: "ready", models: await listModels(from) });
+        } catch (e) {
+          set({ state: "error", message: errorMessage(e) });
+        }
+      };
+      if (!saved["opencode-go"]) setGoModels(null);
+      if (!provider) setCustomModels(null);
+      await Promise.all([
+        saved["opencode-go"] && load("opencode-go", setGoModels),
+        provider && load("custom", setCustomModels),
+      ]);
+    },
+    [fillForm],
+  );
+
   useEffect(() => {
-    refresh().then((provider) => {
-      if (provider !== undefined) setForm(formOf(provider));
-    });
+    refresh(true);
     checkCodex();
   }, [refresh, checkCodex]);
 
@@ -170,19 +185,18 @@ export function ProvidersSettings({
     if (running.current) return;
     running.current = true;
     setBusy(true);
+    // The form is sent as it is now; only later typing outlives the fill.
+    if (at === "custom") edited.current.clear();
     try {
       await act();
-      if (at === "custom") {
-        const provider = await refresh();
-        if (provider !== undefined) setForm(formOf(provider));
-      } else {
+      if (at !== "custom") {
         setReplacing((open) => (open === at ? null : open));
         setDrafts((typed) => ({ ...typed, [at]: "" }));
-        await refresh();
       }
+      await refresh(at === "custom");
     } catch (e) {
       const message = errorMessage(e);
-      await refresh();
+      await refresh(false);
       setError({ at, message });
     } finally {
       running.current = false;
@@ -195,6 +209,11 @@ export function ProvidersSettings({
       await removeCustomProvider();
       onProviderRemoved("custom");
     });
+
+  const edit = (field: keyof Form, value: string) => {
+    edited.current.add(field);
+    setForm((typed) => ({ ...typed, [field]: value }));
+  };
 
   const saveForm = () =>
     change("custom", () =>
@@ -423,9 +442,7 @@ export function ProvidersSettings({
                 id={`${id}-name`}
                 className={styles.field}
                 value={form.name}
-                onChange={(event) =>
-                  setForm({ ...form, name: event.target.value })
-                }
+                onChange={(event) => edit("name", event.target.value)}
                 onKeyDown={onEnter(saveForm)}
               />
               <label className={styles.label} htmlFor={`${id}-url`}>
@@ -436,9 +453,7 @@ export function ProvidersSettings({
                 className={`${styles.field} ${styles.mono}`}
                 placeholder="http://localhost:11434/v1"
                 value={form.baseUrl}
-                onChange={(event) =>
-                  setForm({ ...form, baseUrl: event.target.value })
-                }
+                onChange={(event) => edit("baseUrl", event.target.value)}
                 onKeyDown={onEnter(saveForm)}
               />
               <label className={styles.label} htmlFor={`${id}-key`}>
@@ -455,9 +470,7 @@ export function ProvidersSettings({
                     : "Leave empty if not needed"
                 }
                 value={form.key}
-                onChange={(event) =>
-                  setForm({ ...form, key: event.target.value })
-                }
+                onChange={(event) => edit("key", event.target.value)}
                 onKeyDown={onEnter(saveForm)}
               />
             </div>
