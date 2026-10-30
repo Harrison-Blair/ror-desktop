@@ -18,6 +18,12 @@ import {
   type PermissionMode,
   runToolCall,
 } from "@/lib/chat/gate";
+import {
+  deleteChat,
+  openChat,
+  renameChat,
+  setChatArchived,
+} from "@/lib/chat/historyApi";
 import type { ToolRegistry } from "@/lib/chat/registry";
 
 export type PendingApproval = ApprovalRequest & {
@@ -53,6 +59,19 @@ export function useChat({
   const [approvals, setApprovals] = useState<PendingApproval[]>([]);
   const [model, setModel] = useState<string | null>(null);
   const [mode, setMode] = useState<PermissionMode>("manual");
+  const [historyOpen, setHistoryOpen] = useState(false);
+  // While a history operation runs, nothing is sent and no chat changes.
+  const [busy, setBusy] = useState(false);
+  const pendingOps = useRef(0);
+  // History operations run one at a time, in order.
+  const queue = useRef<Promise<unknown>>(Promise.resolve());
+  // Settles when the running turn has ended in Rust, after its last save.
+  const turnEnded = useRef<Promise<unknown>>(Promise.resolve());
+  // Counts moves to another chat, so a late operation can tell that the
+  // user moved on.
+  const moves = useRef(0);
+  // The chat shown, for operations that end later.
+  const shownId = useRef<string | null>(null);
   // Read when a tool call arrives, so a switch applies to the next call.
   const modeRef = useRef(mode);
   const openNoteRef = useRef(openNote);
@@ -71,6 +90,11 @@ export function useChat({
     openNoteRef.current = openNote;
   }, [openNote]);
 
+  const showChatId = useCallback((id: string | null) => {
+    shownId.current = id;
+    setChatId(id);
+  }, []);
+
   const fail = useCallback(
     (e: unknown) => notify({ kind: "error", message: errorMessage(e) }),
     [notify],
@@ -88,14 +112,18 @@ export function useChat({
       modeRef.current = settings.permissionMode;
       setMode(settings.permissionMode);
     }, fail);
-    latestChat().then((chat) => {
+    // The read joins the history queue, so a delete or archive of that chat
+    // waits for it, then leaves the chat.
+    const read = queue.current.then(latestChat);
+    queue.current = read.catch(() => {});
+    read.then((chat) => {
       // A message sent or a New chat since then wins.
       if (!chat || generation.current !== start) return;
-      setChatId(chat.id);
+      showChatId(chat.id);
       setMessages(chat.messages);
       setUsage(chat.usage);
     }, fail);
-  }, [fail]);
+  }, [fail, showChatId]);
 
   // The source of truth for approvals: their resolvers must run once, outside
   // state updates.
@@ -121,7 +149,8 @@ export function useChat({
   };
 
   const send = (text: string) => {
-    if (running || model === null || text.trim() === "") return false;
+    if (running || pendingOps.current > 0 || model === null) return false;
+    if (text.trim() === "") return false;
     const turn = ++generation.current;
     const current = () => generation.current === turn;
     const controller = new AbortController();
@@ -172,7 +201,7 @@ export function useChat({
           break;
       }
     };
-    sendMessage({
+    turnEnded.current = sendMessage({
       turnId,
       chatId,
       text,
@@ -182,7 +211,7 @@ export function useChat({
       onEvent,
     })
       .then(({ chatId }) => {
-        if (current()) setChatId(chatId);
+        if (current()) showChatId(chatId);
       }, fail)
       .finally(() => {
         controller.abort();
@@ -203,12 +232,52 @@ export function useChat({
   };
 
   const newChat = () => {
-    if (running) stop();
+    if (activeTurn.current) stop();
+    moves.current++;
     generation.current++;
-    setChatId(null);
+    showChatId(null);
     setMessages([]);
     setStreaming("");
     setUsage(NO_USAGE);
+  };
+
+  // Runs `op` after the history operations before it.
+  const enqueue = <T>(op: () => Promise<T>) => {
+    pendingOps.current++;
+    setBusy(true);
+    const result = queue.current.then(op);
+    queue.current = result.catch(() => {});
+    return result.finally(() => {
+      pendingOps.current--;
+      setBusy(pendingOps.current > 0);
+    });
+  };
+
+  // Shows a saved chat in place of the current one. A running turn stops,
+  // and the chat is read once the turn has saved for the last time. When
+  // the chat can't be read, the current one stays.
+  const open = (id: string) => {
+    if (activeTurn.current) stop();
+    const move = ++moves.current;
+    enqueue(() => turnEnded.current.then(() => openChat(id))).then((chat) => {
+      if (moves.current !== move) return;
+      generation.current++;
+      showChatId(chat.id);
+      setMessages(chat.messages);
+      setStreaming("");
+      setUsage(chat.usage);
+    }, fail);
+  };
+
+  // Changes saved chat `id`. When `leaves` is set and that chat is still
+  // the one shown, a new chat starts.
+  const change = (id: string, op: () => Promise<void>, leaves: boolean) => {
+    const move = moves.current;
+    return enqueue(op).then(() => {
+      if (leaves && moves.current === move && shownId.current === id) {
+        newChat();
+      }
+    });
   };
 
   const chooseModel = (next: string) => {
@@ -236,6 +305,16 @@ export function useChat({
     send,
     stop,
     newChat,
+    open,
+    rename: (id: string, title: string) =>
+      change(id, () => renameChat(id, title), false),
+    setArchived: (id: string, archived: boolean) =>
+      change(id, () => setChatArchived(id, archived), archived),
+    remove: (id: string) => change(id, () => deleteChat(id), true),
+    busy,
+    historyOpen,
+    toggleHistory: () => setHistoryOpen((open) => !open),
+    closeHistory: () => setHistoryOpen(false),
     answer,
     chooseModel,
     chooseMode,

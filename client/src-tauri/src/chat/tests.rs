@@ -729,3 +729,176 @@ async fn a_turn_stopped_before_it_begins_sends_no_request() {
         })
     );
 }
+
+fn fake_backend(server: &FakeServer, chat: &Chat) -> Backend {
+    Backend::OpenAi(Endpoint {
+        client: reqwest::Client::new(),
+        base_url: server.url.clone(),
+        label: "Fake",
+        api_key: KEY.into(),
+        model: "fake-model".into(),
+        session: Some(chat.id.clone()),
+    })
+}
+
+// Sends `text` in `chat` the way `chat_send` does: the turn, then the title.
+async fn answer(server: &FakeServer, host: &TestHost, chat: &mut Chat, text: &str) -> TurnEnd {
+    let backend = fake_backend(server, chat);
+    chat.push(Message::User { text: text.into() });
+    let mut turn = Turn {
+        chat,
+        system: "You help with a campaign.".into(),
+        tools: vec![roll_tool()],
+        cancel: CancellationToken::new(),
+    };
+    super::agent::answer(&backend, &mut turn, host).await
+}
+
+fn title_reply(title: &str) -> Reply {
+    Reply::Status(
+        200,
+        json!({
+            "choices": [{ "index": 0, "message": { "role": "assistant", "content": title } }],
+            "usage": { "prompt_tokens": 40, "completion_tokens": 5 },
+        })
+        .to_string(),
+    )
+}
+
+#[tokio::test]
+async fn the_first_reply_titles_the_chat_once() {
+    // Requests: turn 1, its title, turn 2.
+    let server = serve(|n| match n {
+        1 => title_reply("\"Ambush at the ogre camp tonight, with traps.\""),
+        _ => Reply::Stream(vec![text("The ogres wait."), usage(100, 20)]),
+    });
+    let host = TestHost::default();
+    let mut chat = Chat::new(BackendId::OpencodeGo, "fake-model");
+
+    let end = answer(&server, &host, &mut chat, "Plan an ambush\nat the camp").await;
+
+    assert_eq!(end, TurnEnd::Done);
+    assert_eq!(chat.title, "Ambush at the ogre camp tonight");
+    assert_eq!(
+        host.saved.lock().unwrap().as_ref().unwrap().title,
+        chat.title
+    );
+    assert_eq!(
+        chat.usage,
+        Usage {
+            input_tokens: 140,
+            output_tokens: 25
+        }
+    );
+    {
+        let requests = server.requests.lock().unwrap();
+        assert_eq!(requests.len(), 2);
+        let body = &requests[1].body;
+        assert_eq!(body["model"], "fake-model");
+        assert_eq!(body["stream"], false);
+        assert!(body.get("tools").is_none());
+        let asked = body["messages"][1]["content"].as_str().unwrap();
+        assert!(asked.contains("Plan an ambush"), "{asked}");
+        assert!(asked.contains("The ogres wait."), "{asked}");
+        assert_eq!(requests[1].authorization, format!("Bearer {KEY}"));
+    }
+
+    answer(&server, &host, &mut chat, "And the traps?").await;
+    assert_eq!(server.requests.lock().unwrap().len(), 3);
+    assert_eq!(chat.title, "Ambush at the ogre camp tonight");
+}
+
+#[tokio::test]
+async fn a_renamed_chat_is_not_titled() {
+    let server = serve(|n| match n {
+        0 => Reply::Stream(vec![text("The ogres wait.")]),
+        _ => title_reply("Ogre ambush"),
+    });
+    let host = TestHost::default();
+    let mut chat = Chat::new(BackendId::OpencodeGo, "fake-model");
+    chat.title = "My ambush".into();
+    chat.renamed = true;
+
+    answer(&server, &host, &mut chat, "Plan an ambush").await;
+
+    assert_eq!(server.requests.lock().unwrap().len(), 1);
+    assert_eq!(chat.title, "My ambush");
+}
+
+#[tokio::test]
+async fn a_failed_title_request_keeps_the_first_line_title() {
+    for title in [
+        Reply::Status(500, r#"{"error":{"message":"down"}}"#.into()),
+        title_reply("  "),
+    ] {
+        let title = std::sync::Mutex::new(Some(title));
+        let server = serve(move |n| match n {
+            0 => Reply::Stream(vec![text("The ogres wait.")]),
+            _ => title.lock().unwrap().take().unwrap(),
+        });
+        let host = TestHost::default();
+        let mut chat = Chat::new(BackendId::OpencodeGo, "fake-model");
+
+        let end = answer(&server, &host, &mut chat, "Plan an ambush\nat the camp").await;
+
+        assert_eq!(end, TurnEnd::Done);
+        assert_eq!(server.requests.lock().unwrap().len(), 2);
+        assert_eq!(chat.title, "Plan an ambush");
+        assert!(!host.events_json().contains("down"));
+    }
+}
+
+#[tokio::test]
+async fn a_turn_without_a_reply_is_not_titled_and_the_next_reply_is() {
+    // Turn 1 fails, turn 2 answers, then its title.
+    let server = serve(|n| match n {
+        0 => Reply::Status(500, r#"{"error":{"message":"down"}}"#.into()),
+        1 => Reply::Stream(vec![text("The ogres wait.")]),
+        _ => title_reply("Ogre ambush"),
+    });
+    let host = TestHost::default();
+    let mut chat = Chat::new(BackendId::OpencodeGo, "fake-model");
+
+    assert_eq!(
+        answer(&server, &host, &mut chat, "Plan an ambush").await,
+        TurnEnd::Failed
+    );
+    assert_eq!(server.requests.lock().unwrap().len(), 1);
+    answer(&server, &host, &mut chat, "Try again").await;
+    assert_eq!(server.requests.lock().unwrap().len(), 3);
+    assert_eq!(chat.title, "Ogre ambush");
+}
+
+#[tokio::test]
+async fn a_partial_failed_first_reply_still_lets_the_next_reply_title_the_chat() {
+    // Requests: turn 1 is cut off after some text, turn 2 answers, its
+    // title, then turn 3.
+    let server = serve(|n| match n {
+        0 => Reply::RawStream(reply_with_partial_text_then("")),
+        1 => Reply::Stream(vec![text("The ogres wait.")]),
+        2 => title_reply("Ogre ambush"),
+        _ => Reply::Stream(vec![text("They charge.")]),
+    });
+    let host = TestHost::default();
+    let mut chat = Chat::new(BackendId::OpencodeGo, "fake-model");
+
+    let end = answer(&server, &host, &mut chat, "Plan an ambush").await;
+    assert_eq!(end, TurnEnd::Failed);
+    assert!(chat
+        .messages
+        .iter()
+        .any(|m| matches!(m, Message::Assistant { text, .. } if text == "Partial")));
+    assert_eq!(server.requests.lock().unwrap().len(), 1);
+
+    answer(&server, &host, &mut chat, "Try again").await;
+    assert_eq!(server.requests.lock().unwrap().len(), 3);
+    assert_eq!(chat.title, "Ogre ambush");
+    let asked = server.requests.lock().unwrap()[2].body["messages"][1]["content"]
+        .as_str()
+        .unwrap()
+        .to_string();
+    assert!(asked.contains("The ogres wait."), "{asked}");
+
+    answer(&server, &host, &mut chat, "And then?").await;
+    assert_eq!(server.requests.lock().unwrap().len(), 4);
+}

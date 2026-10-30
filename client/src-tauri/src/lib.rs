@@ -246,6 +246,11 @@ pub fn run() {
             chat::key_save,
             chat::chat_models,
             chat::chat_latest,
+            chat::chat_list,
+            chat::chat_open,
+            chat::chat_rename,
+            chat::chat_set_archived,
+            chat::chat_delete,
             chat::chat_send,
             chat::chat_tool_result,
             chat::chat_stop

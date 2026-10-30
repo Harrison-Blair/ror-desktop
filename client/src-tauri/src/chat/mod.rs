@@ -233,6 +233,40 @@ pub fn chat_latest(app: AppHandle) -> Result<Option<Chat>, String> {
     store::latest(&chats_dir(&app)?).map_err(|e| format!("Couldn't read the saved chats: {e}."))
 }
 
+/// The archived chats, or the others, newest first, that match `query`.
+#[tauri::command]
+pub fn chat_list(
+    app: AppHandle,
+    archived: bool,
+    query: String,
+) -> Result<Vec<store::ChatSummary>, String> {
+    store::list(&chats_dir(&app)?, archived, &query)
+        .map_err(|e| format!("Couldn't read the saved chats: {e}."))
+}
+
+#[tauri::command]
+pub fn chat_open(app: AppHandle, id: String) -> Result<Chat, String> {
+    store::load(&chats_dir(&app)?, &id).map_err(|e| format!("Couldn't open the chat: {e}."))
+}
+
+#[tauri::command]
+pub fn chat_rename(app: AppHandle, id: String, title: String) -> Result<(), String> {
+    store::rename(&chats_dir(&app)?, &id, &title)
+        .map_err(|e| format!("Couldn't rename the chat: {e}"))
+}
+
+#[tauri::command]
+pub fn chat_set_archived(app: AppHandle, id: String, archived: bool) -> Result<(), String> {
+    store::set_archived(&chats_dir(&app)?, &id, archived)
+        .map_err(|e| format!("Couldn't save the chat: {e}."))
+}
+
+/// Removes the chat's file. The webview asks the user first.
+#[tauri::command]
+pub fn chat_delete(app: AppHandle, id: String) -> Result<(), String> {
+    store::delete(&chats_dir(&app)?, &id).map_err(|e| format!("Couldn't delete the chat: {e}."))
+}
+
 struct TauriHost<'a> {
     channel: Channel<ChatEvent>,
     state: &'a ChatState,
@@ -339,7 +373,7 @@ pub async fn chat_send(
                     turn.notice(&host, NoticeLevel::Error, "This chat uses another backend.");
                     TurnEnd::Failed
                 } else {
-                    backend.run_turn(&mut turn, &host).await
+                    agent::answer(&backend, &mut turn, &host).await
                 }
             }
             Ok(None) => {

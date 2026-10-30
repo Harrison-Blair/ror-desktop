@@ -253,13 +253,12 @@ function Shell() {
         actions={
           sidePanel === "chat" && (
             <ChatMenuActions
-              onHistory={() =>
-                notify({
-                  kind: "error",
-                  message: "Chat history is not implemented yet.",
-                })
-              }
-              onNewChat={chat.newChat}
+              historyOpen={chat.historyOpen}
+              onHistory={chat.toggleHistory}
+              onNewChat={() => {
+                chat.closeHistory();
+                chat.newChat();
+              }}
             />
           )
         }
