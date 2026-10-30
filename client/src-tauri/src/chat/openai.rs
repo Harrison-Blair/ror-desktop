@@ -338,10 +338,7 @@ pub async fn title(endpoint: &Endpoint, chat: &Chat) -> Result<(String, Usage), 
         ],
         "stream": false,
     });
-    let mut request = endpoint
-        .client
-        .post(endpoint.url("chat/completions"))
-        .bearer_auth(&endpoint.api_key);
+    let mut request = endpoint.authorize(endpoint.client.post(endpoint.url("chat/completions")));
     if let Some(session) = &endpoint.session {
         request = request.header("x-opencode-session", session);
     }

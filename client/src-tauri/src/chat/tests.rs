@@ -36,6 +36,11 @@ struct FakeServer {
 
 // Answers the nth request with `reply(n)`.
 fn serve(reply: impl Fn(usize) -> Reply + Send + 'static) -> FakeServer {
+    serve_requests(move |n, _| reply(n))
+}
+
+// Answers the nth request with `reply(n, request)`.
+fn serve_requests(reply: impl Fn(usize, &Request) -> Reply + Send + 'static) -> FakeServer {
     let listener = TcpListener::bind("127.0.0.1:0").unwrap();
     let url = format!("http://{}/v1", listener.local_addr().unwrap());
     let requests = Arc::new(Mutex::new(Vec::new()));
@@ -64,13 +69,15 @@ fn serve(reply: impl Fn(usize) -> Reply + Send + 'static) -> FakeServer {
             }
             let mut body = vec![0; length];
             reader.read_exact(&mut body).unwrap();
-            seen.lock().unwrap().push(Request {
+            let request = Request {
                 authorization,
                 session,
                 user_agent,
                 body: serde_json::from_slice(&body).unwrap_or(Value::Null),
-            });
-            let response = match reply(n) {
+            };
+            let reply = reply(n, &request);
+            seen.lock().unwrap().push(request);
+            let response = match reply {
                 Reply::Stream(events) => {
                     let mut text = String::from(
                         "HTTP/1.1 200 OK\r\nContent-Type: text/event-stream\r\nConnection: close\r\n\r\n",
@@ -1272,6 +1279,50 @@ async fn a_custom_provider_chat_is_titled_without_an_opencode_session() {
     assert_eq!(requests[1].body["model"], "llama3");
     assert_eq!(requests[1].session, "");
     assert_eq!(requests[1].authorization, format!("Bearer {KEY}"));
+}
+
+#[tokio::test]
+async fn a_keyless_custom_provider_chat_is_titled_without_an_authorization_header() {
+    // Like a local server that refuses any key it wasn't set up with.
+    let server = serve_requests(|n, request| {
+        if !request.authorization.is_empty() {
+            Reply::Status(401, r#"{"error":{"message":"bad key"}}"#.into())
+        } else if n == 0 {
+            Reply::Stream(vec![text("The ogres wait.")])
+        } else {
+            title_reply("Ogre ambush")
+        }
+    });
+    let host = TestHost::default();
+    let mut chat = Chat::new(BackendId::Custom, "llama3");
+    let backend = Backend::OpenAi(
+        super::endpoint(
+            &super::http_client(),
+            BackendId::Custom,
+            Some(ollama(&server.url)),
+            None,
+            "llama3",
+            Some(chat.id.clone()),
+        )
+        .unwrap(),
+    );
+    chat.push(Message::User {
+        text: "Plan an ambush".into(),
+    });
+    let mut turn = Turn {
+        chat: &mut chat,
+        system: String::new(),
+        tools: Vec::new(),
+        cancel: CancellationToken::new(),
+    };
+
+    assert_eq!(
+        super::agent::answer(&backend, &mut turn, &host).await,
+        TurnEnd::Done
+    );
+
+    assert_eq!(server.requests.lock().unwrap().len(), 2);
+    assert_eq!(chat.title, "Ogre ambush");
 }
 
 #[tokio::test]
