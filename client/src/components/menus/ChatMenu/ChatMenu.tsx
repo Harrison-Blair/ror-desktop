@@ -208,11 +208,10 @@ function Thread({ chat }: { chat: ChatController }) {
       .filter((m): m is ToolResult => m.role === "tool")
       .map((m) => [m.callId, m]),
   );
-  // A tool call of this turn that has no result yet. Calls before the last
-  // user message belong to ended turns.
-  const turnStart = messages.map((m) => m.role).lastIndexOf("user");
+  // A tool call of this turn that has no result yet. Calls before the
+  // turn's start belong to ended turns.
   const toolRunning = messages
-    .slice(turnStart + 1)
+    .slice(chat.turnStart)
     .some(
       (m) =>
         m.role === "assistant" &&

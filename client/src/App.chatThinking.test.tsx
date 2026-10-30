@@ -160,6 +160,8 @@ describe("Thinking indicator", () => {
       usage: { inputTokens: 0, outputTokens: 0 },
     };
     await send("Again");
+    // Before any event of the new turn.
+    expect(thinking()).toHaveTextContent("Thinking… 0s");
     emit({ type: "message", message: { role: "user", text: "Again" } });
     expect(thinking()).toHaveTextContent("Thinking… 0s");
   });
