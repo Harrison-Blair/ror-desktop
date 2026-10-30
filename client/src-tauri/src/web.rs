@@ -409,6 +409,7 @@ pub fn html_to_text(html: &str) -> String {
     // ASCII lowercasing keeps every byte offset.
     let lower = html.to_ascii_lowercase();
     let mut out = String::new();
+    let mut title = None;
     let mut i = 0;
     let mut text_start = 0;
     while i < html.len() {
@@ -446,10 +447,13 @@ pub fn html_to_text(html: &str) -> String {
         i = close + 1;
         if !closing && SKIPPED.contains(&name.as_str()) && !tag.ends_with('/') {
             let end_tag = format!("</{name}");
-            i = lower[i..]
-                .find(&end_tag)
-                .and_then(|n| lower[i + n..].find('>').map(|m| i + n + m + 1))
-                .unwrap_or(html.len());
+            let content_end = lower[i..].find(&end_tag).map_or(html.len(), |n| i + n);
+            if name == "head" && title.is_none() {
+                title = head_title(html, &lower, i, content_end);
+            }
+            i = lower[content_end..]
+                .find('>')
+                .map_or(html.len(), |m| content_end + m + 1);
             text_start = i;
             continue;
         }
@@ -462,12 +466,52 @@ pub fn html_to_text(html: &str) -> String {
         }
     }
     out.push_str(&decode_entities(&html[text_start.min(html.len())..]));
+    // The page title comes first, on its own line.
+    if let Some(title) = title {
+        out.insert_str(0, &format!("{title}\n"));
+    }
     // One space between words, and no blank lines.
     out.lines()
         .map(|line| line.split_whitespace().collect::<Vec<_>>().join(" "))
         .filter(|line| !line.is_empty() && line != "-")
         .collect::<Vec<_>>()
         .join("\n")
+}
+
+// The text of the first <title> in the head content html[start..end], with
+// entities decoded and one space between words. None when it is missing.
+// Comments, attribute values and the content of skipped tags such as
+// <script> are not searched.
+fn head_title(html: &str, lower: &str, start: usize, end: usize) -> Option<String> {
+    let mut i = start;
+    while let Some(at) = lower[i..end].find('<').map(|n| i + n) {
+        if lower[at..end].starts_with("<!--") {
+            i = lower[at..end].find("-->").map_or(end, |n| at + n + 3);
+            continue;
+        }
+        let close = tag_end(html, at).filter(|&close| close < end)?;
+        let tag = &lower[at + 1..close];
+        let name: String = tag
+            .chars()
+            .take_while(|c| c.is_ascii_alphanumeric())
+            .collect();
+        i = close + 1;
+        if name == "title" {
+            let title_end = lower[i..end].find("</title").map_or(end, |n| i + n);
+            return Some(
+                decode_entities(&html[i..title_end])
+                    .split_whitespace()
+                    .collect::<Vec<_>>()
+                    .join(" "),
+            );
+        }
+        if SKIPPED.contains(&name.as_str()) && !tag.ends_with('/') {
+            i = lower[i..end]
+                .find(&format!("</{name}"))
+                .map_or(end, |n| i + n);
+        }
+    }
+    None
 }
 
 // The ">" that ends the tag starting at `start`. A ">" inside a quoted
@@ -717,7 +761,7 @@ mod tests {
         let page = fetch(&open(), &format!("{url}/page"), FETCH_TIMEOUT)
             .await
             .unwrap();
-        assert_eq!(page.text, "Ogres\nHill ogres & giants!\n- One\n- Two");
+        assert_eq!(page.text, "T\nOgres\nHill ogres & giants!\n- One\n- Two");
         assert!(!page.truncated);
     }
 
@@ -967,6 +1011,91 @@ mod tests {
         assert_eq!(
             html_to_text("<p class='a>b'>x &lt;y&gt; &amp;&#x41;&#66; a<1 <!x> b</p>"),
             "x <y> &AB a<1 b"
+        );
+    }
+
+    #[test]
+    fn html_text_starts_with_the_page_title() {
+        assert_eq!(
+            html_to_text(
+                "<html><head><meta charset=utf-8><title>Example Domain</title></head>\
+                 <body><div><p>This domain is for examples.</p></div></body></html>"
+            ),
+            "Example Domain\nThis domain is for examples."
+        );
+        assert_eq!(
+            html_to_text(
+                "<head><TITLE lang=en>\n  Ogres &amp;\tgiants&nbsp;&#8211; a\n guide </TITLE></head><p>Body</p>"
+            ),
+            "Ogres & giants \u{2013} a guide\nBody"
+        );
+        assert_eq!(
+            html_to_text("<head><title>First</title><title>Second</title></head><p>Body</p>"),
+            "First\nBody"
+        );
+    }
+
+    #[test]
+    fn html_text_without_a_head_title_has_no_title_line() {
+        assert_eq!(
+            html_to_text("<html><head><meta charset=utf-8></head><body><p>Body</p></body></html>"),
+            "Body"
+        );
+        assert_eq!(
+            html_to_text("<head><title> \n &nbsp; </title></head><p>Body</p>"),
+            "Body"
+        );
+        assert_eq!(
+            html_to_text("<head></head><body><svg><title>Icon</title></svg><p>Body</p></body>"),
+            "Body"
+        );
+    }
+
+    #[test]
+    fn html_text_title_skips_comments_scripts_and_attributes() {
+        assert_eq!(
+            html_to_text(
+                "<head><!-- <title>Old</title> --><title>Actual</title></head><p>Body</p>"
+            ),
+            "Actual\nBody"
+        );
+        assert_eq!(
+            html_to_text("<head><!-- <title>Old</title> --></head><p>Body</p>"),
+            "Body"
+        );
+        assert_eq!(
+            html_to_text(
+                "<head><script>const template = '<title>Placeholder</title>';</script>\
+                 <title>Actual</title></head><p>Body</p>"
+            ),
+            "Actual\nBody"
+        );
+        assert_eq!(
+            html_to_text(
+                "<head><meta name=description content='About <titlex> markup'>\
+                 <title>Actual</title></head><p>Body</p>"
+            ),
+            "Actual\nBody"
+        );
+        assert_eq!(
+            html_to_text("<head><!-- <titlex> --><title>Actual</title></head><p>Body</p>"),
+            "Actual\nBody"
+        );
+        assert_eq!(
+            html_to_text(
+                "<head><!-- a > b <title>Old</title> --><title>Actual</title></head><p>Body</p>"
+            ),
+            "Actual\nBody"
+        );
+        assert_eq!(
+            html_to_text(
+                "<head><meta content='a > b <title>Old</title>'><title>Actual</title></head><p>Body</p>"
+            ),
+            "Actual\nBody"
+        );
+        assert_eq!(
+            html_to_text("<head><titlex>Old</titlex><title>Actual</title></head><p>Body</p>"),
+            "Actual\nBody"
         );
     }
 
