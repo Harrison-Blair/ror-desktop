@@ -284,6 +284,7 @@ export function ProvidersSettings({
                 type="button"
                 className={styles.textButton}
                 aria-label={`Replace ${name} key`}
+                disabled={busy}
                 onClick={() => {
                   setError(null);
                   setReplacing(provider);

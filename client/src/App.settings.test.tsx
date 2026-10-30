@@ -543,6 +543,38 @@ describe("Settings", () => {
     );
   });
 
+  it("Replace waits while a key removal runs", async () => {
+    keys["opencode-go"] = true;
+    let finish = () => {};
+    api.removeKey.mockImplementationOnce(
+      (provider: string) =>
+        new Promise<void>((resolve) => {
+          finish = () => {
+            keys[provider] = false;
+            resolve();
+          };
+        }),
+    );
+    const user = await openSettings();
+    const built = section("Built in");
+    await user.click(
+      await within(built).findByRole("button", {
+        name: "Remove OpenCode Go key",
+      }),
+    );
+    const replace = within(built).getByRole("button", {
+      name: "Replace OpenCode Go key",
+    });
+    expect(replace).toBeDisabled();
+    await user.click(replace);
+    expect(
+      within(built).queryByLabelText("OpenCode Go key"),
+    ).not.toBeInTheDocument();
+
+    act(() => finish());
+    expect(await within(built).findByText("No key")).toBeInTheDocument();
+  });
+
   it("disables Save and Remove while a provider change runs", async () => {
     keys["opencode-go"] = true;
     custom = { name: "Ollama", baseUrl: "http://localhost:11434/v1" };
