@@ -76,10 +76,40 @@ function ToolStep({ call, result }: { call: ToolCall; result?: ToolResult }) {
   const state = !result ? "running" : result.isError ? "failed" : "done";
   return (
     <li className={styles.toolStep} data-state={state}>
-      <Icon size={14} strokeWidth={1.75} aria-label={state} />
+      <Icon
+        className={!result ? styles.spinner : undefined}
+        size={14}
+        strokeWidth={1.75}
+        aria-label={state}
+      />
       <span>{call.name}</span>
       <code className={styles.toolArgument}>{call.arguments}</code>
     </li>
+  );
+}
+
+// Shown while the model works and nothing else in the thread moves. Each
+// wait mounts it anew, so its seconds start from 0.
+function Thinking() {
+  const [start] = useState(Date.now);
+  const [seconds, setSeconds] = useState(0);
+  useEffect(() => {
+    const timer = setInterval(
+      () => setSeconds(Math.floor((Date.now() - start) / 1000)),
+      1000,
+    );
+    return () => clearInterval(timer);
+  }, [start]);
+  return (
+    <div className={styles.thinking}>
+      <LoaderCircle
+        className={styles.spinner}
+        size={14}
+        strokeWidth={1.75}
+        aria-hidden
+      />
+      <span>Thinking…</span> <span aria-hidden>{seconds}s</span>
+    </div>
   );
 }
 
@@ -183,10 +213,28 @@ function Thread({ chat }: { chat: ChatController }) {
       .filter((m): m is ToolResult => m.role === "tool")
       .map((m) => [m.callId, m]),
   );
+  // The messages since this Send. Earlier ones belong to ended turns.
+  const turn = messages.slice(chat.turnStart);
+  // A tool call of this turn that has no result yet.
+  const toolRunning = turn.some(
+    (m) =>
+      m.role === "assistant" &&
+      m.toolCalls?.some((call) => !results.has(call.id)),
+  );
+  // A final reply: the turn ends once Rust has saved it. A reply with tool
+  // calls is never last once they run, since their results follow it.
+  const replied = turn.at(-1)?.role === "assistant";
+  const thinking =
+    chat.running &&
+    !replied &&
+    !chat.stopped &&
+    !streaming &&
+    !toolRunning &&
+    approvals.length === 0;
 
   return (
     <div className={styles.thread}>
-      {messages.length === 0 && !streaming && (
+      {messages.length === 0 && !streaming && !chat.running && (
         <p className={styles.empty}>Ask about your campaign.</p>
       )}
       {messages.map((message, i) => {
@@ -259,6 +307,9 @@ function Thread({ chat }: { chat: ChatController }) {
           onAnswer={(approved) => chat.answer(approval.token, approved)}
         />
       ))}
+      {/* A polite live region that is always there, so the row is
+          announced when it appears. */}
+      <div role="status">{thinking && <Thinking />}</div>
       <div ref={end} />
     </div>
   );
@@ -329,7 +380,6 @@ function Composer({ chat }: { chat: ChatController }) {
                 chat.chooseModel(backend, model);
                 setMenuOpen(false);
               }}
-              onProviderRemoved={chat.providerRemoved}
               onClose={() => setMenuOpen(false)}
             />
           )}

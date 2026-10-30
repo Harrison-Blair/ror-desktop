@@ -55,6 +55,10 @@ export function useChat({
   // The assistant text that is still streaming.
   const [streaming, setStreaming] = useState("");
   const [running, setRunning] = useState(false);
+  // Set by Stop until the next Send: the turn still runs until Rust ends it.
+  const [stopped, setStopped] = useState(false);
+  // The index in `messages` where the running turn's messages begin.
+  const [turnStart, setTurnStart] = useState(0);
   const [usage, setUsage] = useState<Usage>(NO_USAGE);
   const [approvals, setApprovals] = useState<PendingApproval[]>([]);
   const [model, setModel] = useState<string | null>(null);
@@ -202,6 +206,8 @@ export function useChat({
     };
     setChatBackend(backend);
     setRunning(true);
+    setStopped(false);
+    setTurnStart(messages.length);
     setStreaming("");
     const onEvent = (event: ChatEvent) => {
       if (!current()) return;
@@ -273,6 +279,7 @@ export function useChat({
     const turn = activeTurn.current;
     answerAll(false);
     if (!turn) return;
+    setStopped(true);
     turn.abort.abort();
     stopTurn(turn.id).catch(fail);
   };
@@ -358,6 +365,8 @@ export function useChat({
     messages,
     streaming,
     running,
+    stopped,
+    turnStart,
     usage,
     approvals,
     model,

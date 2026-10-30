@@ -3,7 +3,6 @@ import {
   type KeyboardEvent,
   useCallback,
   useEffect,
-  useId,
   useRef,
   useState,
 } from "react";
@@ -14,12 +13,7 @@ import {
   codexStatus,
   getChatSettings,
   isKeySaved,
-  type KeyProvider,
   listModels,
-  removeCustomProvider,
-  removeKey,
-  saveCustomProvider,
-  saveKey,
 } from "@/lib/chat/chatApi";
 import { errorMessage } from "@/lib/errorMessage";
 import styles from "./ChatMenu.module.css";
@@ -30,10 +24,6 @@ type Models =
   | { state: "error"; message: string }
   | { state: "ready"; models: string[] };
 
-type Keys = Record<KeyProvider, boolean | null>;
-
-const NO_KEYS: Keys = { "opencode-go": null, tavily: null, custom: null };
-
 // Enter in a field acts on the menu, never on the composer's form.
 const onEnter =
   (act: () => void) => (event: KeyboardEvent<HTMLInputElement>) => {
@@ -43,13 +33,13 @@ const onEnter =
     }
   };
 
-// Lists the models live from each provider, and takes the provider keys.
+// Lists the models live from each provider. Keys and the custom provider
+// are set up in Settings.
 export function ModelMenu({
   model,
   backend,
   lockedTo,
   onChoose,
-  onProviderRemoved,
   onClose,
 }: {
   model: string | null;
@@ -57,12 +47,11 @@ export function ModelMenu({
   // The backend the open chat is on: the others can't be chosen.
   lockedTo: BackendId | null;
   onChoose: (backend: BackendId, model: string) => void;
-  onProviderRemoved: (backend: BackendId) => void;
   onClose: () => void;
 }) {
-  const id = useId();
   const menu = useRef<HTMLDivElement>(null);
-  const [keys, setKeys] = useState<Keys>(NO_KEYS);
+  // null until the key is checked.
+  const [goKey, setGoKey] = useState<boolean | null>(null);
   const [custom, setCustom] = useState<CustomProvider | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [goModels, setGoModels] = useState<Models>({ state: "loading" });
@@ -71,32 +60,23 @@ export function ModelMenu({
   });
   // null while Codex starts.
   const [codex, setCodex] = useState<CodexStatus | null>(null);
-  // The provider whose key field is open, or the custom provider's form.
-  const [adding, setAdding] = useState<KeyProvider | "form" | null>(null);
-  const [key, setKey] = useState("");
-  const [form, setForm] = useState({ name: "", baseUrl: "", key: "" });
   const [modelId, setModelId] = useState("");
-  // A key or provider change is running: Save and Remove wait for it.
-  const [busy, setBusy] = useState(false);
-  const running = useRef(false);
 
   const refresh = useCallback(async () => {
     setGoModels({ state: "loading" });
     const codexLoaded = codexStatus().then(setCodex, (e) =>
       setCodex({ state: "error", message: errorMessage(e) }),
     );
-    let saved: Keys;
+    let saved: boolean;
     let provider: CustomProvider | null;
     try {
-      const [go, tavily, customKey, settings] = await Promise.all([
+      const [go, settings] = await Promise.all([
         isKeySaved("opencode-go"),
-        isKeySaved("tavily"),
-        isKeySaved("custom"),
         getChatSettings(),
       ]);
-      saved = { "opencode-go": go, tavily, custom: customKey };
+      saved = go;
       provider = settings.customProvider;
-      setKeys(saved);
+      setGoKey(saved);
       setCustom(provider);
       setError(null);
     } catch (e) {
@@ -116,7 +96,7 @@ export function ModelMenu({
       }
     };
     await Promise.all([
-      saved["opencode-go"]
+      saved
         ? load("opencode-go", setGoModels)
         : setGoModels({ state: "noKey" }),
       provider && load("custom", setCustomModels),
@@ -141,47 +121,6 @@ export function ModelMenu({
     return () => document.removeEventListener("pointerdown", closeOutside);
   }, [onClose]);
 
-  // Runs a change to the keys or the provider, then lists again. A failed
-  // change may still have changed something, so it lists again too and
-  // keeps its error.
-  const change = async (act: () => Promise<unknown>) => {
-    if (running.current) return;
-    running.current = true;
-    setBusy(true);
-    try {
-      await act();
-      setAdding(null);
-      setKey("");
-      await refresh();
-    } catch (e) {
-      const message = errorMessage(e);
-      await refresh();
-      setError(message);
-    } finally {
-      running.current = false;
-      setBusy(false);
-    }
-  };
-
-  const removeProvider = () =>
-    change(async () => {
-      await removeCustomProvider();
-      onProviderRemoved("custom");
-    });
-
-  const open = (what: KeyProvider | "form") => {
-    setError(null);
-    setKey("");
-    if (what === "form") {
-      setForm({
-        name: custom?.name ?? "",
-        baseUrl: custom?.baseUrl ?? "",
-        key: "",
-      });
-    }
-    setAdding(what);
-  };
-
   const label = (from: BackendId) =>
     from === "opencode-go"
       ? "OpenCode Go"
@@ -199,9 +138,6 @@ export function ModelMenu({
       <>
         {models.state === "loading" && (
           <p className={styles.menuNote}>Loading models…</p>
-        )}
-        {models.state === "noKey" && (
-          <p className={styles.menuNote}>Add a key below to list the models.</p>
         )}
         {models.state === "error" &&
           (from === "custom" ? (
@@ -270,79 +206,22 @@ export function ModelMenu({
     );
   };
 
-  const keyRow = (provider: KeyProvider, name: string) => {
-    const saved = keys[provider];
-    return (
-      <>
-        <div className={styles.providerRow}>
-          <span className={styles.providerName}>{name}</span>
-          <span className={styles.keyStatus}>
-            {saved === null ? "" : saved ? "Saved" : "Not set"}
-          </span>
-          {saved === true && (
-            <button
-              type="button"
-              className={styles.rowButton}
-              aria-label={`Remove ${name} key`}
-              disabled={busy}
-              onClick={() => change(() => removeKey(provider))}
-            >
-              Remove
-            </button>
-          )}
-          {saved === false && (
-            <button
-              type="button"
-              className={styles.rowButton}
-              aria-label={`Add ${name} key`}
-              onClick={() => open(provider)}
-            >
-              Add
-            </button>
-          )}
-        </div>
-        {adding === provider && (
-          <div className={styles.keyRow}>
-            <input
-              aria-label={`${name} key`}
-              className={styles.keyField}
-              type="password"
-              autoComplete="off"
-              placeholder="Paste key"
-              // biome-ignore lint/a11y/noAutofocus: the field opens on Add
-              autoFocus
-              value={key}
-              onChange={(event) => setKey(event.target.value)}
-              onKeyDown={onEnter(() => change(() => saveKey(provider, key)))}
-            />
-            <button
-              type="button"
-              className={styles.keySave}
-              disabled={busy}
-              onClick={() => change(() => saveKey(provider, key))}
-            >
-              Save
-            </button>
-          </div>
-        )}
-      </>
-    );
-  };
-
-  const saveForm = () =>
-    change(() => saveCustomProvider(form.name, form.baseUrl, form.key || null));
-
   return (
     <div
       ref={menu}
       className={styles.modelMenu}
       role="dialog"
-      aria-label="Models and keys"
+      aria-label="Models"
       onKeyDown={(event) => {
         if (event.key === "Escape") onClose();
       }}
     >
-      <h3 className={styles.heading}>OpenCode Go</h3>
+      <div className={styles.groupHeading}>
+        <h3 className={styles.heading}>OpenCode Go</h3>
+        <span className={styles.headingLabel}>
+          {goKey === null ? "" : goKey ? "Key saved" : "No key"}
+        </span>
+      </div>
       {group("opencode-go", goModels)}
       {custom && (
         <>
@@ -387,146 +266,7 @@ export function ModelMenu({
               },
         codex?.state !== "ready",
       )}
-      <hr className={styles.separator} />
-      <div className={styles.groupHeading}>
-        <h3 className={styles.heading}>Providers and keys</h3>
-        <span className={styles.headingLabel}>System keychain</span>
-      </div>
-      {/* Not a form: the menu sits inside the composer's form, and a nested
-          form's submit would also send the draft. */}
-      <div className={styles.keyForm}>
-        {keyRow("opencode-go", "OpenCode Go")}
-        {keyRow("tavily", "Tavily")}
-        <div className={styles.providerRow}>
-          <span className={styles.providerName}>
-            {custom?.name ?? "Custom provider"}
-          </span>
-          <span className={styles.keyStatus}>
-            {!custom
-              ? keys.custom
-                ? "Key only"
-                : "Not set"
-              : keys.custom
-                ? "Saved"
-                : "No key"}
-          </span>
-          {custom ? (
-            <>
-              <button
-                type="button"
-                className={styles.rowButton}
-                aria-label="Edit custom provider"
-                onClick={() => open("form")}
-              >
-                Edit
-              </button>
-              <button
-                type="button"
-                className={styles.rowButton}
-                aria-label="Remove custom provider"
-                disabled={busy}
-                onClick={removeProvider}
-              >
-                Remove
-              </button>
-            </>
-          ) : (
-            <>
-              {/* A key left by a failed save, with no provider. */}
-              {keys.custom && (
-                <button
-                  type="button"
-                  className={styles.rowButton}
-                  aria-label="Remove custom provider key"
-                  disabled={busy}
-                  onClick={removeProvider}
-                >
-                  Remove
-                </button>
-              )}
-              <button
-                type="button"
-                className={styles.rowButton}
-                aria-label="Add custom provider"
-                onClick={() => open("form")}
-              >
-                Add
-              </button>
-            </>
-          )}
-        </div>
-        {adding === "form" && (
-          <div className={styles.providerForm}>
-            <label className={styles.formLabel} htmlFor={`${id}-name`}>
-              Name
-            </label>
-            <input
-              id={`${id}-name`}
-              className={styles.textField}
-              // biome-ignore lint/a11y/noAutofocus: the form opens on Add or Edit
-              autoFocus
-              value={form.name}
-              onChange={(event) =>
-                setForm({ ...form, name: event.target.value })
-              }
-              onKeyDown={onEnter(saveForm)}
-            />
-            <label className={styles.formLabel} htmlFor={`${id}-url`}>
-              Base URL
-            </label>
-            <input
-              id={`${id}-url`}
-              className={styles.textField}
-              placeholder="http://localhost:11434/v1"
-              value={form.baseUrl}
-              onChange={(event) =>
-                setForm({ ...form, baseUrl: event.target.value })
-              }
-              onKeyDown={onEnter(saveForm)}
-            />
-            <label className={styles.formLabel} htmlFor={`${id}-key`}>
-              API key (optional)
-            </label>
-            <input
-              id={`${id}-key`}
-              className={styles.keyField}
-              type="password"
-              autoComplete="off"
-              placeholder={
-                custom && keys.custom
-                  ? "Leave empty to keep the saved key"
-                  : "Leave empty if not needed"
-              }
-              value={form.key}
-              onChange={(event) =>
-                setForm({ ...form, key: event.target.value })
-              }
-              onKeyDown={onEnter(saveForm)}
-            />
-            <p className={styles.formHint}>
-              OpenAI-compatible. The model list comes from GET /models.
-            </p>
-            <div className={styles.formButtons}>
-              <button
-                type="button"
-                className={styles.keySave}
-                onClick={() => setAdding(null)}
-              >
-                Cancel
-              </button>
-              <button
-                type="button"
-                className={styles.keySave}
-                disabled={busy}
-                onClick={saveForm}
-              >
-                Save
-              </button>
-            </div>
-          </div>
-        )}
-        {error && <p className={styles.menuError}>{error}</p>}
-      </div>
+      {error && <p className={styles.menuError}>{error}</p>}
     </div>
   );
 }

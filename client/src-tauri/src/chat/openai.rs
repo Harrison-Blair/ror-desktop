@@ -53,7 +53,7 @@ impl Endpoint {
         let code = status.as_u16();
         let text = match code {
             401 | 403 => {
-                format!("{label} refused the key (HTTP {code}). Check the key in the model menu.")
+                format!("{label} refused the key (HTTP {code}). Check the key in Settings.")
             }
             429 => format!("{label} is rate limiting requests (HTTP 429). Try again later."),
             _ => {

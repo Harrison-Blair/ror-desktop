@@ -355,29 +355,10 @@
   place-items: center;
 }
 
-.separator {
-  composes: separator from "@/components/ContextMenu/ContextMenu.module.css";
-}
-
-.keyForm {
-  display: flex;
-  flex-direction: column;
-  gap: var(--space-1);
-  padding: 0 var(--space-2) var(--space-1);
-  color: var(--ink);
-  font: 400 13px / 18px var(--font-sans);
-}
-
 .keyRow {
   display: flex;
   align-items: center;
   gap: var(--space-2);
-}
-
-.keyStatus {
-  margin-left: auto;
-  color: var(--ink-muted);
-  font-size: 12px;
 }
 
 .keyField {
@@ -426,73 +407,14 @@
   cursor: default;
 }
 
-.providerRow {
-  display: flex;
-  align-items: center;
-  gap: var(--space-2);
-  height: 28px;
-}
-
-.providerName {
-  min-width: 0;
-  overflow: hidden;
-  text-overflow: ellipsis;
-  white-space: nowrap;
-}
-
-.rowButton {
-  height: 24px;
-  padding: 0 var(--space-1);
-  color: var(--ink-muted);
-  font: 500 12px / 16px var(--font-sans);
-  background: transparent;
-  border: none;
-  border-radius: var(--radius-1);
-  cursor: pointer;
-}
-
-.rowButton:hover:enabled {
-  background: var(--well);
-}
-
-.rowButton:disabled,
 .keySave:disabled {
   opacity: 0.5;
   cursor: default;
 }
 
-.providerForm {
-  display: flex;
-  flex-direction: column;
-  gap: var(--space-1);
-  padding-bottom: var(--space-1);
-}
-
-.formLabel {
-  color: var(--ink-muted);
-  font: 500 12px / 16px var(--font-sans);
-}
-
 .textField {
   composes: keyField;
   font-family: var(--font-sans);
-}
-
-/* keyField grows along a row; in this column it keeps its height. */
-.providerForm > input {
-  flex: none;
-}
-
-.formHint {
-  margin: 0;
-  color: var(--ink-muted);
-  font: 400 12px / 16px var(--font-sans);
-}
-
-.formButtons {
-  display: flex;
-  justify-content: flex-end;
-  gap: var(--space-2);
 }
 
 .menu button:focus-visible,
@@ -502,4 +424,29 @@
 .textField:focus-visible {
   outline: 2px solid var(--focus);
   outline-offset: 2px;
+}
+
+.thinking {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  color: var(--ink-muted);
+  font: 400 12px / 16px var(--font-sans);
+}
+
+.spinner {
+  flex: none;
+  animation: spin 1s linear infinite;
+}
+
+@keyframes spin {
+  to {
+    transform: rotate(360deg);
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .spinner {
+    animation: none;
+  }
 }

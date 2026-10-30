@@ -7,7 +7,6 @@ import type { ChatEvent, Send } from "@/lib/chat/chatApi";
 import * as chatApi from "@/lib/chat/chatApi";
 import type { ToolCall } from "@/lib/chat/gate";
 import * as notesApi from "@/lib/notesApi";
-import { MISSING_TAVILY_KEY } from "@/lib/web.tools";
 import * as webApi from "@/lib/webApi";
 
 // The real tools run against a fake disk of note texts by path.
@@ -199,7 +198,10 @@ describe("chat tools in the app", () => {
       content: "No Tavily key is saved. The user must add a Tavily key.",
       isError: true,
     };
-    const toast = () => screen.queryByText(MISSING_TAVILY_KEY);
+    const toast = () =>
+      screen.queryByText(
+        "Add a Tavily key in Settings to let the chat search the web.",
+      );
 
     expect(await runTool("web_search", { query: "ogres" })).toEqual(missing);
     expect(toast()).toBeInTheDocument();

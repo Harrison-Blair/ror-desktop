@@ -67,7 +67,7 @@ pub async fn search(
     let Some(key) = key else {
         return Err(WebError {
             code: Code::MissingKey,
-            message: "No Tavily key is saved. The user must add a Tavily key in the chat's model menu before web_search can run.".to_string(),
+            message: "No Tavily key is saved. The user must add a Tavily key in Settings before web_search can run.".to_string(),
         });
     };
     if query.trim().is_empty() {
@@ -91,7 +91,7 @@ pub async fn search(
     let code = status.as_u16();
     if code == 401 || code == 403 {
         return Err(failed(format!(
-            "Tavily refused the key (HTTP {code}). The user can replace it in the model menu."
+            "Tavily refused the key (HTTP {code}). The user can replace it in Settings."
         )));
     }
     if !status.is_success() {
@@ -729,12 +729,32 @@ mod tests {
         let (url, seen) = serve(ok("application/json", "{}"));
         let error = search(&client(), &url, None, "ogres").await.unwrap_err();
         assert_eq!(error.code, Code::MissingKey);
-        assert!(
-            error.message.contains("must add a Tavily key"),
-            "{}",
-            error.message
+        assert_eq!(
+            error.message,
+            "No Tavily key is saved. The user must add a Tavily key in Settings before web_search can run."
         );
         assert!(seen.lock().unwrap().is_empty());
+    }
+
+    #[tokio::test]
+    async fn search_with_a_refused_key_sends_the_user_to_settings() {
+        for status in [401, 403] {
+            let (url, _) = serve(Answer {
+                status,
+                content_type: "application/json",
+                body: "{}".to_string(),
+                ..ok("", "")
+            });
+            let error = search(&client(), &url, Some("tvly-key".into()), "ogres")
+                .await
+                .unwrap_err();
+            assert_eq!(
+                error.message,
+                format!(
+                    "Tavily refused the key (HTTP {status}). The user can replace it in Settings."
+                )
+            );
+        }
     }
 
     #[tokio::test]

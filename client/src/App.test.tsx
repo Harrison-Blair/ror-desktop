@@ -20,6 +20,7 @@ vi.mock("@/lib/notesApi", () => ({
   getNotesFolder: async () => ({ path: "/notes", missing: null }),
   readNote: async (path: string) => disk[path] ?? `# ${path}`,
   writeNote: async (path: string, text: string) => {
+    await slowWrite;
     if (diskFull) throw { code: "io", message: "Disk full." };
     if (!(path in disk)) throw { code: "not_found", message: "Not found." };
     disk[path] = text;
@@ -46,7 +47,10 @@ let disk: Record<string, string> = {};
 // The texts in the folder that the picker switches to.
 let otherDisk: Record<string, string> = {};
 let diskFull = false;
+// A write waits for this.
+let slowWrite: Promise<void> | undefined;
 beforeEach(() => {
+  slowWrite = undefined;
   vi.clearAllMocks();
   notesList = [];
   disk = {};
@@ -84,28 +88,30 @@ describe("App frame", () => {
     ]);
   });
 
-  it("Settings is not a tab and clicking it shows a not-implemented error", async () => {
+  it("Settings is not a tab: it shows pressed while open, and no tab is selected", async () => {
     const user = renderApp();
     const settings = screen.getByRole("button", { name: "Settings" });
-    expect(settings).not.toHaveAttribute("aria-pressed");
+    expect(settings).toHaveAttribute("aria-pressed", "false");
 
     await user.click(settings);
 
+    expect(settings).toHaveAttribute("aria-pressed", "true");
     expect(
-      within(screen.getByRole("region", { name: "Notifications" })).getByRole(
-        "alert",
-      ),
-    ).toHaveTextContent("Settings is not implemented yet.");
+      screen.queryByRole("button", { name: "Notes", pressed: true }),
+    ).not.toBeInTheDocument();
     expect(
-      screen.getByRole("button", { name: "Notes", pressed: true }),
-    ).toBeInTheDocument();
-    expect(
-      screen.getByRole("region", { name: "Notes rail panel" }),
+      screen.getByRole("region", { name: "Settings rail panel" }),
     ).toBeInTheDocument();
     expect(
       screen.queryByRole("complementary", { name: "Dice" }),
     ).not.toBeInTheDocument();
-    expect(settings).not.toHaveAttribute("aria-pressed");
+
+    await user.click(settings);
+
+    expect(settings).toHaveAttribute("aria-pressed", "false");
+    expect(
+      screen.getByRole("button", { name: "Notes", pressed: true }),
+    ).toBeInTheDocument();
   });
 
   it("the Dice panel starts closed, and Dice opens and closes it", async () => {
@@ -313,6 +319,64 @@ describe("App frame", () => {
       EditorView.findFromDOM(
         await within(screen.getByRole("main")).findByRole("textbox", { name }),
       )?.state.doc.toString();
+
+    it("saves a pending edit when Settings opens, and shows the note again when it closes", async () => {
+      notesList = [{ kind: "file", name: "Ada.md", path: "Ada.md" }];
+      const user = await editAda();
+
+      await user.click(screen.getByRole("button", { name: "Settings" }));
+      await waitFor(() => expect(disk).toEqual({ "Ada.md": "Hello!" }));
+
+      await user.click(screen.getByRole("button", { name: "Settings" }));
+      expect(await shownText("Ada.md")).toBe("Hello!");
+    });
+
+    it("stays on the note, with its edit, when the edit can't be saved before Settings opens", async () => {
+      notesList = [{ kind: "file", name: "Ada.md", path: "Ada.md" }];
+      const user = await editAda();
+      diskFull = true;
+
+      await user.click(screen.getByRole("button", { name: "Settings" }));
+
+      expect(await toast().findByText("Disk full.")).toBeInTheDocument();
+      expect(screen.getByRole("button", { name: "Settings" })).toHaveAttribute(
+        "aria-pressed",
+        "false",
+      );
+      expect(
+        screen.queryByRole("heading", { name: "Providers and keys" }),
+      ).not.toBeInTheDocument();
+      expect(await shownText("Ada.md")).toBe("Hello!");
+
+      diskFull = false;
+      await user.click(screen.getByRole("button", { name: "Settings" }));
+      expect(
+        await screen.findByRole("heading", { name: "Providers and keys" }),
+      ).toBeInTheDocument();
+      expect(disk).toEqual({ "Ada.md": "Hello!" });
+    });
+
+    it("does not open Settings after a slow save when another rail button was clicked meanwhile", async () => {
+      notesList = [{ kind: "file", name: "Ada.md", path: "Ada.md" }];
+      const user = await editAda();
+      let finish = () => {};
+      slowWrite = new Promise((resolve) => {
+        finish = resolve;
+      });
+
+      await user.click(screen.getByRole("button", { name: "Settings" }));
+      await user.click(screen.getByRole("button", { name: "Notes" }));
+      await act(async () => finish());
+      await waitFor(() => expect(disk).toEqual({ "Ada.md": "Hello!" }));
+
+      expect(screen.getByRole("button", { name: "Settings" })).toHaveAttribute(
+        "aria-pressed",
+        "false",
+      );
+      expect(
+        screen.queryByRole("heading", { name: "Providers and keys" }),
+      ).not.toBeInTheDocument();
+    });
 
     it("keeps an edit made just before a rename", async () => {
       notesList = [{ kind: "file", name: "Ada.md", path: "Ada.md" }];
