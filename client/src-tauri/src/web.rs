@@ -729,12 +729,32 @@ mod tests {
         let (url, seen) = serve(ok("application/json", "{}"));
         let error = search(&client(), &url, None, "ogres").await.unwrap_err();
         assert_eq!(error.code, Code::MissingKey);
-        assert!(
-            error.message.contains("must add a Tavily key"),
-            "{}",
-            error.message
+        assert_eq!(
+            error.message,
+            "No Tavily key is saved. The user must add a Tavily key in Settings before web_search can run."
         );
         assert!(seen.lock().unwrap().is_empty());
+    }
+
+    #[tokio::test]
+    async fn search_with_a_refused_key_sends_the_user_to_settings() {
+        for status in [401, 403] {
+            let (url, _) = serve(Answer {
+                status,
+                content_type: "application/json",
+                body: "{}".to_string(),
+                ..ok("", "")
+            });
+            let error = search(&client(), &url, Some("tvly-key".into()), "ogres")
+                .await
+                .unwrap_err();
+            assert_eq!(
+                error.message,
+                format!(
+                    "Tavily refused the key (HTTP {status}). The user can replace it in Settings."
+                )
+            );
+        }
     }
 
     #[tokio::test]

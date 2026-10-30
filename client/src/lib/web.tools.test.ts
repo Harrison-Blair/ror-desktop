@@ -1,11 +1,7 @@
 import { beforeEach, describe, expect, it, vi } from "vitest";
 import { type ApprovalRequest, runToolCall } from "@/lib/chat/gate";
 import { type ToolContext, ToolRegistry } from "@/lib/chat/registry";
-import {
-  MISSING_TAVILY_KEY,
-  webFetchTool,
-  webSearchTool,
-} from "@/lib/web.tools";
+import { webFetchTool, webSearchTool } from "@/lib/web.tools";
 import * as webApi from "@/lib/webApi";
 
 vi.mock("@/lib/webApi", () => ({
@@ -91,6 +87,8 @@ describe("the web tools in Manual mode", () => {
     });
     const { output } = run("web_search", { query: "ogres" }, () => false);
     expect(await output).toEqual({ content: "No key", isError: true });
-    expect(context.notifyOnce).toHaveBeenCalledWith(MISSING_TAVILY_KEY);
+    expect(context.notifyOnce).toHaveBeenCalledWith(
+      "Add a Tavily key in Settings to let the chat search the web.",
+    );
   });
 });
