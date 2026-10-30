@@ -5,7 +5,7 @@ import type { Tool } from "@/lib/chat/registry";
 import { type WebError, webFetch, webSearch } from "@/lib/webApi";
 
 export const MISSING_TAVILY_KEY =
-  "Add a Tavily key in the chat's model menu to let the chat search the web.";
+  "Add a Tavily key in Settings to let the chat search the web.";
 
 const isWebError = (e: unknown): e is WebError =>
   typeof e === "object" && e !== null && "code" in e && "message" in e;

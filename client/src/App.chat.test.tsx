@@ -394,7 +394,7 @@ describe("Chat panel", () => {
       screen.getByRole("textbox", { name: "Message" }),
       "Hi{Enter}",
     );
-    const message = "Add an OpenCode Go key in the model menu.";
+    const message = "Add an OpenCode Go key in Settings.";
     emit({
       type: "message",
       message: { role: "notice", level: "error", text: message },

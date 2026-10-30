@@ -67,7 +67,7 @@ pub async fn search(
     let Some(key) = key else {
         return Err(WebError {
             code: Code::MissingKey,
-            message: "No Tavily key is saved. The user must add a Tavily key in the chat's model menu before web_search can run.".to_string(),
+            message: "No Tavily key is saved. The user must add a Tavily key in Settings before web_search can run.".to_string(),
         });
     };
     if query.trim().is_empty() {
@@ -91,7 +91,7 @@ pub async fn search(
     let code = status.as_u16();
     if code == 401 || code == 403 {
         return Err(failed(format!(
-            "Tavily refused the key (HTTP {code}). The user can replace it in the model menu."
+            "Tavily refused the key (HTTP {code}). The user can replace it in Settings."
         )));
     }
     if !status.is_success() {

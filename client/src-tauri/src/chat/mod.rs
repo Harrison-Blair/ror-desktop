@@ -189,7 +189,7 @@ fn endpoint(
         BackendId::OpencodeGo => {
             let Some(api_key) = api_key else {
                 return Err(format!(
-                    "Add an {} key in the model menu.",
+                    "Add an {} key in Settings.",
                     openai::OPENCODE_GO_LABEL
                 ));
             };
@@ -198,7 +198,7 @@ fn endpoint(
         }
         BackendId::Custom => {
             let Some(custom) = custom else {
-                return Err("Add a custom provider in the model menu.".to_string());
+                return Err("Add a custom provider in Settings.".to_string());
             };
             (
                 custom.base_url,
@@ -629,7 +629,7 @@ pub async fn chat_send(
     } else {
         match endpoint_for(&app, &state, backend, &model, Some(turn.chat.id.clone())).await {
             Ok(endpoint) => agent::answer(&Backend::OpenAi(endpoint), &mut turn, &host).await,
-            // A missing key or provider: the user must fix it in the model menu.
+            // A missing key or provider: the user must fix it in Settings.
             Err(message) => {
                 turn.notice(&host, NoticeLevel::Error, &message);
                 host.emit(ChatEvent::Toast { message });

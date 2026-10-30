@@ -408,7 +408,7 @@ async fn provider_errors_end_the_turn_with_an_error_line_and_no_key() {
         (
             401,
             format!(r#"{{"error":{{"message":"bad key {KEY}"}}}}"#),
-            "Fake refused the key (HTTP 401). Check the key in the model menu.",
+            "Fake refused the key (HTTP 401). Check the key in Settings.",
         ),
         (
             429,
@@ -875,11 +875,11 @@ fn an_endpoint_needs_its_key_or_provider() {
     };
     assert_eq!(
         error(BackendId::OpencodeGo, Some(ollama("http://x"))),
-        "Add an OpenCode Go key in the model menu."
+        "Add an OpenCode Go key in Settings."
     );
     assert_eq!(
         error(BackendId::Custom, None),
-        "Add a custom provider in the model menu."
+        "Add a custom provider in Settings."
     );
 }
 
