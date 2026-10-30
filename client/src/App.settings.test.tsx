@@ -430,53 +430,77 @@ describe("Settings", () => {
     return () => act(() => release());
   };
 
-  it("a slow first load does not bring back the provider a save replaced", async () => {
+  it("Save waits for a slow first load, which fills only the untouched fields", async () => {
     custom = { name: "Old", baseUrl: "http://old/v1" };
     customModels = [];
+    const release = slowFirstKeyRead();
+    const user = await openSettings();
+    const form = section("Custom provider");
+    const save = within(form).getByRole("button", {
+      name: "Save custom provider",
+    });
+    await user.type(within(form).getByLabelText("Name"), "New{Enter}");
+    expect(save).toBeDisabled();
+    await user.click(save);
+    expect(api.saveCustomProvider).not.toHaveBeenCalled();
+
+    await release();
+    await vi.waitFor(() => expect(save).toBeEnabled());
+    expect(within(form).getByLabelText("Name")).toHaveValue("New");
+    expect(within(form).getByLabelText("Base URL")).toHaveValue(
+      "http://old/v1",
+    );
+    await user.click(save);
+    expect(api.saveCustomProvider).toHaveBeenCalledWith(
+      "New",
+      "http://old/v1",
+      null,
+    );
+  });
+
+  it("keeps the typed provider when a save pressed during a slow first load fails", async () => {
+    custom = { name: "Old", baseUrl: "http://old/v1" };
+    customModels = [];
+    let fail = () => {};
+    api.saveCustomProvider.mockImplementationOnce(
+      () =>
+        new Promise((_, reject) => {
+          fail = () => reject("keychain locked");
+        }),
+    );
     const release = slowFirstKeyRead();
     const user = await openSettings();
     const form = section("Custom provider");
     await user.type(within(form).getByLabelText("Name"), "New");
     await user.type(within(form).getByLabelText("Base URL"), "http://new/v1");
+    await user.type(within(form).getByLabelText("API key (optional)"), "sk-9");
     await user.click(
       within(form).getByRole("button", { name: "Save custom provider" }),
     );
-    expect(
-      await within(form).findByRole("button", {
-        name: "Remove custom provider",
-      }),
-    ).toBeInTheDocument();
-    expect(within(form).getByLabelText("Name")).toHaveValue("New");
-
     await release();
     await act(async () => {});
+    expect(within(form).getByLabelText("Name")).toHaveValue("New");
+
+    // Save works once the load has ended; its failure keeps the typing.
+    await user.click(
+      within(form).getByRole("button", { name: "Save custom provider" }),
+    );
+    expect(api.saveCustomProvider).toHaveBeenCalledWith(
+      "New",
+      "http://new/v1",
+      "sk-9",
+    );
+    await act(async () => fail());
+    expect(
+      await within(form).findByText("keychain locked"),
+    ).toBeInTheDocument();
+
     expect(within(form).getByLabelText("Name")).toHaveValue("New");
     expect(within(form).getByLabelText("Base URL")).toHaveValue(
       "http://new/v1",
     );
-    expect(within(form).queryByText("Old")).not.toBeInTheDocument();
-  });
-
-  it("a failed save during a slow first load still shows the saved provider in the untouched fields", async () => {
-    custom = { name: "Old", baseUrl: "http://old/v1" };
-    customModels = [];
-    api.saveCustomProvider.mockImplementationOnce(async () => {
-      throw "disk full";
-    });
-    const release = slowFirstKeyRead();
-    const user = await openSettings();
-    const form = section("Custom provider");
-    await user.type(within(form).getByLabelText("Name"), "New");
-    await user.click(
-      within(form).getByRole("button", { name: "Save custom provider" }),
-    );
-    expect(await within(form).findByText("disk full")).toBeInTheDocument();
-    await release();
-    await act(async () => {});
-
-    expect(within(form).getByLabelText("Name")).toHaveValue("New");
-    expect(within(form).getByLabelText("Base URL")).toHaveValue(
-      "http://old/v1",
+    expect(within(form).getByLabelText("API key (optional)")).toHaveValue(
+      "sk-9",
     );
   });
 
