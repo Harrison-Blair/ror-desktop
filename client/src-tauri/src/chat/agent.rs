@@ -137,4 +137,57 @@ impl Backend {
             Backend::OpenAi(endpoint) => openai::run_turn(endpoint, turn, host).await,
         }
     }
+
+    /// A short title for the chat from its first exchange, and the tokens
+    /// the request used. Uses no tools.
+    pub async fn title(&self, chat: &Chat) -> Result<(String, Usage), String> {
+        match self {
+            Backend::OpenAi(endpoint) => openai::title(endpoint, chat).await,
+        }
+    }
+}
+
+// Whether a turn in the chat ended with the model's answer. A turn that
+// failed or stopped ends with a notice, even when it saved some text.
+fn has_answered_turn(chat: &Chat) -> bool {
+    let messages = &chat.messages;
+    messages.iter().enumerate().any(|(i, message)| {
+        matches!(message, Message::Assistant { .. })
+            && matches!(messages.get(i + 1), None | Some(Message::User { .. }))
+    })
+}
+
+/// Runs the turn. When it is the chat's first turn that ends with an
+/// answer, the chat is titled.
+pub async fn answer(backend: &Backend, turn: &mut Turn<'_>, host: &impl TurnHost) -> TurnEnd {
+    let answered = has_answered_turn(turn.chat);
+    let end = backend.run_turn(turn, host).await;
+    if end == TurnEnd::Done && !answered && has_answered_turn(turn.chat) {
+        auto_title(backend, turn, host).await;
+    }
+    end
+}
+
+// A chat the user renamed keeps its name, and a failed request keeps the
+// title it had.
+async fn auto_title(backend: &Backend, turn: &mut Turn<'_>, host: &impl TurnHost) {
+    if turn.chat.renamed {
+        return;
+    }
+    let cancel = turn.cancel.clone();
+    let result = tokio::select! {
+        biased;
+        () = cancel.cancelled() => return,
+        result = backend.title(turn.chat) => result,
+    };
+    let Ok((title, usage)) = result else {
+        return;
+    };
+    turn.chat.title = title;
+    turn.chat.usage.input_tokens += usage.input_tokens;
+    turn.chat.usage.output_tokens += usage.output_tokens;
+    host.emit(ChatEvent::Usage {
+        usage: turn.chat.usage,
+    });
+    host.save(turn.chat);
 }

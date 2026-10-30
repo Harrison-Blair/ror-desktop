@@ -2,7 +2,7 @@
 // It streams each reply and runs the model's tool calls between requests.
 
 use super::agent::{ChatEvent, Turn, TurnEnd, TurnHost, MAX_TOOL_CALLS, STOPPED};
-use super::store::{Message, NoticeLevel, ToolCall};
+use super::store::{Chat, Message, NoticeLevel, ToolCall, Usage};
 use serde_json::{json, Value};
 use std::time::Duration;
 
@@ -290,6 +290,83 @@ async fn stream_reply(
         "{} ended the reply before it was complete.",
         endpoint.label
     ))
+}
+
+const TITLE_PROMPT: &str = "Write a title of at most 6 words for this conversation. \
+Reply with the title only, without quotes.";
+const TITLE_WORDS: usize = 6;
+const TITLE_LENGTH: usize = 60;
+// Enough of each message to say what the chat is about.
+const TITLE_CONTEXT: usize = 2000;
+
+// The first line of the model's answer, without quotes or Markdown marks,
+// cut to the word and length limits. Not redacted: the provider already holds
+// the key, so its echo of the key is outside the threat model.
+fn clean_title(text: &str) -> Option<String> {
+    let line = text.lines().map(str::trim).find(|l| !l.is_empty())?;
+    let line = line
+        .trim_start_matches(['#', '*', '_', ' '])
+        .trim_matches(['"', '\'', '*', '_', '`', '“', '”', ' ']);
+    let words = line.split_whitespace().take(TITLE_WORDS);
+    let title: String = words.collect::<Vec<_>>().join(" ");
+    let title: String = title.chars().take(TITLE_LENGTH).collect();
+    let title = title.trim_end_matches(['.', ',', ':', ';', ' ']);
+    (!title.is_empty()).then(|| title.to_string())
+}
+
+/// Asks the chat's model for a short title for its first exchange, in one
+/// request without tools.
+pub async fn title(endpoint: &Endpoint, chat: &Chat) -> Result<(String, Usage), String> {
+    let cut = |text: Option<&String>| -> String {
+        text.map(|t| t.chars().take(TITLE_CONTEXT).collect())
+            .unwrap_or_default()
+    };
+    // The first question and the answer that just ended the turn.
+    let user = cut(chat.messages.iter().find_map(|m| match m {
+        Message::User { text } => Some(text),
+        _ => None,
+    }));
+    let assistant = cut(chat.messages.iter().rev().find_map(|m| match m {
+        Message::Assistant { text, .. } if !text.is_empty() => Some(text),
+        _ => None,
+    }));
+    let body = json!({
+        "model": endpoint.model,
+        "messages": [
+            { "role": "system", "content": TITLE_PROMPT },
+            { "role": "user", "content": format!("User: {user}\n\nAssistant: {assistant}") },
+        ],
+        "stream": false,
+    });
+    let mut request = endpoint
+        .client
+        .post(endpoint.url("chat/completions"))
+        .bearer_auth(&endpoint.api_key);
+    if let Some(session) = &endpoint.session {
+        request = request.header("x-opencode-session", session);
+    }
+    let response = request
+        .header(reqwest::header::CONTENT_TYPE, "application/json")
+        .body(body.to_string())
+        .send()
+        .await
+        .map_err(|e| endpoint.send_error(&e))?;
+    let status = response.status();
+    let text = response.text().await.map_err(|e| endpoint.send_error(&e))?;
+    if !status.is_success() {
+        return Err(endpoint.http_error(status, &text));
+    }
+    let value: Value = serde_json::from_str(&text)
+        .map_err(|_| format!("{} sent a title that isn't JSON.", endpoint.label))?;
+    let title = value["choices"][0]["message"]["content"]
+        .as_str()
+        .and_then(clean_title)
+        .ok_or_else(|| format!("{} sent no title.", endpoint.label))?;
+    let usage = Usage {
+        input_tokens: value["usage"]["prompt_tokens"].as_u64().unwrap_or(0),
+        output_tokens: value["usage"]["completion_tokens"].as_u64().unwrap_or(0),
+    };
+    Ok((title, usage))
 }
 
 const NOT_RUN_STOPPED: &str = "Not run: the user stopped the turn.";

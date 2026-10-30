@@ -28,6 +28,9 @@ pub struct Chat {
     pub model: String,
     #[serde(default)]
     pub archived: bool,
+    /// The user named the chat, so it is never titled for them.
+    #[serde(default)]
+    pub renamed: bool,
     pub messages: Vec<Message>,
     #[serde(default)]
     pub usage: Usage,
@@ -108,13 +111,15 @@ impl Chat {
             backend,
             model: model.to_string(),
             archived: false,
+            renamed: false,
             messages: Vec::new(),
             usage: Usage::default(),
         }
     }
 
     pub fn push(&mut self, message: Message) {
-        // Until wave 4 names chats, the first line of the first message does.
+        // The first line of the first message names the chat until it is
+        // titled.
         if let (true, Message::User { text }) = (self.title.is_empty(), &message) {
             let line = text.lines().next().unwrap_or("").trim();
             self.title = line.chars().take(TITLE_LENGTH).collect();
@@ -170,12 +175,11 @@ pub fn load(dir: &Path, id: &str) -> io::Result<Chat> {
     serde_json::from_str(&text).map_err(|e| io::Error::new(io::ErrorKind::InvalidData, e))
 }
 
-/// The most recently updated chat that is not archived. Files that can't be
-/// read are skipped.
-pub fn latest(dir: &Path) -> io::Result<Option<Chat>> {
+// Every chat in `dir` that can be read. Files that can't be read are skipped.
+fn scan(dir: &Path) -> io::Result<Vec<Chat>> {
     let entries = match fs::read_dir(dir) {
         Ok(entries) => entries,
-        Err(e) if e.kind() == io::ErrorKind::NotFound => return Ok(None),
+        Err(e) if e.kind() == io::ErrorKind::NotFound => return Ok(Vec::new()),
         Err(e) => return Err(e),
     };
     Ok(entries
@@ -186,8 +190,87 @@ pub fn latest(dir: &Path) -> io::Result<Option<Chat>> {
             }
             serde_json::from_str::<Chat>(&fs::read_to_string(path).ok()?).ok()
         })
+        .collect())
+}
+
+/// The most recently updated chat that is not archived. Files that can't be
+/// read are skipped.
+pub fn latest(dir: &Path) -> io::Result<Option<Chat>> {
+    Ok(scan(dir)?
+        .into_iter()
         .filter(|chat| !chat.archived)
         .max_by_key(|chat| chat.updated_at))
+}
+
+/// A chat as the history list shows it.
+#[derive(Clone, Debug, PartialEq, Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct ChatSummary {
+    pub id: String,
+    pub title: String,
+    pub updated_at: u64,
+    pub archived: bool,
+}
+
+// Whether the title or the text of a user or assistant message contains
+// `query`, which is already lowercase.
+fn matches(chat: &Chat, query: &str) -> bool {
+    let has = |text: &str| text.to_lowercase().contains(query);
+    has(&chat.title)
+        || chat.messages.iter().any(|message| match message {
+            Message::User { text } | Message::Assistant { text, .. } => has(text),
+            _ => false,
+        })
+}
+
+/// The archived chats, or the others, newest first. A query that isn't
+/// empty keeps only the chats whose title or messages contain it, in any
+/// case.
+pub fn list(dir: &Path, archived: bool, query: &str) -> io::Result<Vec<ChatSummary>> {
+    let query = query.trim().to_lowercase();
+    let mut chats: Vec<ChatSummary> = scan(dir)?
+        .into_iter()
+        .filter(|chat| chat.archived == archived && matches(chat, &query))
+        .map(|chat| ChatSummary {
+            id: chat.id,
+            title: chat.title,
+            updated_at: chat.updated_at,
+            archived: chat.archived,
+        })
+        .collect();
+    chats.sort_by_key(|chat| std::cmp::Reverse(chat.updated_at));
+    Ok(chats)
+}
+
+// Loads chat `id`, changes it and saves it again.
+fn change(dir: &Path, id: &str, apply: impl FnOnce(&mut Chat)) -> io::Result<()> {
+    let mut chat = load(dir, id)?;
+    apply(&mut chat);
+    save(dir, &chat)
+}
+
+/// Names the chat for the user. It is never titled for them after this.
+pub fn rename(dir: &Path, id: &str, title: &str) -> io::Result<()> {
+    let title = title.trim();
+    if title.is_empty() {
+        return Err(io::Error::new(
+            io::ErrorKind::InvalidInput,
+            "A chat needs a name.",
+        ));
+    }
+    change(dir, id, |chat| {
+        chat.title = title.to_string();
+        chat.renamed = true;
+    })
+}
+
+pub fn set_archived(dir: &Path, id: &str, archived: bool) -> io::Result<()> {
+    change(dir, id, |chat| chat.archived = archived)
+}
+
+/// Removes the chat's file.
+pub fn delete(dir: &Path, id: &str) -> io::Result<()> {
+    fs::remove_file(chat_file(dir, id)?)
 }
 
 #[cfg(test)]
@@ -363,5 +446,163 @@ mod tests {
         let mut chat = chat_with_everything();
         chat.id = "../escape".into();
         assert!(save(temp.path(), &chat).is_err());
+    }
+
+    // A chat updated at `at`, with one user and one assistant message.
+    fn saved_chat(dir: &Path, at: u64, user: &str, assistant: &str) -> Chat {
+        let mut chat = Chat::new(BackendId::OpencodeGo, "glm-5.3");
+        chat.push(Message::User { text: user.into() });
+        chat.push(Message::Assistant {
+            text: assistant.into(),
+            reasoning: String::new(),
+            tool_calls: Vec::new(),
+        });
+        chat.updated_at = at;
+        save(dir, &chat).unwrap();
+        chat
+    }
+
+    fn ids(list: &[ChatSummary]) -> Vec<&str> {
+        list.iter().map(|chat| chat.id.as_str()).collect()
+    }
+
+    #[test]
+    fn list_shows_the_chats_newest_first_without_the_archived_ones() {
+        let temp = tempfile::tempdir().unwrap();
+        assert_eq!(list(&temp.path().join("none"), false, "").unwrap(), vec![]);
+        let old = saved_chat(temp.path(), 10, "The ogre", "It snarls.");
+        let new = saved_chat(temp.path(), 30, "The dragon", "It sleeps.");
+        let mut gone = saved_chat(temp.path(), 20, "The lich", "It waits.");
+        gone.archived = true;
+        save(temp.path(), &gone).unwrap();
+        fs::write(temp.path().join("broken.json"), "{").unwrap();
+
+        let chats = list(temp.path(), false, "").unwrap();
+        assert_eq!(
+            chats,
+            vec![
+                ChatSummary {
+                    id: new.id.clone(),
+                    title: "The dragon".into(),
+                    updated_at: 30,
+                    archived: false,
+                },
+                ChatSummary {
+                    id: old.id.clone(),
+                    title: "The ogre".into(),
+                    updated_at: 10,
+                    archived: false,
+                },
+            ]
+        );
+        assert_eq!(ids(&list(temp.path(), true, "").unwrap()), vec![gone.id]);
+    }
+
+    #[test]
+    fn search_matches_titles_and_message_text_in_any_case() {
+        let temp = tempfile::tempdir().unwrap();
+        let ogre = saved_chat(temp.path(), 10, "The Ogre camp", "Three guards.");
+        let dragon = saved_chat(temp.path(), 20, "The dragon", "It hoards GOLD.");
+        let mut lich = saved_chat(temp.path(), 30, "The lich", "Gold and ogre bones.");
+        lich.archived = true;
+        save(temp.path(), &lich).unwrap();
+
+        // The title, case-insensitive.
+        assert_eq!(
+            ids(&list(temp.path(), false, "ogre").unwrap()),
+            vec![&ogre.id]
+        );
+        // The user's message text.
+        assert_eq!(
+            ids(&list(temp.path(), false, "CAMP").unwrap()),
+            vec![&ogre.id]
+        );
+        // The assistant's message text.
+        assert_eq!(
+            ids(&list(temp.path(), false, " gold ").unwrap()),
+            vec![&dragon.id]
+        );
+        // Only archived chats in the archived view.
+        assert_eq!(
+            ids(&list(temp.path(), true, "gold").unwrap()),
+            vec![&lich.id]
+        );
+        assert_eq!(list(temp.path(), false, "kobold").unwrap(), vec![]);
+    }
+
+    #[test]
+    fn search_skips_tool_results_and_notices() {
+        let temp = tempfile::tempdir().unwrap();
+        let mut chat = saved_chat(temp.path(), 10, "Roll", "Rolling.");
+        chat.push(Message::Tool {
+            call_id: "call_1".into(),
+            name: "dice_roll".into(),
+            content: "natural twenty".into(),
+            is_error: false,
+        });
+        chat.push(Message::Notice {
+            level: NoticeLevel::Error,
+            text: "Rate limited.".into(),
+        });
+        save(temp.path(), &chat).unwrap();
+        assert_eq!(list(temp.path(), false, "twenty").unwrap(), vec![]);
+        assert_eq!(list(temp.path(), false, "limited").unwrap(), vec![]);
+    }
+
+    #[test]
+    fn rename_sets_the_title_and_marks_the_chat_renamed() {
+        let temp = tempfile::tempdir().unwrap();
+        let chat = saved_chat(temp.path(), 10, "The ogre", "It snarls.");
+        rename(temp.path(), &chat.id, "  Ogre ambush ").unwrap();
+        let renamed = load(temp.path(), &chat.id).unwrap();
+        assert_eq!(renamed.title, "Ogre ambush");
+        assert!(renamed.renamed);
+        assert_eq!(renamed.messages, chat.messages);
+
+        assert!(rename(temp.path(), &chat.id, "   ").is_err());
+        assert_eq!(load(temp.path(), &chat.id).unwrap().title, "Ogre ambush");
+    }
+
+    #[test]
+    fn archive_and_unarchive_move_a_chat_between_the_lists() {
+        let temp = tempfile::tempdir().unwrap();
+        let chat = saved_chat(temp.path(), 10, "The ogre", "It snarls.");
+        set_archived(temp.path(), &chat.id, true).unwrap();
+        assert!(load(temp.path(), &chat.id).unwrap().archived);
+        assert_eq!(list(temp.path(), false, "").unwrap(), vec![]);
+        assert_eq!(ids(&list(temp.path(), true, "").unwrap()), vec![&chat.id]);
+        assert_eq!(latest(temp.path()).unwrap(), None);
+
+        set_archived(temp.path(), &chat.id, false).unwrap();
+        assert_eq!(ids(&list(temp.path(), false, "").unwrap()), vec![&chat.id]);
+        assert_eq!(list(temp.path(), true, "").unwrap(), vec![]);
+    }
+
+    #[test]
+    fn delete_removes_only_that_chat_file() {
+        let temp = tempfile::tempdir().unwrap();
+        let gone = saved_chat(temp.path(), 10, "The ogre", "It snarls.");
+        let kept = saved_chat(temp.path(), 20, "The dragon", "It sleeps.");
+        delete(temp.path(), &gone.id).unwrap();
+        assert!(load(temp.path(), &gone.id).is_err());
+        assert_eq!(ids(&list(temp.path(), false, "").unwrap()), vec![&kept.id]);
+        assert!(delete(temp.path(), &gone.id).is_err());
+    }
+
+    #[test]
+    fn history_commands_refuse_ids_that_are_not_uuids() {
+        let temp = tempfile::tempdir().unwrap();
+        // A file the ids below would reach if they were used as paths.
+        fs::write(temp.path().join("target.json"), "{}").unwrap();
+        for id in ["../target", "target", ""] {
+            assert!(rename(temp.path(), id, "Name").is_err(), "{id}");
+            assert!(set_archived(temp.path(), id, true).is_err(), "{id}");
+            assert!(delete(temp.path(), id).is_err(), "{id}");
+        }
+        assert!(temp.path().join("target.json").exists());
+        assert_eq!(
+            fs::read_to_string(temp.path().join("target.json")).unwrap(),
+            "{}"
+        );
     }
 }

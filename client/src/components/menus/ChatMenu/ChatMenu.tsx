@@ -23,6 +23,7 @@ import { useToast } from "@/components/Toast/Toast";
 import type { Message } from "@/lib/chat/chatApi";
 import type { ToolCall } from "@/lib/chat/gate";
 import { openWebLink } from "@/lib/linksApi";
+import { ChatHistory } from "./ChatHistory";
 import styles from "./ChatMenu.module.css";
 import { ModelMenu } from "./ModelMenu";
 import type { ChatController, PendingApproval } from "./useChat";
@@ -39,9 +40,11 @@ const formatTokens = (n: number) =>
 
 // The header buttons of the chat panel.
 export function ChatMenuActions({
+  historyOpen,
   onHistory,
   onNewChat,
 }: {
+  historyOpen: boolean;
   onHistory: () => void;
   onNewChat: () => void;
 }) {
@@ -51,6 +54,7 @@ export function ChatMenuActions({
         type="button"
         className={styles.headerButton}
         aria-label="Chat history"
+        aria-pressed={historyOpen}
         onClick={onHistory}
       >
         <History size={16} strokeWidth={1.75} aria-hidden />
@@ -257,7 +261,7 @@ function Composer({ chat }: { chat: ChatController }) {
 
   const submit = (event?: FormEvent) => {
     event?.preventDefault();
-    if (chat.running || text.trim() === "") return;
+    if (chat.running || chat.busy || text.trim() === "") return;
     if (chat.model === null) {
       notify({ kind: "error", message: "Choose a model first." });
       setMenuOpen(true);
@@ -353,7 +357,12 @@ function Composer({ chat }: { chat: ChatController }) {
             <Square size={14} strokeWidth={1.75} aria-hidden />
           </button>
         ) : (
-          <button type="submit" className={styles.sendButton} aria-label="Send">
+          <button
+            type="submit"
+            className={styles.sendButton}
+            aria-label="Send"
+            disabled={chat.busy}
+          >
             <ArrowUp size={16} strokeWidth={1.75} aria-hidden />
           </button>
         )}
@@ -365,8 +374,14 @@ function Composer({ chat }: { chat: ChatController }) {
 export function ChatMenu({ chat }: { chat: ChatController }) {
   return (
     <div className={styles.menu}>
-      <Thread chat={chat} />
-      <Composer chat={chat} />
+      {chat.historyOpen ? (
+        <ChatHistory chat={chat} />
+      ) : (
+        <>
+          <Thread chat={chat} />
+          <Composer chat={chat} />
+        </>
+      )}
     </div>
   );
 }
