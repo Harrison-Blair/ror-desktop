@@ -9,7 +9,7 @@ use std::fmt;
 use std::net::{IpAddr, Ipv4Addr, SocketAddr, ToSocketAddrs};
 use std::sync::{Arc, LazyLock};
 use std::time::Duration;
-use tauri::State;
+use tauri::{AppHandle, State};
 
 pub const TAVILY_URL: &str = "https://api.tavily.com/search";
 /// The most results a search returns.
@@ -584,10 +584,11 @@ fn decode_entities(text: &str) -> String {
 
 #[tauri::command]
 pub async fn web_search(
+    app: AppHandle,
     state: State<'_, ChatState>,
     query: String,
 ) -> Result<Vec<SearchResult>, WebError> {
-    let key = chat::key("tavily").await.map_err(failed)?;
+    let key = chat::key(&app, "tavily").await.map_err(failed)?;
     search(state.client(), TAVILY_URL, key, &query).await
 }
 

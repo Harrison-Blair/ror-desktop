@@ -54,7 +54,7 @@ export type ChatSettings = {
   permissionMode: PermissionMode;
 };
 
-// The providers that hold a key in the system keychain.
+// The providers that hold a key in the key file.
 export type KeyProvider = "opencode-go" | "tavily";
 
 export const getChatSettings = () => invoke<ChatSettings>("chat_settings");

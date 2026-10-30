@@ -80,7 +80,9 @@ describe("Settings", () => {
       within(page()).getByRole("heading", { name: "Providers and keys" }),
     ).toBeInTheDocument();
     expect(
-      within(page()).getByText(/Keys are kept in the system keychain/),
+      within(page()).getByText(
+        /Keys are kept in a file in the app config folder/,
+      ),
     ).toBeInTheDocument();
     expect(screen.getByRole("button", { name: "Settings" })).toHaveAttribute(
       "aria-pressed",

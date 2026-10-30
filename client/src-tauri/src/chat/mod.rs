@@ -159,7 +159,11 @@ fn config_file(app: &AppHandle) -> Result<PathBuf, String> {
     crate::config_file(app).map_err(|e| e.to_string())
 }
 
-/// The keychain entry of each backend's key. Codex uses `codex login`.
+fn keys_file(app: &AppHandle) -> Result<PathBuf, String> {
+    crate::keys_file(app).map_err(|e| e.to_string())
+}
+
+/// The key file entry of each backend's key. Codex uses `codex login`.
 fn key_provider(backend: BackendId) -> Option<&'static str> {
     match backend {
         BackendId::OpencodeGo => Some("opencode-go"),
@@ -167,9 +171,10 @@ fn key_provider(backend: BackendId) -> Option<&'static str> {
     }
 }
 
-// Reads the key off the main thread: the keychain may ask the user to unlock.
-pub async fn key(provider: &'static str) -> Result<Option<String>, String> {
-    tauri::async_runtime::spawn_blocking(move || secrets::get(provider))
+// Reads the key file off the main thread.
+pub async fn key(app: &AppHandle, provider: &'static str) -> Result<Option<String>, String> {
+    let file = keys_file(app)?;
+    tauri::async_runtime::spawn_blocking(move || secrets::get(&file, provider))
         .await
         .map_err(|e| e.to_string())?
 }
@@ -207,13 +212,14 @@ fn endpoint(
 }
 
 async fn endpoint_for(
+    app: &AppHandle,
     state: &ChatState,
     backend: BackendId,
     model: &str,
     session: Option<String>,
 ) -> Result<openai::Endpoint, String> {
     let api_key = match key_provider(backend) {
-        Some(provider) => key(provider).await?,
+        Some(provider) => key(app, provider).await?,
         None => None,
     };
     endpoint(&state.client, backend, api_key, model, session)
@@ -254,23 +260,28 @@ pub fn chat_set_permission_mode(app: AppHandle, mode: PermissionMode) -> Result<
 
 /// Whether a key is saved for the provider. The key itself never leaves Rust.
 #[tauri::command]
-pub async fn key_saved(provider: String) -> Result<bool, String> {
-    tauri::async_runtime::spawn_blocking(move || secrets::get(&provider).map(|k| k.is_some()))
+pub async fn key_saved(app: AppHandle, provider: String) -> Result<bool, String> {
+    let file = keys_file(&app)?;
+    tauri::async_runtime::spawn_blocking(move || {
+        secrets::get(&file, &provider).map(|k| k.is_some())
+    })
+    .await
+    .map_err(|e| e.to_string())?
+}
+
+#[tauri::command]
+pub async fn key_save(app: AppHandle, provider: String, key: String) -> Result<(), String> {
+    let file = keys_file(&app)?;
+    tauri::async_runtime::spawn_blocking(move || secrets::set(&file, &provider, &key))
         .await
         .map_err(|e| e.to_string())?
 }
 
+/// Deletes the provider's key from the key file.
 #[tauri::command]
-pub async fn key_save(provider: String, key: String) -> Result<(), String> {
-    tauri::async_runtime::spawn_blocking(move || secrets::set(&provider, &key))
-        .await
-        .map_err(|e| e.to_string())?
-}
-
-/// Deletes the provider's key from the keychain.
-#[tauri::command]
-pub async fn key_remove(provider: String) -> Result<(), String> {
-    tauri::async_runtime::spawn_blocking(move || secrets::remove(&provider))
+pub async fn key_remove(app: AppHandle, provider: String) -> Result<(), String> {
+    let file = keys_file(&app)?;
+    tauri::async_runtime::spawn_blocking(move || secrets::remove(&file, &provider))
         .await
         .map_err(|e| e.to_string())?
 }
@@ -278,6 +289,7 @@ pub async fn key_remove(provider: String) -> Result<(), String> {
 /// The ids of the models `backend` offers.
 #[tauri::command]
 pub async fn chat_models(
+    app: AppHandle,
     state: State<'_, ChatState>,
     backend: BackendId,
 ) -> Result<Vec<String>, String> {
@@ -289,7 +301,7 @@ pub async fn chat_models(
             codex::Status::Error { message } => Err(message),
         };
     }
-    let endpoint = endpoint_for(&state, backend, "", None).await?;
+    let endpoint = endpoint_for(&app, &state, backend, "", None).await?;
     openai::list_models(&endpoint, openai::MODELS_TIMEOUT).await
 }
 
@@ -429,7 +441,7 @@ pub async fn chat_send(
     };
     turn.push(&host, Message::User { text });
 
-    // Stop came before the turn began: no keychain, no provider.
+    // Stop came before the turn began: no key file, no provider.
     let end = if turn.cancel.is_cancelled() {
         turn.notice(&host, NoticeLevel::Info, agent::STOPPED);
         TurnEnd::Stopped
@@ -448,7 +460,7 @@ pub async fn chat_send(
         };
         agent::answer(&Backend::Codex(session), &mut turn, &host).await
     } else {
-        match endpoint_for(&state, backend, &model, Some(turn.chat.id.clone())).await {
+        match endpoint_for(&app, &state, backend, &model, Some(turn.chat.id.clone())).await {
             Ok(endpoint) => agent::answer(&Backend::OpenAi(endpoint), &mut turn, &host).await,
             // A missing key or provider: the user must fix it in Settings.
             Err(message) => {

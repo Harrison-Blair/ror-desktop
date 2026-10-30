@@ -67,7 +67,7 @@ function ModelChips({ name, models }: { name: string; models: string[] }) {
   );
 }
 
-// The provider keys. Keys stay in the system keychain: this page only saves
+// The provider keys. Keys stay in the key file: this page only saves
 // and removes them.
 export function ProvidersSettings() {
   const id = useId();
@@ -312,8 +312,8 @@ export function ProvidersSettings() {
       <div className={styles.pageHead}>
         <h1 className={styles.h1}>Providers and keys</h1>
         <p className={styles.caption}>
-          Keys are kept in the system keychain. The chat model menu lists the
-          models of each provider you set up here.
+          Keys are kept in a file in the app config folder. The chat model menu
+          lists the models of each provider you set up here.
         </p>
         {errorAt("load")}
       </div>
