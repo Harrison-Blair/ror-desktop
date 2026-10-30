@@ -22,6 +22,7 @@ import { Markdown } from "@/components/Markdown/Markdown";
 import { useToast } from "@/components/Toast/Toast";
 import type { Message } from "@/lib/chat/chatApi";
 import type { ToolCall } from "@/lib/chat/gate";
+import { errorMessage } from "@/lib/errorMessage";
 import { openWebLink } from "@/lib/linksApi";
 import { ChatHistory } from "./ChatHistory";
 import styles from "./ChatMenu.module.css";
@@ -29,11 +30,6 @@ import { ModelMenu } from "./ModelMenu";
 import type { ChatController, PendingApproval } from "./useChat";
 
 type ToolResult = Extract<Message, { role: "tool" }>;
-
-const errorMessage = (e: unknown) =>
-  typeof e === "object" && e !== null && "message" in e
-    ? String(e.message)
-    : String(e);
 
 // The notice `send_error` makes when a provider can't be reached: a fixed
 // first line, then the technical detail. Other notices are shown as they are.

@@ -21,12 +21,8 @@ import {
   saveCustomProvider,
   saveKey,
 } from "@/lib/chat/chatApi";
+import { errorMessage } from "@/lib/errorMessage";
 import styles from "./ChatMenu.module.css";
-
-const errorMessage = (e: unknown) =>
-  typeof e === "object" && e !== null && "message" in e
-    ? String(e.message)
-    : String(e);
 
 type Models =
   | { state: "loading" }

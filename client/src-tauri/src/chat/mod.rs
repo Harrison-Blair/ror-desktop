@@ -129,7 +129,7 @@ impl ChatState {
         let Some(turn) = turns.active.as_mut() else {
             return false;
         };
-        if !turn.pending.as_ref().is_some_and(|(t, _)| t == token) {
+        if turn.pending.as_ref().is_none_or(|(t, _)| t != token) {
             return false;
         }
         let (_, sender) = turn.pending.take().unwrap();

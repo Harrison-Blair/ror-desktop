@@ -1,7 +1,11 @@
-import { describe, expect, it, vi } from "vitest";
+import { beforeEach, describe, expect, it, vi } from "vitest";
 import { type ApprovalRequest, runToolCall } from "@/lib/chat/gate";
 import { type ToolContext, ToolRegistry } from "@/lib/chat/registry";
-import { webFetchTool, webSearchTool } from "@/lib/web.tools";
+import {
+  MISSING_TAVILY_KEY,
+  webFetchTool,
+  webSearchTool,
+} from "@/lib/web.tools";
 import * as webApi from "@/lib/webApi";
 
 vi.mock("@/lib/webApi", () => ({
@@ -12,6 +16,10 @@ vi.mock("@/lib/webApi", () => ({
 const web = vi.mocked(webApi);
 const context = { notifyOnce: vi.fn() } as unknown as ToolContext;
 const registry = new ToolRegistry([webSearchTool, webFetchTool]);
+
+beforeEach(() => {
+  vi.clearAllMocks();
+});
 
 const run = (name: string, args: unknown, approve: () => boolean) => {
   const requests: ApprovalRequest[] = [];
@@ -52,5 +60,37 @@ describe("the web tools in Manual mode", () => {
     });
     expect(await output).toEqual({ content: "No results.", isError: false });
     expect(requests).toEqual([]);
+  });
+
+  it("returns search results with their titles, URLs and snippets", async () => {
+    web.webSearch.mockResolvedValueOnce([
+      {
+        title: "Ogres",
+        url: "https://example.com/ogres",
+        snippet: "Large creatures",
+      },
+      {
+        title: "Trolls",
+        url: "https://example.com/trolls",
+        snippet: "Regenerate",
+      },
+    ]);
+    const { output } = run("web_search", { query: "creatures" }, () => false);
+    expect(await output).toEqual({
+      content:
+        "1. Ogres\n   https://example.com/ogres\n   Large creatures\n\n2. Trolls\n   https://example.com/trolls\n   Regenerate",
+      isError: false,
+    });
+    expect(web.webSearch).toHaveBeenCalledWith("creatures");
+  });
+
+  it("reports a missing search key to the user and the agent", async () => {
+    web.webSearch.mockRejectedValueOnce({
+      code: "missingKey",
+      message: "No key",
+    });
+    const { output } = run("web_search", { query: "ogres" }, () => false);
+    expect(await output).toEqual({ content: "No key", isError: true });
+    expect(context.notifyOnce).toHaveBeenCalledWith(MISSING_TAVILY_KEY);
   });
 });

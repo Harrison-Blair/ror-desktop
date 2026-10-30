@@ -29,6 +29,7 @@ import {
   type ContextMenuItem,
 } from "@/components/ContextMenu/ContextMenu";
 import { useToast } from "@/components/Toast/Toast";
+import { errorMessage } from "@/lib/errorMessage";
 import styles from "./FileTree.module.css";
 
 // Paths are "/"-separated and "" is the top level.
@@ -72,11 +73,6 @@ const remapPath = (path: string, from: string, to: string) => {
   if (path.startsWith(`${from}/`)) return to + path.slice(from.length);
   return path;
 };
-
-const errorMessage = (e: unknown) =>
-  typeof e === "object" && e !== null && "message" in e
-    ? String(e.message)
-    : String(e);
 
 const isNameError = (e: unknown) =>
   typeof e === "object" &&

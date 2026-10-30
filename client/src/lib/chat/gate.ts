@@ -9,6 +9,7 @@ import type {
   ToolPreview,
   ToolRegistry,
 } from "@/lib/chat/registry";
+import { errorMessage } from "@/lib/errorMessage";
 
 export type PermissionMode = "manual" | "auto";
 
@@ -35,12 +36,6 @@ export const REJECTED = "The user rejected this call.";
 export const STOPPED = "Not run: the user stopped the turn.";
 
 const failure = (content: string): ToolOutput => ({ content, isError: true });
-
-// Rust commands reject with objects that carry a message.
-const errorText = (e: unknown) =>
-  typeof e === "object" && e !== null && "message" in e
-    ? String(e.message)
-    : String(e);
 
 export async function runToolCall(
   registry: ToolRegistry,
@@ -75,6 +70,6 @@ export async function runToolCall(
     if (stopped()) return failure(STOPPED);
     return { content: await tool.run(args, context, approved), isError: false };
   } catch (e) {
-    return failure(errorText(e));
+    return failure(errorMessage(e));
   }
 }

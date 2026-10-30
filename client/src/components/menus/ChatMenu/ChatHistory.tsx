@@ -3,13 +3,9 @@ import { useEffect, useState } from "react";
 import { ConfirmDialog } from "@/components/ConfirmDialog/ConfirmDialog";
 import { useToast } from "@/components/Toast/Toast";
 import { type ChatSummary, listChats } from "@/lib/chat/historyApi";
+import { errorMessage } from "@/lib/errorMessage";
 import styles from "./ChatHistory.module.css";
 import type { ChatController } from "./useChat";
-
-const errorMessage = (e: unknown) =>
-  typeof e === "object" && e !== null && "message" in e
-    ? String(e.message)
-    : String(e);
 
 const DAY = 24 * 60 * 60 * 1000;
 
