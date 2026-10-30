@@ -5,7 +5,7 @@ export type WebError = { code: "missingKey" | "failed"; message: string };
 
 export type WebResult = { title: string; url: string; snippet: string };
 
-// Searches the web through Tavily, with the key from the keychain.
+// Searches the web through Tavily, with the key from the key file.
 export const webSearch = (query: string) =>
   invoke<WebResult[]>("web_search", { query });
 

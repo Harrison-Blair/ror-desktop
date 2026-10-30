@@ -22,25 +22,18 @@ const slow = vi.hoisted(() => ({
 let turn: { send: Send; end: (chatId?: string) => void } | null = null;
 let latest: Chat | null = null;
 let keySaved = false;
-let custom: chatApi.CustomProvider | null = null;
-let customKeySaved = false;
 let codex: chatApi.CodexStatus = { state: "notInstalled" };
 vi.mock("@/lib/chat/chatApi", () => ({
   getChatSettings: vi.fn(async () => ({
     model: "glm-5.3",
     backend: "opencode-go",
     permissionMode: "manual",
-    customProvider: custom,
   })),
   latestChat: vi.fn(async () => latest),
   saveChatModel: vi.fn(async () => {}),
   savePermissionMode: vi.fn(async () => {}),
   isKeySaved: vi.fn(async (provider: string) =>
-    provider === "opencode-go"
-      ? keySaved
-      : provider === "custom"
-        ? customKeySaved
-        : false,
+    provider === "opencode-go" ? keySaved : false,
   ),
   saveKey: vi.fn(async () => {
     keySaved = true;
@@ -48,18 +41,7 @@ vi.mock("@/lib/chat/chatApi", () => ({
   removeKey: vi.fn(async () => {
     keySaved = false;
   }),
-  saveCustomProvider: vi.fn(async (name: string, baseUrl: string) => {
-    custom = { name, baseUrl };
-    return custom;
-  }),
-  removeCustomProvider: vi.fn(async () => {
-    custom = null;
-    customKeySaved = false;
-  }),
-  listModels: vi.fn(async (backend: string) => {
-    if (backend === "custom") throw "Ollama returned HTTP 404: not found";
-    return ["glm-5.3", "kimi-k3"];
-  }),
+  listModels: vi.fn(async () => ["glm-5.3", "kimi-k3"]),
   codexStatus: vi.fn(async () => codex),
   sendMessage: vi.fn(
     (send: Send) =>
@@ -117,8 +99,6 @@ beforeEach(() => {
   turn = null;
   latest = null;
   keySaved = false;
-  custom = null;
-  customKeySaved = false;
   codex = { state: "notInstalled" };
 });
 
@@ -488,7 +468,6 @@ describe("Chat panel", () => {
               model: "glm-5.3",
               backend: "opencode-go",
               permissionMode: "auto",
-              customProvider: null,
             });
         }),
     );

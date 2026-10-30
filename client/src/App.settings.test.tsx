@@ -3,7 +3,6 @@ import userEvent from "@testing-library/user-event";
 import { beforeEach, describe, expect, it, vi } from "vitest";
 import App from "@/App";
 import { resetChangeGuard } from "@/components/menus/SettingsMenu/changeGuard";
-import type { Send } from "@/lib/chat/chatApi";
 import * as chatApi from "@/lib/chat/chatApi";
 
 vi.mock("@/lib/notesApi", () => ({
@@ -12,19 +11,14 @@ vi.mock("@/lib/notesApi", () => ({
   getNotesFolder: async () => ({ path: "/notes", missing: null }),
 }));
 
-// Rust is not there in tests: each turn waits until the test ends it.
-let turn: { send: Send } | null = null;
 let keys: Record<string, boolean> = {};
-let custom: chatApi.CustomProvider | null = null;
 let goModels = ["glm-5.3", "kimi-k3"];
-let customModels: string[] | null = null;
 let codex: chatApi.CodexStatus = { state: "notInstalled" };
 vi.mock("@/lib/chat/chatApi", () => ({
   getChatSettings: vi.fn(async () => ({
     model: "glm-5.3",
     backend: "opencode-go",
     permissionMode: "manual",
-    customProvider: custom,
   })),
   latestChat: vi.fn(async () => null),
   saveChatModel: vi.fn(async () => {}),
@@ -36,31 +30,10 @@ vi.mock("@/lib/chat/chatApi", () => ({
   removeKey: vi.fn(async (provider: string) => {
     keys[provider] = false;
   }),
-  saveCustomProvider: vi.fn(
-    async (name: string, baseUrl: string, key: string | null) => {
-      custom = { name, baseUrl };
-      if (key) keys.custom = true;
-      return custom;
-    },
-  ),
-  removeCustomProvider: vi.fn(async () => {
-    custom = null;
-    keys.custom = false;
-  }),
-  listModels: vi.fn(async (backend: string) => {
-    if (backend === "custom") {
-      if (customModels === null) throw "Ollama returned HTTP 404: not found";
-      return customModels;
-    }
-    return goModels;
-  }),
+  listModels: vi.fn(async () => goModels),
   codexStatus: vi.fn(async () => codex),
-  sendMessage: vi.fn(
-    (send: Send) =>
-      new Promise(() => {
-        turn = { send };
-      }),
-  ),
+  // Rust is not there in tests: a turn never ends.
+  sendMessage: vi.fn(() => new Promise(() => {})),
   sendToolResult: vi.fn(async () => {}),
   stopTurn: vi.fn(async () => {}),
 }));
@@ -70,11 +43,8 @@ const api = vi.mocked(chatApi);
 beforeEach(() => {
   vi.clearAllMocks();
   resetChangeGuard();
-  turn = null;
   keys = {};
-  custom = null;
   goModels = ["glm-5.3", "kimi-k3"];
-  customModels = null;
   codex = { state: "notInstalled" };
 });
 
@@ -110,7 +80,9 @@ describe("Settings", () => {
       within(page()).getByRole("heading", { name: "Providers and keys" }),
     ).toBeInTheDocument();
     expect(
-      within(page()).getByText(/Keys are kept in the system keychain/),
+      within(page()).getByText(
+        /Keys are kept in a file in the app config folder/,
+      ),
     ).toBeInTheDocument();
     expect(screen.getByRole("button", { name: "Settings" })).toHaveAttribute(
       "aria-pressed",
@@ -120,8 +92,8 @@ describe("Settings", () => {
       screen.queryByText("Settings is not implemented yet."),
     ).not.toBeInTheDocument();
     expect(section("Built in")).toBeInTheDocument();
-    expect(section("Custom provider")).toBeInTheDocument();
     expect(section("Web search")).toBeInTheDocument();
+    expect(within(page()).getAllByRole("region")).toHaveLength(2);
   });
 
   it("Notes leaves Settings, and the Settings button toggles it", async () => {
@@ -272,240 +244,6 @@ describe("Settings", () => {
     ).not.toBeInTheDocument();
   });
 
-  it("caps the custom provider's models the same way", async () => {
-    custom = { name: "Ollama", baseUrl: "http://localhost:11434/v1" };
-    customModels = Array.from({ length: 11 }, (_, i) => `m${i + 1}`);
-    await openSettings();
-    const chips = await within(section("Custom provider")).findByRole("list", {
-      name: "Ollama models",
-    });
-    expect(within(chips).getAllByRole("listitem")).toHaveLength(10);
-    expect(
-      within(section("Custom provider")).getByText("… and 1 more"),
-    ).toBeInTheDocument();
-  });
-
-  it("adds a custom provider; the model menu takes a typed model id when /models fails; Remove clears the chat's model", async () => {
-    keys["opencode-go"] = true;
-    const user = await openSettings();
-    const form = section("Custom provider");
-    await user.type(within(form).getByLabelText("Name"), "Ollama");
-    await user.type(
-      within(form).getByLabelText("Base URL"),
-      "http://localhost:11434/v1",
-    );
-    expect(
-      within(form).getByText(
-        "OpenAI-compatible. The model list comes from GET /models.",
-      ),
-    ).toBeInTheDocument();
-    await user.click(
-      within(form).getByRole("button", { name: "Save custom provider" }),
-    );
-    expect(api.saveCustomProvider).toHaveBeenCalledWith(
-      "Ollama",
-      "http://localhost:11434/v1",
-      null,
-    );
-    expect(
-      await within(form).findByText(
-        "Could not list models from this provider.",
-      ),
-    ).toBeInTheDocument();
-    expect(within(form).getByText("No key")).toBeInTheDocument();
-
-    let menu = await openModelMenu(user);
-    expect(
-      await within(menu).findByText(
-        "Could not list models from this provider.",
-      ),
-    ).toBeInTheDocument();
-    await user.type(within(menu).getByLabelText("Model id"), "llama3");
-    await user.click(within(menu).getByRole("button", { name: "Use" }));
-    expect(api.saveChatModel).toHaveBeenCalledWith("custom", "llama3");
-
-    await user.type(
-      screen.getByRole("textbox", { name: "Message" }),
-      "Hi{Enter}",
-    );
-    expect(turn?.send).toMatchObject({ backend: "custom", model: "llama3" });
-
-    // The chat stays on the custom provider.
-    menu = await openModelMenu(user);
-    expect(
-      await within(menu).findByRole("button", { name: "kimi-k3" }),
-    ).toBeDisabled();
-    expect(
-      within(menu).getByText(
-        "This chat uses Ollama. Start a new chat to use another provider.",
-      ),
-    ).toBeInTheDocument();
-    await user.keyboard("{Escape}");
-
-    await user.click(
-      within(form).getByRole("button", { name: "Remove custom provider" }),
-    );
-    expect(api.removeCustomProvider).toHaveBeenCalled();
-    await vi.waitFor(() =>
-      expect(
-        within(form).queryByRole("button", { name: "Remove custom provider" }),
-      ).not.toBeInTheDocument(),
-    );
-    expect(within(form).getByLabelText("Name")).toHaveValue("");
-    // Its model is no longer chosen.
-    expect(
-      screen.getByRole("button", { name: "Model: none" }),
-    ).toBeInTheDocument();
-  });
-
-  // Holds the custom provider's model list until the test lets it go.
-  const slowCustomModels = () => {
-    let release = () => {};
-    api.listModels.mockImplementationOnce(async (backend: string) => {
-      if (backend !== "custom") return goModels;
-      await new Promise<void>((resolve) => {
-        release = resolve;
-      });
-      return ["qwen3:14b"];
-    });
-    return () => act(() => release());
-  };
-
-  it("fills the provider form before the models load, and keeps what is typed meanwhile", async () => {
-    custom = { name: "Ollama", baseUrl: "http://localhost:11434/v1" };
-    const release = slowCustomModels();
-    const user = await openSettings();
-    const form = section("Custom provider");
-    const name = within(form).getByLabelText("Name");
-    await vi.waitFor(() => expect(name).toHaveValue("Ollama"));
-    expect(within(form).getByLabelText("Base URL")).toHaveValue(
-      "http://localhost:11434/v1",
-    );
-
-    await user.type(name, " 2");
-    await release();
-    expect(await within(form).findByText("qwen3:14b")).toBeInTheDocument();
-    expect(name).toHaveValue("Ollama 2");
-    expect(within(form).getByLabelText("Base URL")).toHaveValue(
-      "http://localhost:11434/v1",
-    );
-  });
-
-  it("keeps a field typed while a provider save lists the models", async () => {
-    const release = slowCustomModels();
-    const user = await openSettings();
-    const form = section("Custom provider");
-    await user.type(within(form).getByLabelText("Name"), "Ollama");
-    await user.type(
-      within(form).getByLabelText("Base URL"),
-      "http://localhost:11434/v1",
-    );
-    await user.type(within(form).getByLabelText("API key (optional)"), "sk-1");
-    await user.click(
-      within(form).getByRole("button", { name: "Save custom provider" }),
-    );
-    await vi.waitFor(() =>
-      expect(api.listModels).toHaveBeenCalledWith("custom"),
-    );
-
-    await user.clear(within(form).getByLabelText("Name"));
-    await user.type(within(form).getByLabelText("Name"), "Lab");
-    await release();
-    expect(await within(form).findByText("qwen3:14b")).toBeInTheDocument();
-    expect(within(form).getByLabelText("Name")).toHaveValue("Lab");
-    // Fields not touched since Save show the saved provider.
-    expect(within(form).getByLabelText("Base URL")).toHaveValue(
-      "http://localhost:11434/v1",
-    );
-    expect(within(form).getByLabelText("API key (optional)")).toHaveValue("");
-  });
-
-  // Holds the first keychain read until the test lets it go.
-  const slowFirstKeyRead = () => {
-    let release = () => {};
-    api.isKeySaved.mockImplementationOnce(async (provider: string) => {
-      await new Promise<void>((resolve) => {
-        release = resolve;
-      });
-      return keys[provider] ?? false;
-    });
-    return () => act(() => release());
-  };
-
-  it("Save waits for a slow first load, which fills only the untouched fields", async () => {
-    custom = { name: "Old", baseUrl: "http://old/v1" };
-    customModels = [];
-    const release = slowFirstKeyRead();
-    const user = await openSettings();
-    const form = section("Custom provider");
-    const save = within(form).getByRole("button", {
-      name: "Save custom provider",
-    });
-    await user.type(within(form).getByLabelText("Name"), "New{Enter}");
-    expect(save).toBeDisabled();
-    await user.click(save);
-    expect(api.saveCustomProvider).not.toHaveBeenCalled();
-
-    await release();
-    await vi.waitFor(() => expect(save).toBeEnabled());
-    expect(within(form).getByLabelText("Name")).toHaveValue("New");
-    expect(within(form).getByLabelText("Base URL")).toHaveValue(
-      "http://old/v1",
-    );
-    await user.click(save);
-    expect(api.saveCustomProvider).toHaveBeenCalledWith(
-      "New",
-      "http://old/v1",
-      null,
-    );
-  });
-
-  it("keeps the typed provider when a save pressed during a slow first load fails", async () => {
-    custom = { name: "Old", baseUrl: "http://old/v1" };
-    customModels = [];
-    let fail = () => {};
-    api.saveCustomProvider.mockImplementationOnce(
-      () =>
-        new Promise((_, reject) => {
-          fail = () => reject("keychain locked");
-        }),
-    );
-    const release = slowFirstKeyRead();
-    const user = await openSettings();
-    const form = section("Custom provider");
-    await user.type(within(form).getByLabelText("Name"), "New");
-    await user.type(within(form).getByLabelText("Base URL"), "http://new/v1");
-    await user.type(within(form).getByLabelText("API key (optional)"), "sk-9");
-    await user.click(
-      within(form).getByRole("button", { name: "Save custom provider" }),
-    );
-    await release();
-    await act(async () => {});
-    expect(within(form).getByLabelText("Name")).toHaveValue("New");
-
-    // Save works once the load has ended; its failure keeps the typing.
-    await user.click(
-      within(form).getByRole("button", { name: "Save custom provider" }),
-    );
-    expect(api.saveCustomProvider).toHaveBeenCalledWith(
-      "New",
-      "http://new/v1",
-      "sk-9",
-    );
-    await act(async () => fail());
-    expect(
-      await within(form).findByText("keychain locked"),
-    ).toBeInTheDocument();
-
-    expect(within(form).getByLabelText("Name")).toHaveValue("New");
-    expect(within(form).getByLabelText("Base URL")).toHaveValue(
-      "http://new/v1",
-    );
-    expect(within(form).getByLabelText("API key (optional)")).toHaveValue(
-      "sk-9",
-    );
-  });
-
   it("keeps a key corrected while its save runs", async () => {
     let finish = () => {};
     api.saveKey.mockImplementationOnce(
@@ -601,17 +339,10 @@ describe("Settings", () => {
     await user.click(screen.getByRole("button", { name: "Notes" }));
     await user.click(screen.getByRole("button", { name: "Settings" }));
 
-    // The new page can't start a second change while the first runs.
-    const form = section("Custom provider");
-    await user.type(within(form).getByLabelText("Name"), "Ollama");
-    await user.type(
-      within(form).getByLabelText("Base URL"),
-      "http://localhost:11434/v1{Enter}",
-    );
-    expect(
-      within(form).getByRole("button", { name: "Save custom provider" }),
-    ).toBeDisabled();
-    expect(api.saveCustomProvider).not.toHaveBeenCalled();
+    // The new page shows no key state, so no second change can start.
+    const search = section("Web search");
+    expect(within(search).queryByLabelText("Tavily key")).toBeNull();
+    expect(within(search).queryByRole("button")).toBeNull();
     expect(within(section("Built in")).queryByText("No key")).toBeNull();
 
     act(() => finish());
@@ -619,107 +350,48 @@ describe("Settings", () => {
     expect(
       await within(section("Built in")).findByText("Key saved"),
     ).toBeInTheDocument();
-    expect(within(form).getByLabelText("Name")).toHaveValue("Ollama");
+    expect(
+      await within(search).findByLabelText("Tavily key"),
+    ).toBeInTheDocument();
+    expect(api.saveKey).toHaveBeenCalledTimes(1);
   });
 
-  it("disables Save and Remove while a provider change runs", async () => {
+  it("disables Save and Remove while a key change runs", async () => {
     keys["opencode-go"] = true;
-    custom = { name: "Ollama", baseUrl: "http://localhost:11434/v1" };
     let finish = () => {};
-    api.removeCustomProvider.mockImplementationOnce(
-      () =>
+    api.removeKey.mockImplementationOnce(
+      (provider: string) =>
         new Promise<void>((resolve) => {
           finish = () => {
-            custom = null;
+            keys[provider] = false;
             resolve();
           };
         }),
     );
     const user = await openSettings();
-    const remove = await within(section("Custom provider")).findByRole(
-      "button",
-      { name: "Remove custom provider" },
-    );
+    const remove = await within(section("Built in")).findByRole("button", {
+      name: "Remove OpenCode Go key",
+    });
 
     await user.click(remove);
     expect(remove).toBeDisabled();
-    expect(
-      within(section("Custom provider")).getByRole("button", {
-        name: "Save custom provider",
-      }),
-    ).toBeDisabled();
-    expect(
-      within(section("Built in")).getByRole("button", {
-        name: "Remove OpenCode Go key",
-      }),
-    ).toBeDisabled();
     expect(
       within(section("Web search")).getByRole("button", {
         name: "Save Tavily key",
       }),
     ).toBeDisabled();
     await user.click(remove);
-    expect(api.removeCustomProvider).toHaveBeenCalledTimes(1);
+    expect(api.removeKey).toHaveBeenCalledTimes(1);
 
     act(() => finish());
-    await vi.waitFor(() =>
-      expect(
-        within(section("Custom provider")).queryByRole("button", {
-          name: "Remove custom provider",
-        }),
-      ).not.toBeInTheDocument(),
-    );
     expect(
-      within(section("Built in")).getByRole("button", {
-        name: "Remove OpenCode Go key",
+      await within(section("Web search")).findByRole("button", {
+        name: "Save Tavily key",
       }),
     ).toBeEnabled();
-  });
-
-  it("shows the key a failed first save left, with Remove, at once", async () => {
-    const error =
-      "Couldn't save the provider: disk full. Its key also couldn't be put back (keychain locked). Save the provider again, or remove it to delete the key.";
-    api.saveCustomProvider.mockImplementationOnce(async () => {
-      keys.custom = true;
-      throw { message: error };
-    });
-    const user = await openSettings();
-    const form = section("Custom provider");
-    await user.type(within(form).getByLabelText("Name"), "Ollama");
-    await user.type(
-      within(form).getByLabelText("Base URL"),
-      "http://localhost:11434/v1",
-    );
-    await user.type(within(form).getByLabelText("API key (optional)"), "sk-1");
-    await user.click(
-      within(form).getByRole("button", { name: "Save custom provider" }),
-    );
-
-    expect(await within(form).findByText("Key only")).toBeInTheDocument();
     expect(
-      within(form).getByRole("button", { name: "Remove custom provider key" }),
-    ).toBeEnabled();
-    expect(within(form).getByText(error)).toBeInTheDocument();
-  });
-
-  it("offers Remove for a custom key left without a provider", async () => {
-    keys.custom = true;
-    const user = await openSettings();
-    const form = section("Custom provider");
-    expect(await within(form).findByText("Key only")).toBeInTheDocument();
-
-    await user.click(
-      within(form).getByRole("button", { name: "Remove custom provider key" }),
-    );
-    expect(api.removeCustomProvider).toHaveBeenCalled();
-    await vi.waitFor(() =>
-      expect(within(form).queryByText("Key only")).not.toBeInTheDocument(),
-    );
-    expect(
-      within(form).queryByRole("button", {
-        name: "Remove custom provider key",
-      }),
-    ).not.toBeInTheDocument();
+      await within(section("Built in")).findByText("No key"),
+    ).toBeInTheDocument();
   });
 
   it("shows the Codex status as words", async () => {
@@ -751,21 +423,19 @@ describe("Settings", () => {
 });
 
 describe("Model menu", () => {
-  it("lists models only: no key fields, key buttons, provider form or Settings link", async () => {
+  it("lists models only: no key fields, key buttons or Settings link", async () => {
     keys["opencode-go"] = true;
-    custom = { name: "Ollama", baseUrl: "http://localhost:11434/v1" };
-    customModels = ["qwen3:14b"];
     const user = userEvent.setup();
     render(<App />);
     const menu = await openModelMenu(user);
     expect(
-      await within(menu).findByRole("button", { name: "qwen3:14b" }),
+      await within(menu).findByRole("button", { name: "kimi-k3" }),
     ).toBeInTheDocument();
     expect(within(menu).getByText("Key saved")).toBeInTheDocument();
     const buttons = within(menu)
       .getAllByRole("button")
       .map((button) => button.textContent);
-    expect(buttons).toEqual(["glm-5.3", "kimi-k3", "qwen3:14b"]);
+    expect(buttons).toEqual(["glm-5.3", "kimi-k3"]);
     expect(within(menu).queryAllByRole("textbox")).toHaveLength(0);
     expect(menu.querySelector("input")).toBeNull();
     expect(within(menu).queryByRole("link")).not.toBeInTheDocument();

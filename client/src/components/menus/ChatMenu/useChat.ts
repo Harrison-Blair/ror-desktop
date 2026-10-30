@@ -348,11 +348,6 @@ export function useChat({
     saveChatModel(nextBackend, next).catch(fail);
   };
 
-  // A removed provider's model can't be sent to any more.
-  const providerRemoved = (from: BackendId) => {
-    if (backend === from) setModel(null);
-  };
-
   const chooseMode = (next: PermissionMode) => {
     modeChosen.current = true;
     modeRef.current = next;
@@ -389,7 +384,6 @@ export function useChat({
     closeHistory: () => setHistoryOpen(false),
     answer,
     chooseModel,
-    providerRemoved,
     chooseMode,
   };
 }

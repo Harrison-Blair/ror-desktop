@@ -45,6 +45,10 @@ fn config_file(app: &AppHandle) -> tauri::Result<PathBuf> {
     Ok(app.path().app_config_dir()?.join("config.json"))
 }
 
+fn keys_file(app: &AppHandle) -> tauri::Result<PathBuf> {
+    Ok(app.path().app_config_dir()?.join("keys.json"))
+}
+
 // Unwatching a folder also drops the watches inside it, so after unwatching
 // `gone`, a folder `kept` that overlaps it needs watching again.
 fn unwatch(watcher: &mut dyn Watcher, gone: &Path, kept: &Path) {
@@ -254,8 +258,6 @@ pub fn run() {
             chat::key_saved,
             chat::key_save,
             chat::key_remove,
-            chat::custom_provider_save,
-            chat::custom_provider_remove,
             chat::chat_models,
             chat::codex_status,
             chat::chat_latest,

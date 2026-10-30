@@ -4,7 +4,7 @@ import type { ToolSpec } from "@/lib/chat/registry";
 
 // These types match the chat files and events in src-tauri/src/chat.
 
-export type BackendId = "opencode-go" | "custom" | "codex";
+export type BackendId = "opencode-go" | "codex";
 
 export type Message =
   | { role: "user"; text: string }
@@ -47,19 +47,15 @@ export type ChatEvent =
 
 export type TurnEnd = "done" | "stopped" | "toolLimit" | "failed";
 
-// The user's own OpenAI-compatible provider. Its key is in the keychain.
-export type CustomProvider = { name: string; baseUrl: string };
-
 export type ChatSettings = {
   model: string | null;
   // The backend of `model`.
   backend: BackendId;
   permissionMode: PermissionMode;
-  customProvider: CustomProvider | null;
 };
 
-// The providers that hold a key in the system keychain.
-export type KeyProvider = "opencode-go" | "tavily" | "custom";
+// The providers that hold a key in the key file.
+export type KeyProvider = "opencode-go" | "tavily";
 
 export const getChatSettings = () => invoke<ChatSettings>("chat_settings");
 
@@ -78,17 +74,6 @@ export const saveKey = (provider: KeyProvider, key: string) =>
 
 export const removeKey = (provider: KeyProvider) =>
   invoke<void>("key_remove", { provider });
-
-// A null or empty key keeps the saved key.
-export const saveCustomProvider = (
-  name: string,
-  baseUrl: string,
-  key: string | null,
-) => invoke<CustomProvider>("custom_provider_save", { name, baseUrl, key });
-
-// Removes the custom provider's name, URL and key.
-export const removeCustomProvider = () =>
-  invoke<void>("custom_provider_remove");
 
 export const listModels = (backend: BackendId) =>
   invoke<string[]>("chat_models", { backend });

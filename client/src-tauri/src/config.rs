@@ -18,16 +18,6 @@ pub struct Config {
     pub chat_backend: Option<BackendId>,
     #[serde(default)]
     pub permission_mode: PermissionMode,
-    /// The user's own OpenAI-compatible provider. Its key is in the keychain.
-    #[serde(default, skip_serializing_if = "Option::is_none")]
-    pub custom_provider: Option<CustomProvider>,
-}
-
-#[derive(Clone, Debug, PartialEq, Serialize, Deserialize)]
-#[serde(rename_all = "camelCase")]
-pub struct CustomProvider {
-    pub name: String,
-    pub base_url: String,
 }
 
 /// Whether the chat agent asks before it runs a write tool.
@@ -222,16 +212,11 @@ mod tests {
     }
 
     #[test]
-    fn the_custom_provider_and_model_backend_round_trip() {
+    fn the_model_and_its_backend_round_trip() {
         let dirs = dirs();
-        let provider = CustomProvider {
-            name: "Ollama".into(),
-            base_url: "http://localhost:11434/v1".into(),
-        };
         update(&dirs.config_file, |c| {
-            c.custom_provider = Some(provider.clone());
-            c.chat_model = Some("llama3".into());
-            c.chat_backend = Some(BackendId::Custom);
+            c.chat_model = Some("gpt-5.5".into());
+            c.chat_backend = Some(BackendId::Codex);
         })
         .unwrap();
         let saved: serde_json::Value =
@@ -240,19 +225,29 @@ mod tests {
             saved,
             serde_json::json!({
                 "notesDir": null,
-                "chatModel": "llama3",
-                "chatBackend": "custom",
-                "permissionMode": "manual",
-                "customProvider": { "name": "Ollama", "baseUrl": "http://localhost:11434/v1" }
+                "chatModel": "gpt-5.5",
+                "chatBackend": "codex",
+                "permissionMode": "manual"
             })
         );
         let config = load(&dirs.config_file);
-        assert_eq!(config.custom_provider, Some(provider));
-        assert_eq!(config.chat_backend, Some(BackendId::Custom));
+        assert_eq!(config.chat_model.as_deref(), Some("gpt-5.5"));
+        assert_eq!(config.chat_backend, Some(BackendId::Codex));
+    }
 
-        update(&dirs.config_file, |c| c.custom_provider = None).unwrap();
-        let text = fs::read_to_string(&dirs.config_file).unwrap();
-        assert!(!text.contains("customProvider"), "{text}");
+    // Configs saved before the custom provider was removed.
+    #[test]
+    fn an_old_config_with_a_custom_provider_still_loads() {
+        let dirs = dirs();
+        let old = serde_json::json!({
+            "chatModel": "glm-5.3",
+            "chatBackend": "opencode-go",
+            "customProvider": { "name": "Ollama", "baseUrl": "http://localhost:11434/v1" }
+        });
+        write_config(&dirs, &old.to_string());
+        let config = load(&dirs.config_file);
+        assert_eq!(config.chat_model.as_deref(), Some("glm-5.3"));
+        assert_eq!(config.chat_backend, Some(BackendId::OpencodeGo));
     }
 
     #[test]

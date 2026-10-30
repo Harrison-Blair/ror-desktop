@@ -32,7 +32,6 @@ vi.mock("@/lib/chat/chatApi", () => ({
     model: "glm-5.3",
     backend: "opencode-go",
     permissionMode: "auto",
-    customProvider: { name: "Ollama", baseUrl: "http://localhost:11434/v1" },
   })),
   latestChat: vi.fn(async () => saved[0]),
   saveChatModel: vi.fn(async () => {}),
@@ -90,7 +89,7 @@ beforeEach(() => {
   disk = new Map([["Ogres.md", "Ogres eat goats."]]);
   saved = [
     chat("ogre", "Ogre ambush", { updatedAt: 2 }),
-    chat("dragon", "Dragon lair", { backend: "custom", model: "llama3" }),
+    chat("dragon", "Dragon lair", { backend: "codex", model: "gpt-5.5" }),
   ];
 });
 
@@ -136,15 +135,15 @@ describe("a chat opened from history", () => {
     );
     await within(panel()).findByText("Reply in Dragon lair");
     expect(
-      screen.getByRole("button", { name: "Model: llama3" }),
+      screen.getByRole("button", { name: "Model: gpt-5.5" }),
     ).toBeInTheDocument();
 
     await user.type(message(), "Go{Enter}");
     expect(api.sendMessage).toHaveBeenLastCalledWith(
       expect.objectContaining({
         chatId: "dragon",
-        backend: "custom",
-        model: "llama3",
+        backend: "codex",
+        model: "gpt-5.5",
       }),
     );
     // The read from the other chat doesn't count here.

@@ -355,40 +355,6 @@
   place-items: center;
 }
 
-.keyRow {
-  display: flex;
-  align-items: center;
-  gap: var(--space-2);
-}
-
-.keyField {
-  flex: 1;
-  min-width: 0;
-  box-sizing: border-box;
-  height: 28px;
-  padding: 0 var(--space-2);
-  color: var(--ink);
-  font: 400 13px / 18px var(--font-mono);
-  background: var(--ground);
-  border: 1px solid var(--line-control);
-  border-radius: var(--radius-1);
-}
-
-.keySave {
-  height: 28px;
-  padding: 0 var(--space-3);
-  color: var(--ink);
-  font: 500 12px / 16px var(--font-sans);
-  background: transparent;
-  border: 1px solid var(--line-control);
-  border-radius: var(--radius-1);
-  cursor: pointer;
-}
-
-.keySave:hover:enabled {
-  background: var(--well);
-}
-
 /* A heading with a muted label at the right. */
 .groupHeading {
   display: flex;
@@ -407,21 +373,9 @@
   cursor: default;
 }
 
-.keySave:disabled {
-  opacity: 0.5;
-  cursor: default;
-}
-
-.textField {
-  composes: keyField;
-  font-family: var(--font-sans);
-}
-
 .menu button:focus-visible,
 .headerButton:focus-visible,
-.field:focus-visible,
-.keyField:focus-visible,
-.textField:focus-visible {
+.field:focus-visible {
   outline: 2px solid var(--focus);
   outline-offset: 2px;
 }
