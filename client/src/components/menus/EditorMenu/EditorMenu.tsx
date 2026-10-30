@@ -8,6 +8,7 @@ import {
 } from "react";
 import { MarkdownEditor } from "@/components/MarkdownEditor/MarkdownEditor";
 import { useToast } from "@/components/Toast/Toast";
+import { errorMessage } from "@/lib/errorMessage";
 import { openWebLink } from "@/lib/linksApi";
 import {
   type Entry,
@@ -19,11 +20,6 @@ import {
 import styles from "./EditorMenu.module.css";
 
 export const SAVE_DELAY = 500;
-
-const errorMessage = (e: unknown) =>
-  typeof e === "object" && e !== null && "message" in e
-    ? String(e.message)
-    : String(e);
 
 // The path that a relative link in the note at `from` points to, with any
 // #fragment dropped, or null when it leaves the notes folder.

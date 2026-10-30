@@ -26,6 +26,7 @@ import {
   setChatArchived,
 } from "@/lib/chat/historyApi";
 import type { AppBridge, ToolContext, ToolRegistry } from "@/lib/chat/registry";
+import { errorMessage } from "@/lib/errorMessage";
 
 export type PendingApproval = ApprovalRequest & {
   // The token Rust gave the call.
@@ -34,11 +35,6 @@ export type PendingApproval = ApprovalRequest & {
 };
 
 const NO_USAGE: Usage = { inputTokens: 0, outputTokens: 0 };
-
-const errorMessage = (e: unknown) =>
-  typeof e === "object" && e !== null && "message" in e
-    ? String(e.message)
-    : String(e);
 
 // The chat panel's state. Kept above the panel, so a running turn and its
 // approvals survive closing the panel.
