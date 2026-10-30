@@ -83,6 +83,31 @@ function ToolStep({ call, result }: { call: ToolCall; result?: ToolResult }) {
   );
 }
 
+// Shown while the model works and nothing else in the thread moves. Each
+// wait mounts it anew, so its seconds start from 0.
+function Thinking() {
+  const [start] = useState(Date.now);
+  const [seconds, setSeconds] = useState(0);
+  useEffect(() => {
+    const timer = setInterval(
+      () => setSeconds(Math.floor((Date.now() - start) / 1000)),
+      1000,
+    );
+    return () => clearInterval(timer);
+  }, [start]);
+  return (
+    <div className={styles.thinking}>
+      <LoaderCircle
+        className={styles.spinner}
+        size={14}
+        strokeWidth={1.75}
+        aria-hidden
+      />
+      <span>Thinking…</span> <span aria-hidden>{seconds}s</span>
+    </div>
+  );
+}
+
 function CopyButton({ text }: { text: string }) {
   const notify = useToast();
   const [copied, setCopied] = useState(false);
@@ -183,6 +208,22 @@ function Thread({ chat }: { chat: ChatController }) {
       .filter((m): m is ToolResult => m.role === "tool")
       .map((m) => [m.callId, m]),
   );
+  // A tool call of this turn that has no result yet. Calls before the last
+  // user message belong to ended turns.
+  const turnStart = messages.map((m) => m.role).lastIndexOf("user");
+  const toolRunning = messages
+    .slice(turnStart + 1)
+    .some(
+      (m) =>
+        m.role === "assistant" &&
+        m.toolCalls?.some((call) => !results.has(call.id)),
+    );
+  const thinking =
+    chat.running &&
+    !chat.stopped &&
+    !streaming &&
+    !toolRunning &&
+    approvals.length === 0;
 
   return (
     <div className={styles.thread}>
@@ -259,6 +300,9 @@ function Thread({ chat }: { chat: ChatController }) {
           onAnswer={(approved) => chat.answer(approval.token, approved)}
         />
       ))}
+      {/* A polite live region that is always there, so the row is
+          announced when it appears. */}
+      <div role="status">{thinking && <Thinking />}</div>
       <div ref={end} />
     </div>
   );
