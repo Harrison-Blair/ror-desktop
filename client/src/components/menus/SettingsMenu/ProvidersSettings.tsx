@@ -114,6 +114,13 @@ export function ProvidersSettings({
   // A key or provider change is running: Save and Remove wait for it.
   const [busy, setBusy] = useState(false);
   const running = useRef(false);
+  // Counts the loads: only the latest one shows its results.
+  const loads = useRef(0);
+  // A form fill that a newer load must still do.
+  const fillDue = useRef(false);
+  // The key drafts as last rendered, for a save that ends later.
+  const typedKeys = useRef(drafts);
+  typedKeys.current = drafts;
 
   const checkCodex = useCallback(() => {
     setCodex(null);
@@ -133,9 +140,12 @@ export function ProvidersSettings({
   }, []);
 
   // Loads the keys and the provider, fills the form when asked, then lists
-  // the models.
+  // the models. A newer load wins: an older one then shows nothing.
   const refresh = useCallback(
     async (fill: boolean) => {
+      const load = ++loads.current;
+      const latest = () => load === loads.current;
+      if (fill) fillDue.current = true;
       let saved: Keys;
       let provider: CustomProvider | null;
       try {
@@ -145,29 +155,34 @@ export function ProvidersSettings({
           isKeySaved("custom"),
           getChatSettings(),
         ]);
+        if (!latest()) return;
         saved = { "opencode-go": go, tavily, custom: customKey };
         provider = settings.customProvider;
         setKeys(saved);
         setCustom(provider);
         setError(null);
       } catch (e) {
-        setError({ at: "load", message: errorMessage(e) });
+        if (latest()) setError({ at: "load", message: errorMessage(e) });
         return;
       }
-      if (fill) fillForm(provider);
-      const load = async (from: BackendId, set: (models: Models) => void) => {
+      if (fillDue.current) {
+        fillDue.current = false;
+        fillForm(provider);
+      }
+      const list = async (from: BackendId, set: (models: Models) => void) => {
         set({ state: "loading" });
         try {
-          set({ state: "ready", models: await listModels(from) });
+          const models = await listModels(from);
+          if (latest()) set({ state: "ready", models });
         } catch (e) {
-          set({ state: "error", message: errorMessage(e) });
+          if (latest()) set({ state: "error", message: errorMessage(e) });
         }
       };
       if (!saved["opencode-go"]) setGoModels(null);
       if (!provider) setCustomModels(null);
       await Promise.all([
-        saved["opencode-go"] && load("opencode-go", setGoModels),
-        provider && load("custom", setCustomModels),
+        saved["opencode-go"] && list("opencode-go", setGoModels),
+        provider && list("custom", setCustomModels),
       ]);
     },
     [fillForm],
@@ -181,21 +196,34 @@ export function ProvidersSettings({
   // Runs a change to the keys or the provider, then loads again. A failed
   // change may still have changed something, so it loads again too and
   // keeps its error and what was typed.
-  const change = async (at: KeyProvider, act: () => Promise<unknown>) => {
+  const change = async (
+    at: KeyProvider,
+    act: () => Promise<unknown>,
+    sent?: string,
+  ) => {
     if (running.current) return;
     running.current = true;
     setBusy(true);
     // The form is sent as it is now; only later typing outlives the fill.
+    // A failed send keeps all the typing.
+    const typed = new Set(edited.current);
     if (at === "custom") edited.current.clear();
     try {
       await act();
       if (at !== "custom") {
-        setReplacing((open) => (open === at ? null : open));
-        setDrafts((typed) => ({ ...typed, [at]: "" }));
+        // A removal sends no key.
+        if (sent === undefined || typedKeys.current[at] === sent) {
+          setReplacing((open) => (open === at ? null : open));
+          setDrafts((typed) => ({ ...typed, [at]: "" }));
+        } else {
+          // A key typed during the save stays open to be saved.
+          setReplacing(at);
+        }
       }
       await refresh(at === "custom");
     } catch (e) {
       const message = errorMessage(e);
+      for (const field of typed) edited.current.add(field);
       await refresh(false);
       setError({ at, message });
     } finally {
@@ -238,7 +266,11 @@ export function ProvidersSettings({
   ) => {
     const saved = keys[provider];
     const save = () =>
-      change(provider, () => saveKey(provider, drafts[provider]));
+      change(
+        provider,
+        () => saveKey(provider, drafts[provider]),
+        drafts[provider],
+      );
     return (
       <div className={styles.row}>
         <div className={styles.rowTop}>

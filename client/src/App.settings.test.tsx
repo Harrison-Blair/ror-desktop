@@ -418,6 +418,107 @@ describe("Settings", () => {
     expect(within(form).getByLabelText("API key (optional)")).toHaveValue("");
   });
 
+  // Holds the first keychain read until the test lets it go.
+  const slowFirstKeyRead = () => {
+    let release = () => {};
+    api.isKeySaved.mockImplementationOnce(async (provider: string) => {
+      await new Promise<void>((resolve) => {
+        release = resolve;
+      });
+      return keys[provider] ?? false;
+    });
+    return () => act(() => release());
+  };
+
+  it("a slow first load does not bring back the provider a save replaced", async () => {
+    custom = { name: "Old", baseUrl: "http://old/v1" };
+    customModels = [];
+    const release = slowFirstKeyRead();
+    const user = await openSettings();
+    const form = section("Custom provider");
+    await user.type(within(form).getByLabelText("Name"), "New");
+    await user.type(within(form).getByLabelText("Base URL"), "http://new/v1");
+    await user.click(
+      within(form).getByRole("button", { name: "Save custom provider" }),
+    );
+    expect(
+      await within(form).findByRole("button", {
+        name: "Remove custom provider",
+      }),
+    ).toBeInTheDocument();
+    expect(within(form).getByLabelText("Name")).toHaveValue("New");
+
+    await release();
+    await act(async () => {});
+    expect(within(form).getByLabelText("Name")).toHaveValue("New");
+    expect(within(form).getByLabelText("Base URL")).toHaveValue(
+      "http://new/v1",
+    );
+    expect(within(form).queryByText("Old")).not.toBeInTheDocument();
+  });
+
+  it("a failed save during a slow first load still shows the saved provider in the untouched fields", async () => {
+    custom = { name: "Old", baseUrl: "http://old/v1" };
+    customModels = [];
+    api.saveCustomProvider.mockImplementationOnce(async () => {
+      throw "disk full";
+    });
+    const release = slowFirstKeyRead();
+    const user = await openSettings();
+    const form = section("Custom provider");
+    await user.type(within(form).getByLabelText("Name"), "New");
+    await user.click(
+      within(form).getByRole("button", { name: "Save custom provider" }),
+    );
+    expect(await within(form).findByText("disk full")).toBeInTheDocument();
+    await release();
+    await act(async () => {});
+
+    expect(within(form).getByLabelText("Name")).toHaveValue("New");
+    expect(within(form).getByLabelText("Base URL")).toHaveValue(
+      "http://old/v1",
+    );
+  });
+
+  it("keeps a key corrected while its save runs", async () => {
+    let finish = () => {};
+    api.saveKey.mockImplementationOnce(
+      (provider: string) =>
+        new Promise<void>((resolve) => {
+          finish = () => {
+            keys[provider] = true;
+            resolve();
+          };
+        }),
+    );
+    const user = await openSettings();
+    const built = section("Built in");
+    await user.type(
+      await within(built).findByLabelText("OpenCode Go key"),
+      "sk-1",
+    );
+    await user.click(
+      within(built).getByRole("button", { name: "Save OpenCode Go key" }),
+    );
+    await user.type(within(built).getByLabelText("OpenCode Go key"), "x");
+    act(() => finish());
+
+    expect(await within(built).findByText("Key saved")).toBeInTheDocument();
+    expect(api.saveKey).toHaveBeenCalledWith("opencode-go", "sk-1");
+    expect(within(built).getByLabelText("OpenCode Go key")).toHaveValue(
+      "sk-1x",
+    );
+    await user.click(
+      within(built).getByRole("button", { name: "Save OpenCode Go key" }),
+    );
+    expect(api.saveKey).toHaveBeenLastCalledWith("opencode-go", "sk-1x");
+    await vi.waitFor(() =>
+      expect(
+        within(built).queryByLabelText("OpenCode Go key"),
+      ).not.toBeInTheDocument(),
+    );
+  });
+
   it("disables Save and Remove while a provider change runs", async () => {
     keys["opencode-go"] = true;
     custom = { name: "Ollama", baseUrl: "http://localhost:11434/v1" };

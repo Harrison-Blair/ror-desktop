@@ -20,6 +20,7 @@ vi.mock("@/lib/notesApi", () => ({
   getNotesFolder: async () => ({ path: "/notes", missing: null }),
   readNote: async (path: string) => disk[path] ?? `# ${path}`,
   writeNote: async (path: string, text: string) => {
+    await slowWrite;
     if (diskFull) throw { code: "io", message: "Disk full." };
     if (!(path in disk)) throw { code: "not_found", message: "Not found." };
     disk[path] = text;
@@ -46,7 +47,10 @@ let disk: Record<string, string> = {};
 // The texts in the folder that the picker switches to.
 let otherDisk: Record<string, string> = {};
 let diskFull = false;
+// A write waits for this.
+let slowWrite: Promise<void> | undefined;
 beforeEach(() => {
+  slowWrite = undefined;
   vi.clearAllMocks();
   notesList = [];
   disk = {};
@@ -350,6 +354,28 @@ describe("App frame", () => {
         await screen.findByRole("heading", { name: "Providers and keys" }),
       ).toBeInTheDocument();
       expect(disk).toEqual({ "Ada.md": "Hello!" });
+    });
+
+    it("does not open Settings after a slow save when another rail button was clicked meanwhile", async () => {
+      notesList = [{ kind: "file", name: "Ada.md", path: "Ada.md" }];
+      const user = await editAda();
+      let finish = () => {};
+      slowWrite = new Promise((resolve) => {
+        finish = resolve;
+      });
+
+      await user.click(screen.getByRole("button", { name: "Settings" }));
+      await user.click(screen.getByRole("button", { name: "Notes" }));
+      await act(async () => finish());
+      await waitFor(() => expect(disk).toEqual({ "Ada.md": "Hello!" }));
+
+      expect(screen.getByRole("button", { name: "Settings" })).toHaveAttribute(
+        "aria-pressed",
+        "false",
+      );
+      expect(
+        screen.queryByRole("heading", { name: "Providers and keys" }),
+      ).not.toBeInTheDocument();
     });
 
     it("keeps an edit made just before a rename", async () => {
