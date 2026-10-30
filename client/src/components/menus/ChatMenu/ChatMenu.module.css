@@ -1,0 +1,505 @@
+.menu {
+  display: flex;
+  flex: 1;
+  flex-direction: column;
+  min-height: 0;
+}
+
+/* Matches the side panel's Close button. */
+.headerButton {
+  display: grid;
+  place-items: center;
+  width: 32px;
+  height: 32px;
+  padding: 0;
+  color: var(--ink-muted);
+  background: var(--sunken);
+  border: 0;
+  border-radius: var(--radius-1);
+  cursor: pointer;
+}
+
+.headerButton:hover {
+  color: var(--ink);
+  background: var(--well);
+}
+
+.headerButton[aria-pressed="true"] {
+  color: var(--ink);
+  background: var(--well);
+}
+
+.thread {
+  display: flex;
+  flex: 1;
+  flex-direction: column;
+  gap: var(--space-3);
+  min-height: 0;
+  padding: 0 var(--space-4) var(--space-4);
+  overflow-y: auto;
+}
+
+.empty {
+  margin: 0;
+  color: var(--ink-muted);
+  font: 400 14px / 20px var(--font-sans);
+}
+
+.user {
+  align-self: flex-end;
+  max-width: 85%;
+  padding: var(--space-2) var(--space-3);
+  color: var(--ink);
+  font: 400 14px / 20px var(--font-sans);
+  white-space: pre-wrap;
+  overflow-wrap: anywhere;
+  background: var(--raised);
+  border-radius: var(--radius-1);
+}
+
+.assistant {
+  display: flex;
+  flex-direction: column;
+  align-items: flex-start;
+  gap: var(--space-1);
+}
+
+.copy {
+  display: grid;
+  place-items: center;
+  width: 24px;
+  height: 24px;
+  padding: 0;
+  color: var(--ink-muted);
+  background: transparent;
+  border: 0;
+  border-radius: var(--radius-1);
+  cursor: pointer;
+}
+
+.copy:hover {
+  color: var(--ink);
+  background: var(--raised);
+}
+
+.toolSteps {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  width: 100%;
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+
+.toolStep {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  min-width: 0;
+  color: var(--ink-muted);
+  font: 400 12px / 16px var(--font-sans);
+}
+
+.toolStep > svg {
+  flex: none;
+}
+
+.toolStep[data-state="failed"] > svg {
+  color: var(--error);
+}
+
+.toolArgument {
+  min-width: 0;
+  overflow: hidden;
+  font: 400 12px / 16px var(--font-mono);
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.notice,
+.error {
+  margin: 0;
+  font: 400 12px / 16px var(--font-sans);
+}
+
+.notice {
+  color: var(--ink-muted);
+}
+
+.error {
+  color: var(--error);
+}
+
+.noticeDetail {
+  display: block;
+  color: var(--ink-muted);
+  white-space: pre-wrap;
+  overflow-wrap: anywhere;
+}
+
+.approval {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-2);
+  padding: var(--space-3);
+  border: 1px solid var(--line-control);
+  border-radius: var(--radius-1);
+}
+
+.approvalTitle {
+  margin: 0;
+  color: var(--ink);
+  font: 600 13px / 16px var(--font-sans);
+}
+
+.approvalTarget {
+  margin: 0;
+  color: var(--ink-muted);
+  font: 400 12px / 16px var(--font-mono);
+  overflow-wrap: anywhere;
+}
+
+.diff {
+  max-height: 200px;
+  margin: 0;
+  padding: var(--space-2);
+  overflow: auto;
+  color: var(--ink-muted);
+  font: 400 12px / 16px var(--font-mono);
+  white-space: pre-wrap;
+  overflow-wrap: anywhere;
+  background: var(--ground);
+  border-radius: var(--radius-1);
+}
+
+.diffChange {
+  color: var(--ink);
+}
+
+.approvalButtons {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: var(--space-2);
+}
+
+.rejectButton {
+  composes: quickButton from "@/components/menus/DiceMenu/DiceMenu.module.css";
+}
+
+.approveButton {
+  composes: rollButton from "@/components/menus/DiceMenu/DiceMenu.module.css";
+}
+
+.composer {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-2);
+  padding: var(--space-3) var(--space-4) var(--space-4);
+  border-top: 1px solid var(--line);
+}
+
+/* The Dice field, grown to several lines. */
+.field {
+  box-sizing: border-box;
+  width: 100%;
+  min-height: 64px;
+  padding: var(--space-2) 10px;
+  color: var(--ink);
+  font: 400 14px / 20px var(--font-sans);
+  background: var(--ground);
+  border: 1px solid var(--line-control);
+  border-radius: var(--radius-1);
+  resize: vertical;
+}
+
+.field::placeholder {
+  color: var(--ink-muted);
+}
+
+.composerRow {
+  display: flex;
+  align-items: center;
+  gap: var(--space-2);
+}
+
+.modelSlot {
+  position: relative;
+  min-width: 0;
+}
+
+.toggle {
+  composes: toggle from "@/components/menus/EditorMenu/EditorMenu.module.css";
+  display: flex;
+  align-items: center;
+  gap: 2px;
+  max-width: 100%;
+}
+
+.modelName {
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+/* Two toggles joined into one control. */
+.modes {
+  display: flex;
+  flex: none;
+  margin: 0;
+  padding: 0;
+  border: 0;
+}
+
+.modes > .toggle:first-child {
+  border-top-right-radius: 0;
+  border-bottom-right-radius: 0;
+}
+
+.modes > .toggle:last-child {
+  margin-left: -1px;
+  border-top-left-radius: 0;
+  border-bottom-left-radius: 0;
+}
+
+.usage {
+  flex: none;
+  margin-left: auto;
+  color: var(--ink-muted);
+  font: 400 12px / 16px var(--font-mono);
+}
+
+.sendButton {
+  display: grid;
+  flex: none;
+  place-items: center;
+  width: 32px;
+  height: 32px;
+  margin-left: auto;
+  padding: 0;
+  color: var(--ink);
+  background: transparent;
+  border: 1px solid var(--line-control);
+  border-radius: var(--radius-1);
+  cursor: pointer;
+}
+
+.usage + .sendButton {
+  margin-left: 0;
+}
+
+.sendButton:hover:not(:disabled) {
+  background: var(--raised);
+}
+
+.sendButton:disabled {
+  cursor: not-allowed;
+  opacity: 0.5;
+}
+
+.modelMenu {
+  position: absolute;
+  bottom: calc(100% + var(--space-1));
+  left: 0;
+  z-index: 20;
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-1);
+  box-sizing: border-box;
+  width: 260px;
+  max-height: 60vh;
+  padding: var(--space-2);
+  overflow-y: auto;
+  background: var(--raised);
+  border: 1px solid var(--line);
+  border-radius: var(--radius-1);
+  box-shadow: var(--shadow-pop);
+}
+
+.heading {
+  composes: heading from "@/components/menus/DiceMenu/DiceMenu.module.css";
+  padding: var(--space-1) var(--space-2) 0;
+}
+
+.menuNote,
+.menuError {
+  margin: 0;
+  padding: 0 var(--space-2);
+  font: 400 12px / 16px var(--font-sans);
+}
+
+.menuNote {
+  color: var(--ink-muted);
+}
+
+.menuError {
+  color: var(--error);
+  white-space: pre-line;
+  overflow-wrap: anywhere;
+}
+
+.modelList {
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+
+.modelItem {
+  composes: item from "@/components/ContextMenu/ContextMenu.module.css";
+}
+
+.modelCheck {
+  composes: iconSlot from "@/components/ContextMenu/ContextMenu.module.css";
+  display: grid;
+  place-items: center;
+}
+
+.separator {
+  composes: separator from "@/components/ContextMenu/ContextMenu.module.css";
+}
+
+.keyForm {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-1);
+  padding: 0 var(--space-2) var(--space-1);
+  color: var(--ink);
+  font: 400 13px / 18px var(--font-sans);
+}
+
+.keyRow {
+  display: flex;
+  align-items: center;
+  gap: var(--space-2);
+}
+
+.keyStatus {
+  margin-left: auto;
+  color: var(--ink-muted);
+  font-size: 12px;
+}
+
+.keyField {
+  flex: 1;
+  min-width: 0;
+  box-sizing: border-box;
+  height: 28px;
+  padding: 0 var(--space-2);
+  color: var(--ink);
+  font: 400 13px / 18px var(--font-mono);
+  background: var(--ground);
+  border: 1px solid var(--line-control);
+  border-radius: var(--radius-1);
+}
+
+.keySave {
+  height: 28px;
+  padding: 0 var(--space-3);
+  color: var(--ink);
+  font: 500 12px / 16px var(--font-sans);
+  background: transparent;
+  border: 1px solid var(--line-control);
+  border-radius: var(--radius-1);
+  cursor: pointer;
+}
+
+.keySave:hover:enabled {
+  background: var(--well);
+}
+
+/* A heading with a muted label at the right. */
+.groupHeading {
+  display: flex;
+  align-items: baseline;
+  justify-content: space-between;
+  padding-right: var(--space-2);
+}
+
+.headingLabel {
+  color: var(--ink-muted);
+  font: 400 12px / 16px var(--font-sans);
+}
+
+.modelItem:disabled {
+  color: var(--ink-muted);
+  cursor: default;
+}
+
+.providerRow {
+  display: flex;
+  align-items: center;
+  gap: var(--space-2);
+  height: 28px;
+}
+
+.providerName {
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.rowButton {
+  height: 24px;
+  padding: 0 var(--space-1);
+  color: var(--ink-muted);
+  font: 500 12px / 16px var(--font-sans);
+  background: transparent;
+  border: none;
+  border-radius: var(--radius-1);
+  cursor: pointer;
+}
+
+.rowButton:hover:enabled {
+  background: var(--well);
+}
+
+.rowButton:disabled,
+.keySave:disabled {
+  opacity: 0.5;
+  cursor: default;
+}
+
+.providerForm {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-1);
+  padding-bottom: var(--space-1);
+}
+
+.formLabel {
+  color: var(--ink-muted);
+  font: 500 12px / 16px var(--font-sans);
+}
+
+.textField {
+  composes: keyField;
+  font-family: var(--font-sans);
+}
+
+/* keyField grows along a row; in this column it keeps its height. */
+.providerForm > input {
+  flex: none;
+}
+
+.formHint {
+  margin: 0;
+  color: var(--ink-muted);
+  font: 400 12px / 16px var(--font-sans);
+}
+
+.formButtons {
+  display: flex;
+  justify-content: flex-end;
+  gap: var(--space-2);
+}
+
+.menu button:focus-visible,
+.headerButton:focus-visible,
+.field:focus-visible,
+.keyField:focus-visible,
+.textField:focus-visible {
+  outline: 2px solid var(--focus);
+  outline-offset: 2px;
+}

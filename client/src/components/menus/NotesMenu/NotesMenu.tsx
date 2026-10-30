@@ -15,6 +15,7 @@ import {
   type TreeEntry,
 } from "@/components/FileTree/FileTree";
 import { useToast } from "@/components/Toast/Toast";
+import { errorMessage } from "@/lib/errorMessage";
 import {
   chooseNotesFolder,
   createEntry,
@@ -32,11 +33,6 @@ export type NotesMenuHandle = FileTreeHandle & { chooseFolder: () => void };
 
 // Shown until the first load, so the tree renders empty meanwhile.
 const NO_ENTRIES: TreeEntry[] = [];
-
-const errorMessage = (e: unknown) =>
-  typeof e === "object" && e !== null && "message" in e
-    ? String(e.message)
-    : String(e);
 
 const isNameError = (e: unknown) =>
   typeof e === "object" &&

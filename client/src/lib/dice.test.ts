@@ -2,6 +2,16 @@ import { describe, expect, it, vi } from "vitest";
 import { parseDiceExpression, rollDice } from "@/lib/dice";
 
 describe("strict dice notation", () => {
+  it("preserves signs, quantities, sides, and modifiers in parsed terms", () => {
+    expect(parseDiceExpression("  -d20 + 2D6 - 3  ")).toEqual({
+      expression: "-d20 + 2D6 - 3",
+      terms: [
+        { kind: "dice", sign: -1, quantity: 1, sides: 20 },
+        { kind: "dice", sign: 1, quantity: 2, sides: 6 },
+        { kind: "modifier", sign: -1, value: 3 },
+      ],
+    });
+  });
   it.each([
     "d20",
     "2D6 + 1d8 - 3",

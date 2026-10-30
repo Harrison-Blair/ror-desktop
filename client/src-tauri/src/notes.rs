@@ -345,6 +345,106 @@ pub fn delete(root: &Path, path: &str) -> Result<()> {
     })
 }
 
+/// The most matches a search returns.
+pub const SEARCH_LIMIT: usize = 50;
+
+const SNIPPET_LENGTH: usize = 160;
+
+#[derive(Debug, PartialEq, Eq, Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct SearchMatch {
+    pub path: String,
+    /// Counted from 1.
+    pub line: usize,
+    pub snippet: String,
+}
+
+#[derive(Debug, PartialEq, Eq, Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct SearchResult {
+    pub matches: Vec<SearchMatch>,
+    /// True when there were more than `SEARCH_LIMIT` matches.
+    pub truncated: bool,
+}
+
+/// Finds `query` in the Markdown notes, ignoring case. Like `list`, it skips
+/// hidden entries and never follows symlinks, so it stays in the folder.
+pub fn search(root: &Path, query: &str) -> Result<SearchResult> {
+    let query = query.trim().to_lowercase();
+    if query.is_empty() {
+        return Err(err(Code::InvalidName, "Enter text to search for."));
+    }
+    let mut result = SearchResult {
+        matches: Vec::new(),
+        truncated: false,
+    };
+    for path in note_paths(&list(root)?) {
+        let Ok(text) = fs::read_to_string(root.join(&path)) else {
+            continue;
+        };
+        for (i, line) in text.lines().enumerate() {
+            if !line.to_lowercase().contains(&query) {
+                continue;
+            }
+            if result.matches.len() == SEARCH_LIMIT {
+                result.truncated = true;
+                return Ok(result);
+            }
+            result.matches.push(SearchMatch {
+                path: path.clone(),
+                line: i + 1,
+                snippet: snippet(line, &query),
+            });
+        }
+    }
+    Ok(result)
+}
+
+fn note_paths(entries: &[Entry]) -> Vec<String> {
+    let mut out = Vec::new();
+    for entry in entries {
+        match &entry.children {
+            Some(children) => out.extend(note_paths(children)),
+            None if entry.name.to_lowercase().ends_with(".md") => out.push(entry.path.clone()),
+            None => {}
+        }
+    }
+    out
+}
+
+// The line, cut to about SNIPPET_LENGTH characters around the first match.
+fn snippet(line: &str, query: &str) -> String {
+    let line = line.trim();
+    let chars: Vec<char> = line.chars().collect();
+    if chars.len() <= SNIPPET_LENGTH {
+        return line.to_string();
+    }
+    let lower: Vec<char> = line.to_lowercase().chars().collect();
+    // Lowercasing can change the length, so the match is placed by character
+    // only when it doesn't.
+    let at = if lower.len() == chars.len() {
+        let q: Vec<char> = query.chars().collect();
+        lower
+            .windows(q.len())
+            .position(|w| w == q.as_slice())
+            .unwrap_or(0)
+    } else {
+        0
+    };
+    let start = at
+        .saturating_sub(SNIPPET_LENGTH / 3)
+        .min(chars.len() - SNIPPET_LENGTH);
+    let end = start + SNIPPET_LENGTH;
+    let mut out: String = chars[start..end].iter().collect();
+    if start > 0 {
+        out.insert(0, '…');
+    }
+    if end < chars.len() {
+        out.push('…');
+    }
+    out
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -1036,5 +1136,95 @@ mod tests {
         let e = delete(dir.path(), "gone.md").unwrap_err();
         assert_eq!(e.code, Code::NotFound);
         assert_eq!(e.message, "“gone.md” no longer exists.");
+    }
+
+    #[test]
+    fn search_finds_lines_in_notes_ignoring_case() {
+        let root = root();
+        let r = root.path();
+        mkdir(r, "Lore");
+        fs::write(
+            r.join("Ogres.md"),
+            "# Ogres\nHill OGRES eat goats.\nNothing here.",
+        )
+        .unwrap();
+        fs::write(r.join("Lore/Giants.md"), "Giants are not ogres.").unwrap();
+        fs::write(r.join("ogres.txt"), "ogres in a text file").unwrap();
+        fs::write(r.join(".hidden.md"), "ogres hidden").unwrap();
+        fs::write(r.join("Upper.MD"), "Ogres upper").unwrap();
+
+        let result = search(r, "  oGrEs ").unwrap();
+        let found: Vec<(&str, usize, &str)> = result
+            .matches
+            .iter()
+            .map(|m| (m.path.as_str(), m.line, m.snippet.as_str()))
+            .collect();
+        assert_eq!(
+            found,
+            vec![
+                ("Lore/Giants.md", 1, "Giants are not ogres."),
+                ("Ogres.md", 1, "# Ogres"),
+                ("Ogres.md", 2, "Hill OGRES eat goats."),
+                ("Upper.MD", 1, "Ogres upper"),
+            ]
+        );
+        assert!(!result.truncated);
+        assert!(search(r, "dragons").unwrap().matches.is_empty());
+        assert_eq!(
+            search(r, " ").unwrap_err().message,
+            "Enter text to search for."
+        );
+    }
+
+    #[test]
+    fn search_stops_at_the_limit_and_says_so() {
+        let root = root();
+        let lines = vec!["goblin"; SEARCH_LIMIT];
+        fs::write(root.path().join("a.md"), lines.join("\n")).unwrap();
+        let exact = search(root.path(), "goblin").unwrap();
+        assert_eq!(exact.matches.len(), SEARCH_LIMIT);
+        assert!(!exact.truncated);
+
+        fs::write(root.path().join("b.md"), "goblin").unwrap();
+        let cut = search(root.path(), "goblin").unwrap();
+        assert_eq!(cut.matches.len(), SEARCH_LIMIT);
+        assert!(cut.truncated);
+    }
+
+    #[test]
+    fn search_cuts_a_long_line_around_the_match() {
+        let root = root();
+        let line = format!("{}needle{}", "a".repeat(300), "b".repeat(300));
+        fs::write(root.path().join("a.md"), &line).unwrap();
+        let snippet = &search(root.path(), "NEEDLE").unwrap().matches[0].snippet;
+        assert!(snippet.contains("needle"), "{snippet}");
+        assert!(
+            snippet.starts_with('…') && snippet.ends_with('…'),
+            "{snippet}"
+        );
+        assert_eq!(snippet.chars().count(), SNIPPET_LENGTH + 2);
+    }
+
+    #[cfg(unix)]
+    #[test]
+    fn search_never_reads_files_outside_the_folder() {
+        let outer = root();
+        let notes = outer.path().join("notes");
+        let elsewhere = outer.path().join("elsewhere");
+        fs::create_dir(&notes).unwrap();
+        fs::create_dir(&elsewhere).unwrap();
+        fs::write(elsewhere.join("secret.md"), "dragon secret").unwrap();
+        fs::write(outer.path().join("beside.md"), "dragon beside").unwrap();
+        std::os::unix::fs::symlink(&elsewhere, notes.join("Linked")).unwrap();
+        std::os::unix::fs::symlink(elsewhere.join("secret.md"), notes.join("link.md")).unwrap();
+        fs::write(notes.join("inside.md"), "dragon inside").unwrap();
+
+        let paths: Vec<String> = search(&notes, "dragon")
+            .unwrap()
+            .matches
+            .into_iter()
+            .map(|m| m.path)
+            .collect();
+        assert_eq!(paths, vec!["inside.md"]);
     }
 }

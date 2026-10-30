@@ -15,6 +15,13 @@
   overflow-y: auto;
 }
 
+/* The body fills the rest of the panel and scrolls on its own. */
+.fill {
+  display: flex;
+  flex-direction: column;
+  overflow: hidden;
+}
+
 .head {
   composes: head from "@/styles/panel-header.module.css";
   position: sticky;
@@ -28,12 +35,17 @@
   composes: title from "@/styles/panel-header.module.css";
 }
 
+.tools {
+  display: flex;
+  gap: var(--space-1);
+  margin-left: auto;
+}
+
 .close {
   display: grid;
   place-items: center;
   width: 32px;
   height: 32px;
-  margin-left: auto;
   padding: 0;
   color: var(--ink-muted);
   background: var(--sunken);
@@ -54,4 +66,12 @@
 
 .body {
   padding: var(--space-4);
+}
+
+.fill .body {
+  display: flex;
+  flex: 1;
+  flex-direction: column;
+  min-height: 0;
+  padding: 0;
 }
