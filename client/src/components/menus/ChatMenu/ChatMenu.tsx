@@ -329,7 +329,6 @@ function Composer({ chat }: { chat: ChatController }) {
                 chat.chooseModel(backend, model);
                 setMenuOpen(false);
               }}
-              onProviderRemoved={chat.providerRemoved}
               onClose={() => setMenuOpen(false)}
             />
           )}

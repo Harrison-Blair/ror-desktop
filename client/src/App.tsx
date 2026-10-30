@@ -27,6 +27,11 @@ import {
   NotesMenuActions,
   type NotesMenuHandle,
 } from "@/components/menus/NotesMenu/NotesMenu";
+import { ProvidersSettings } from "@/components/menus/SettingsMenu/ProvidersSettings";
+import {
+  SettingsMenu,
+  type SettingsPage,
+} from "@/components/menus/SettingsMenu/SettingsMenu";
 import { MainPanel } from "@/components/panels/MainPanel/MainPanel";
 import { RailPanel } from "@/components/panels/RailPanel/RailPanel";
 import { ResizeHandle } from "@/components/panels/ResizeHandle/ResizeHandle";
@@ -62,6 +67,8 @@ export default function App() {
 function Shell() {
   const notify = useToast();
   const [activeId, setActiveId] = useState("notes");
+  // Settings takes over the rail panel and the main panel while it is open.
+  const [settings, setSettings] = useState<SettingsPage | null>(null);
   const [railPanelOpen, setRailPanelOpen] = useState(true);
   const [sidePanel, setSidePanel] = useState<SidePanelId | null>(null);
   const panelOpen = sidePanel !== null;
@@ -191,8 +198,11 @@ function Shell() {
       id: "settings",
       label: "Settings",
       icon: Settings,
-      onClick: () =>
-        notify({ kind: "error", message: "Settings is not implemented yet." }),
+      pressed: settings !== null,
+      onClick: () => {
+        setSettings((open) => (open ? null : "providers"));
+        setRailPanelOpen(true);
+      },
     },
   ];
 
@@ -211,6 +221,12 @@ function Shell() {
       notify({ kind: "error", message: `${label} is not implemented yet.` });
       return;
     }
+    if (settings !== null) {
+      setSettings(null);
+      setActiveId(id);
+      setRailPanelOpen(true);
+      return;
+    }
     if (id === activeId) {
       setRailPanelOpen((open) => !open);
       return;
@@ -224,13 +240,13 @@ function Shell() {
       <Rail
         items={railItems}
         bottomItems={bottomItems}
-        activeId={activeId}
+        activeId={settings === null ? activeId : undefined}
         onSelect={selectRailItem}
         railPanelOpen={railPanelOpen}
         onToggleRailPanel={() => setRailPanelOpen((open) => !open)}
       />
       <RailPanel
-        title={activeItem?.label ?? ""}
+        title={settings !== null ? "Settings" : (activeItem?.label ?? "")}
         open={railPanelOpen}
         width={drawnRailPanelWidth}
         resizeHandle={
@@ -245,6 +261,7 @@ function Shell() {
           />
         }
         actions={
+          settings === null &&
           activeId === "notes" && (
             <NotesMenuActions
               folder={notesFolder}
@@ -254,7 +271,10 @@ function Shell() {
           )
         }
       >
-        {activeId === "notes" && (
+        {settings !== null && (
+          <SettingsMenu page={settings} onSelect={setSettings} />
+        )}
+        {settings === null && activeId === "notes" && (
           <NotesMenu
             ref={notesMenu}
             setFolder={pickNotesFolder}
@@ -270,11 +290,15 @@ function Shell() {
         )}
       </RailPanel>
       <MainPanel>
-        <EditorMenu
-          ref={editorMenu}
-          path={notesSelected}
-          onOpenNote={setNotesSelected}
-        />
+        {settings === "providers" ? (
+          <ProvidersSettings onProviderRemoved={chat.providerRemoved} />
+        ) : (
+          <EditorMenu
+            ref={editorMenu}
+            path={notesSelected}
+            onOpenNote={setNotesSelected}
+          />
+        )}
       </MainPanel>
       <SidePanel
         open={panelOpen}
