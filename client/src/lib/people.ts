@@ -127,6 +127,16 @@ export const ageOf = (
   return e.year - b.year - (beforeBirthday ? 1 : 0);
 };
 
+// Up to two initials for a photo stand-in: "Rosa Alvarez" gives "RA".
+export const initials = (name: string) =>
+  name
+    .trim()
+    .split(/\s+/)
+    .slice(0, 2)
+    .map((word) => [...word][0] ?? "")
+    .join("")
+    .toUpperCase();
+
 export const isDead = (person: Pick<Character, "deathDate">) =>
   person.deathDate !== null;
 

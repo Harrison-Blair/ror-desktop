@@ -26,6 +26,8 @@ import {
   onNotesChanged,
   renameEntry,
 } from "@/lib/notesApi";
+import type { Character } from "@/lib/peopleApi";
+import { CharacterButton } from "./CharacterButton";
 import { deleteQuestion } from "./deleteQuestion";
 import styles from "./NotesMenu.module.css";
 
@@ -114,6 +116,10 @@ export type NotesMenuProps = {
   // Saves the open note before a rename, move or folder switch. Resolving
   // false means it couldn't be saved, which cancels the change.
   saveOpenNote?: () => Promise<boolean>;
+  // This device's character, shown above the tree, or undefined for none.
+  me?: Character;
+  photoVersion?: number;
+  onOpenMe?: () => void;
 };
 
 export function NotesMenu({
@@ -124,6 +130,9 @@ export function NotesMenu({
   selected,
   setSelected,
   saveOpenNote = async () => true,
+  me,
+  photoVersion = 0,
+  onOpenMe = () => {},
 }: NotesMenuProps) {
   const notify = useToast();
   const [entries, setEntries] = useState<TreeEntry[]>();
@@ -221,35 +230,46 @@ export function NotesMenu({
     );
 
   return (
-    <FileTree
-      ref={tree}
-      label="Notes"
-      labels={{ file: "file", newFile: "New note" }}
-      newFileName="Untitled.md"
-      entries={entries ?? NO_ENTRIES}
-      expanded={expanded}
-      setExpanded={setExpanded}
-      selected={selected}
-      setSelected={setSelected}
-      onCreate={(parent, kind, name) =>
-        reloadAfterNameEdit(createEntry(parent, kind, name))
-      }
-      onRename={(path, newName) =>
-        reloadAfterNameEdit(
-          saveFirst("it wasn't renamed").then(() => renameEntry(path, newName)),
-        )
-      }
-      onMove={(path, newParent) =>
-        reloadAfter(
-          saveFirst("it wasn't moved").then(() => moveEntry(path, newParent)),
-        )
-      }
-      onDelete={(path) => reloadAfter(deleteEntry(path))}
-      confirmDelete={(entry) => ({
-        title: deleteQuestion(entry),
-        message: "You can restore it from the system trash.",
-        confirmLabel: "Move to trash",
-      })}
-    />
+    <>
+      {me && (
+        <CharacterButton
+          me={me}
+          photoVersion={photoVersion}
+          onOpen={onOpenMe}
+        />
+      )}
+      <FileTree
+        ref={tree}
+        label="Notes"
+        labels={{ file: "file", newFile: "New note" }}
+        newFileName="Untitled.md"
+        entries={entries ?? NO_ENTRIES}
+        expanded={expanded}
+        setExpanded={setExpanded}
+        selected={selected}
+        setSelected={setSelected}
+        onCreate={(parent, kind, name) =>
+          reloadAfterNameEdit(createEntry(parent, kind, name))
+        }
+        onRename={(path, newName) =>
+          reloadAfterNameEdit(
+            saveFirst("it wasn't renamed").then(() =>
+              renameEntry(path, newName),
+            ),
+          )
+        }
+        onMove={(path, newParent) =>
+          reloadAfter(
+            saveFirst("it wasn't moved").then(() => moveEntry(path, newParent)),
+          )
+        }
+        onDelete={(path) => reloadAfter(deleteEntry(path))}
+        confirmDelete={(entry) => ({
+          title: deleteQuestion(entry),
+          message: "You can restore it from the system trash.",
+          confirmLabel: "Move to trash",
+        })}
+      />
+    </>
   );
 }

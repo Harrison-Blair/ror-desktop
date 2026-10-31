@@ -12,6 +12,7 @@ import {
   formatShortDate,
   gameDateError,
   hasErrors,
+  initials,
   isDead,
   isPlayer,
   parseDate,
@@ -344,5 +345,15 @@ describe("gameDateError", () => {
     expect(gameDateError("someday")).toBe("Use day, month and year.");
     expect(gameDateError("30 February 1962")).toBe("Not a real date.");
     expect(gameDateError("10 February 1962")).toBeUndefined();
+  });
+});
+
+describe("initials", () => {
+  it("takes the first letter of the first two words, in capitals", () => {
+    expect(initials("Rosa Alvarez")).toBe("RA");
+    expect(initials("  hélène  marchand ")).toBe("HM");
+    expect(initials("Jean Paul Sartre")).toBe("JP");
+    expect(initials("Ada")).toBe("A");
+    expect(initials("")).toBe("");
   });
 });
