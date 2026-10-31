@@ -9,6 +9,12 @@
   --ink-muted: #a3a3a3;
   --error: #f87171;
   --focus: #e6e6e6;
+  /* Your-character star. A placeholder: the design system has no accent yet. */
+  --star: #e8b04a;
+  /* The two parts of a stat pair bar. */
+  --stat-left: #4f74a3;
+  --stat-right: #a8bfdc;
+  --error-wash: rgba(248, 113, 113, 0.12);
 
   --font-sans: system-ui, sans-serif;
   --font-mono: ui-monospace, monospace;

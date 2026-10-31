@@ -166,7 +166,7 @@ describe("App frame", () => {
     expect(history().getAllByRole("listitem")).toHaveLength(1);
   });
 
-  it.each(["Session", "World"])(
+  it.each(["Session"])(
     "%s is not implemented: clicking it shows an error and leaves Notes active",
     async (name) => {
       const user = renderApp();
@@ -354,6 +354,34 @@ describe("App frame", () => {
         await screen.findByRole("heading", { name: "Providers and keys" }),
       ).toBeInTheDocument();
       expect(disk).toEqual({ "Ada.md": "Hello!" });
+    });
+
+    it("saves a pending edit when World opens, and shows the note again on Notes", async () => {
+      notesList = [{ kind: "file", name: "Ada.md", path: "Ada.md" }];
+      const user = await editAda();
+
+      await user.click(screen.getByRole("button", { name: "World" }));
+      await waitFor(() => expect(disk).toEqual({ "Ada.md": "Hello!" }));
+      expect(
+        await screen.findByRole("heading", { name: "People of interest" }),
+      ).toBeInTheDocument();
+
+      await user.click(screen.getByRole("button", { name: "Notes" }));
+      expect(await shownText("Ada.md")).toBe("Hello!");
+    });
+
+    it("stays on the note, with its edit, when the edit can't be saved before World opens", async () => {
+      notesList = [{ kind: "file", name: "Ada.md", path: "Ada.md" }];
+      const user = await editAda();
+      diskFull = true;
+
+      await user.click(screen.getByRole("button", { name: "World" }));
+
+      expect(await toast().findByText("Disk full.")).toBeInTheDocument();
+      expect(
+        screen.getByRole("button", { name: "Notes", pressed: true }),
+      ).toBeInTheDocument();
+      expect(await shownText("Ada.md")).toBe("Hello!");
     });
 
     it("does not open Settings after a slow save when another rail button was clicked meanwhile", async () => {
