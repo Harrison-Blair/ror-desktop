@@ -52,6 +52,9 @@ export const deletePerson = (id: string) =>
 // Makes the character this device's character. Rejects for a dead character.
 export const setMe = (id: string) => invoke<void>("people_set_me", { id });
 
+// Leaves this device with no character. The character stays in the list.
+export const clearMe = () => invoke<void>("people_clear_me");
+
 // Opens the image picker. Resolves to the picked file's path, or null on
 // Cancel.
 export const choosePhoto = () => invoke<string | null>("people_choose_photo");

@@ -10,6 +10,7 @@ import { useToast } from "@/components/Toast/Toast";
 import { errorMessage } from "@/lib/errorMessage";
 import {
   type CharacterFields,
+  clearMe,
   createPerson,
   deletePerson,
   type StatName,
@@ -57,7 +58,7 @@ export function PeopleMenu({
     setPending(undefined);
   }
   const [dialog, setDialog] = useState<{
-    kind: "claim" | "delete";
+    kind: "claim" | "unclaim" | "delete";
     id: string;
   } | null>(null);
   const { people, peopleError, world, worldError, photoVersion } = data;
@@ -198,6 +199,16 @@ export function PeopleMenu({
     await data.reload();
   };
 
+  const confirmUnclaim = async () => {
+    setDialog(null);
+    try {
+      await clearMe();
+    } catch (e) {
+      fail(e);
+    }
+    await data.reload();
+  };
+
   const confirmDelete = async (id: string) => {
     const from = view;
     setDialog(null);
@@ -240,6 +251,7 @@ export function PeopleMenu({
         photoVersion={photoVersion}
         onBack={toList}
         onClaim={() => setDialog({ kind: "claim", id: person.id })}
+        onUnclaim={() => setDialog({ kind: "unclaim", id: person.id })}
         onEdit={() => setView({ screen: "edit", id: person.id })}
         onDelete={() => setDialog({ kind: "delete", id: person.id })}
       />
@@ -274,6 +286,15 @@ export function PeopleMenu({
           }
           confirmLabel="Confirm"
           onConfirm={() => confirmClaim(dialogPerson.id)}
+          onCancel={() => setDialog(null)}
+        />
+      )}
+      {dialog?.kind === "unclaim" && dialogPerson && (
+        <ConfirmDialog
+          title={`Stop playing ${dialogPerson.name}?`}
+          message={`${dialogPerson.name} stays in the list but is no longer your character.`}
+          confirmLabel="Confirm"
+          onConfirm={confirmUnclaim}
           onCancel={() => setDialog(null)}
         />
       )}

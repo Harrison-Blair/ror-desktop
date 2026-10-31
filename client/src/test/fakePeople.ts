@@ -146,6 +146,10 @@ export const api = {
     }
     store.meId = id;
   }),
+  clearMe: vi.fn(async () => {
+    configOk();
+    store.meId = null;
+  }),
   choosePhoto: vi.fn(async () => store.pick),
   setPhoto: vi.fn(async (id: string, source: string) => {
     charactersOk();

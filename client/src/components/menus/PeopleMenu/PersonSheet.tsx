@@ -20,6 +20,7 @@ export type PersonSheetProps = {
   photoVersion: number;
   onBack: () => void;
   onClaim: () => void;
+  onUnclaim: () => void;
   onEdit: () => void;
   onDelete: () => void;
 };
@@ -32,6 +33,7 @@ export function PersonSheet({
   photoVersion,
   onBack,
   onClaim,
+  onUnclaim,
   onEdit,
   onDelete,
 }: PersonSheetProps) {
@@ -52,6 +54,22 @@ export function PersonSheet({
               onClick={onClaim}
             >
               <Star size={20} strokeWidth={1.75} aria-hidden />
+            </button>
+          )}
+          {isPlayer(person, meId) && (
+            <button
+              type="button"
+              className={styles.starButton}
+              aria-label="Not my character"
+              title="Not my character"
+              onClick={onUnclaim}
+            >
+              <Star
+                size={20}
+                strokeWidth={1.75}
+                fill="currentColor"
+                aria-hidden
+              />
             </button>
           )}
           <button

@@ -277,6 +277,7 @@ pub fn run() {
             world::people_update,
             world::people_delete,
             world::people_set_me,
+            world::people_clear_me,
             world::people_choose_photo,
             world::people_set_photo,
             world::people_read_photo,

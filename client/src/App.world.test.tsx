@@ -726,6 +726,133 @@ describe("Sheet", () => {
     expect(api.setMe).not.toHaveBeenCalled();
   });
 
+  it("the filled star on your own sheet asks first; Cancel keeps your character", async () => {
+    store.characters = [otto(), rosa()];
+    store.meId = "rosa-alvarez";
+    const user = await openWorld();
+
+    await user.click(card("Rosa Alvarez"));
+    expect(
+      main().queryByRole("button", { name: "This is me" }),
+    ).not.toBeInTheDocument();
+    const star = main().getByRole("button", { name: "Not my character" });
+    expect(star).toHaveAttribute("title", "Not my character");
+    expect(star).toHaveClass(styles.starButton);
+    expect(star.querySelector("svg")).toHaveAttribute("fill", "currentColor");
+    await user.click(star);
+    const dialog = within(screen.getByRole("alertdialog"));
+    expect(
+      dialog.getByRole("heading", { name: "Stop playing Rosa Alvarez?" }),
+    ).toBeInTheDocument();
+    expect(
+      dialog.getByText(
+        "Rosa Alvarez stays in the list but is no longer your character.",
+      ),
+    ).toBeInTheDocument();
+    expect(dialog.getByRole("button", { name: "Confirm" })).not.toHaveClass(
+      confirmStyles.danger,
+    );
+    await user.click(dialog.getByRole("button", { name: "Cancel" }));
+
+    expect(screen.queryByRole("alertdialog")).not.toBeInTheDocument();
+    expect(api.clearMe).not.toHaveBeenCalled();
+    expect(store.meId).toBe("rosa-alvarez");
+    expect(
+      main().getByRole("heading", {
+        name: /^Rosa Alvarez ?\(31\) ?Your character$/,
+      }),
+    ).toBeInTheDocument();
+    expect(
+      main().getByRole("button", { name: "Not my character" }),
+    ).toBeInTheDocument();
+  });
+
+  it("Confirm on the filled star leaves you with no character, and you can claim again", async () => {
+    store.characters = [otto(), rosa()];
+    store.meId = "rosa-alvarez";
+    const user = await openWorld();
+
+    await user.click(card("Rosa Alvarez"));
+    await user.click(main().getByRole("button", { name: "Not my character" }));
+    await user.click(
+      within(screen.getByRole("alertdialog")).getByRole("button", {
+        name: "Confirm",
+      }),
+    );
+
+    await waitFor(() => expect(store.meId).toBe(null));
+    expect(api.clearMe).toHaveBeenCalledTimes(1);
+    // The sheet: no ★, the outline star and Delete are back.
+    await main().findByRole("button", { name: "This is me" });
+    expect(
+      main().getByRole("heading", { name: /^Rosa Alvarez ?\(31\)$/ }),
+    ).toBeInTheDocument();
+    expect(
+      main().queryByRole("button", { name: "Not my character" }),
+    ).not.toBeInTheDocument();
+    expect(
+      main().getByRole("button", { name: "Delete Rosa Alvarez" }),
+    ).toBeInTheDocument();
+    expect(
+      main().queryByRole("img", { name: "Your character" }),
+    ).not.toBeInTheDocument();
+
+    // The list: no ★, Rosa is no longer pinned first, Players shows 0.
+    await user.click(
+      main().getByRole("button", { name: "People of interest" }),
+    );
+    expect(cardNames()).toEqual(["Otto Brandt", "Rosa Alvarez"]);
+    expect(
+      main().queryByRole("img", { name: "Your character" }),
+    ).not.toBeInTheDocument();
+    const show = within(main().getByRole("group", { name: "Show" }));
+    expect(
+      show.getByRole("button", { name: /^Players ?0$/ }),
+    ).toBeInTheDocument();
+    expect(show.getByRole("button", { name: /^NPCs ?2$/ })).toBeInTheDocument();
+
+    // Notes: no character button.
+    await user.click(screen.getByRole("button", { name: "Notes" }));
+    const notes = within(
+      screen.getByRole("region", { name: "Notes rail panel" }),
+    );
+    expect(
+      notes.queryByRole("button", { name: /Your character/ }),
+    ).not.toBeInTheDocument();
+
+    // Claiming works again.
+    await user.click(screen.getByRole("button", { name: "World" }));
+    await user.click(card("Rosa Alvarez"));
+    await user.click(main().getByRole("button", { name: "This is me" }));
+    await user.click(
+      within(screen.getByRole("alertdialog")).getByRole("button", {
+        name: "Confirm",
+      }),
+    );
+    await waitFor(() => expect(store.meId).toBe("rosa-alvarez"));
+    expect(
+      await main().findByRole("button", { name: "Not my character" }),
+    ).toBeInTheDocument();
+  });
+
+  it("a damaged config.json stops the unselect and keeps your character", async () => {
+    store.characters = [rosa()];
+    store.meId = "rosa-alvarez";
+    const user = await openWorld();
+
+    await user.click(card("Rosa Alvarez"));
+    store.damaged.config = DAMAGED("config.json");
+    await user.click(main().getByRole("button", { name: "Not my character" }));
+    await user.click(
+      within(screen.getByRole("alertdialog")).getByRole("button", {
+        name: "Confirm",
+      }),
+    );
+
+    expect(await findAlert()).toHaveTextContent(DAMAGED("config.json"));
+    expect(store.meId).toBe("rosa-alvarez");
+  });
+
   // Check 17
   it("Delete asks first, then removes the person and their photo", async () => {
     store.characters = [{ ...otto(), photo: "otto-brandt.png" }, rosa()];

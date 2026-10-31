@@ -435,6 +435,13 @@ pub fn set_me(paths: &Paths, id: &str) -> Result<()> {
         .map_err(|e| format!("Couldn't save your character: {e}."))
 }
 
+/// Leaves this device with no character. The character stays in the list.
+pub fn clear_me(paths: &Paths) -> Result<()> {
+    let _guard = lock();
+    config::update(&paths.config_file, |c| c.me_id = None)
+        .map_err(|e| format!("Couldn't save your character: {e}."))
+}
+
 const PHOTO_TYPES: [&str; 5] = ["png", "jpg", "jpeg", "gif", "webp"];
 
 /// Copies the image at `source` to `photos/<id>.<ext>` and replaces the
@@ -558,6 +565,11 @@ pub fn people_delete(app: AppHandle, id: String) -> Result<()> {
 #[tauri::command]
 pub fn people_set_me(app: AppHandle, id: String) -> Result<()> {
     set_me(&app_paths(&app)?, &id)
+}
+
+#[tauri::command]
+pub fn people_clear_me(app: AppHandle) -> Result<()> {
+    clear_me(&app_paths(&app)?)
 }
 
 // Async so that the open picker doesn't block the main thread.
@@ -969,6 +981,34 @@ mod tests {
         set_me(&paths, &bo.id).unwrap();
         assert_eq!(list(&paths).unwrap().me_id.as_ref(), Some(&bo.id));
         assert_eq!(set_me(&paths, "nobody"), Err(not_found()));
+    }
+
+    #[test]
+    fn clearing_me_leaves_no_character_and_keeps_the_person() {
+        let (_temp, paths) = setup();
+        let ada = create(&paths, named("Ada")).unwrap();
+        set_me(&paths, &ada.id).unwrap();
+        clear_me(&paths).unwrap();
+        let people = list(&paths).unwrap();
+        assert_eq!(people.me_id, None);
+        assert_eq!(people.characters, vec![ada.clone()]);
+        assert_eq!(saved_json(&paths.config_file).get("meId"), None);
+        // Clearing again changes nothing, and claiming works again.
+        clear_me(&paths).unwrap();
+        set_me(&paths, &ada.id).unwrap();
+        assert_eq!(list(&paths).unwrap().me_id, Some(ada.id));
+    }
+
+    #[test]
+    fn a_damaged_config_blocks_clearing_me_and_is_left_as_it_is() {
+        let (_temp, paths) = setup();
+        let ada = create(&paths, named("Ada")).unwrap();
+        set_me(&paths, &ada.id).unwrap();
+        let damaged = format!("{{ \"meId\": \"{}\", ", ada.id);
+        fs::write(&paths.config_file, &damaged).unwrap();
+        let error = clear_me(&paths).unwrap_err();
+        assert!(error.starts_with("Couldn't save your character"), "{error}");
+        assert_eq!(fs::read(&paths.config_file).unwrap(), damaged.as_bytes());
     }
 
     #[test]
