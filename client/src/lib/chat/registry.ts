@@ -32,6 +32,11 @@ export type AppBridge = {
   pathChanged: (from: string, to: string | null) => void;
   // Adds a roll to the Dice history.
   addRoll: (result: DiceResult) => void;
+  // Opens a person's sheet in World. Resolves false when it didn't open:
+  // the user kept an unsaved person form, or the open note couldn't be saved.
+  showPerson: (id: string) => Promise<boolean>;
+  // The people changed, so the People screens load them again.
+  peopleChanged: () => void;
 };
 
 export type ToolContext = {
