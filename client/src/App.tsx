@@ -8,6 +8,7 @@ import {
 } from "lucide-react";
 import { useCallback, useEffect, useRef, useState } from "react";
 import styles from "@/App.module.css";
+import { ConfirmDialog } from "@/components/ConfirmDialog/ConfirmDialog";
 import {
   ChatMenu,
   ChatMenuActions,
@@ -27,11 +28,21 @@ import {
   NotesMenuActions,
   type NotesMenuHandle,
 } from "@/components/menus/NotesMenu/NotesMenu";
+import {
+  DEFAULT_PREFS,
+  type ListPrefs,
+} from "@/components/menus/PeopleMenu/PeopleList";
+import {
+  PeopleMenu,
+  type PeopleView,
+} from "@/components/menus/PeopleMenu/PeopleMenu";
+import { usePeople } from "@/components/menus/PeopleMenu/usePeople";
 import { ProvidersSettings } from "@/components/menus/SettingsMenu/ProvidersSettings";
 import {
   SettingsMenu,
   type SettingsPage,
 } from "@/components/menus/SettingsMenu/SettingsMenu";
+import { WorldMenu } from "@/components/menus/WorldMenu/WorldMenu";
 import { MainPanel } from "@/components/panels/MainPanel/MainPanel";
 import { RailPanel } from "@/components/panels/RailPanel/RailPanel";
 import { ResizeHandle } from "@/components/panels/ResizeHandle/ResizeHandle";
@@ -92,6 +103,19 @@ function Shell() {
     () => new Set(),
   );
   const [notesSelected, setNotesSelected] = useState<string | null>(null);
+  // Shared by World and the Notes character button.
+  const people = usePeople();
+  const reloadPeople = people.reload;
+  // Kept here so the Notes character button can open a sheet.
+  const [peopleView, setPeopleView] = useState<PeopleView>({ screen: "list" });
+  // Kept here so the list looks the same after a visit to another tab.
+  const [peoplePrefs, setPeoplePrefs] = useState<ListPrefs>(DEFAULT_PREFS);
+  // True while the Add or Edit person form has unsaved changes.
+  const peopleFormDirty = useRef(false);
+  // Answers the open "Discard changes?" question.
+  const [discardAnswer, setDiscardAnswer] = useState<
+    ((discard: boolean) => void) | null
+  >(null);
   const [railPanelWidth, setRailPanelWidth] = useState(
     RAIL_PANEL_WIDTH.default,
   );
@@ -131,6 +155,11 @@ function Shell() {
         );
       },
       addRoll: (result) => addRoll(result),
+      // From the Notes tab or another person's form too, so the form asks
+      // first.
+      showPerson: async (id) =>
+        (await leavePeopleForm()) && showTab("world", { screen: "sheet", id }),
+      peopleChanged: () => reloadPeople(),
     },
   });
   const loadChat = chat.load;
@@ -211,6 +240,7 @@ function Shell() {
         // Settings replaces the editor, so the open note's edit is saved
         // first. A failed save keeps the editor and its text.
         if (!(await (editorMenu.current?.flush() ?? true))) return;
+        if (!(await leavePeopleForm())) return;
         if (click !== railClicks.current) return;
         setSettings("providers");
         setRailPanelOpen(true);
@@ -226,27 +256,69 @@ function Shell() {
     setRolls((previous) => [roll, ...previous].slice(0, DICE_HISTORY_LENGTH));
   };
 
+  // Before the person form leaves the main panel: asks first when it has
+  // unsaved changes. Resolves false to stay on the form. Leaving drops the
+  // form, so World opens on the list or the sheet next time.
+  const leavePeopleForm = async () => {
+    const form =
+      settings === null &&
+      activeId === "world" &&
+      (peopleView.screen === "add" || peopleView.screen === "edit");
+    if (!form) return true;
+    if (peopleFormDirty.current) {
+      const discard = await new Promise<boolean>((resolve) =>
+        setDiscardAnswer(() => resolve),
+      );
+      setDiscardAnswer(null);
+      if (!discard) return false;
+      peopleFormDirty.current = false;
+    }
+    setPeopleView(
+      peopleView.screen === "edit"
+        ? { screen: "sheet", id: peopleView.id }
+        : { screen: "list" },
+    );
+    return true;
+  };
+
+  // Shows a tab. World replaces the editor, so the open note's edit is saved
+  // first; a failed save keeps the editor and its text. Resolves false when
+  // the tab wasn't shown.
+  const showTab = async (id: string, view?: PeopleView) => {
+    const click = ++railClicks.current;
+    if (id === "world" && !(await (editorMenu.current?.flush() ?? true))) {
+      return false;
+    }
+    if (id !== "world" && !(await leavePeopleForm())) return false;
+    if (click !== railClicks.current) return false;
+    // The files may have been fixed or changed since the last load.
+    if (id === "world") reloadPeople();
+    if (view) setPeopleView(view);
+    setSettings(null);
+    setActiveId(id);
+    setRailPanelOpen(true);
+    return true;
+  };
+
   const selectRailItem = (id: string) => {
-    railClicks.current++;
-    // Only Notes is built so far.
-    if (id !== "notes") {
+    // Session is not built yet.
+    if (id === "session") {
+      railClicks.current++;
       const label = railItems.find((item) => item.id === id)?.label;
       notify({ kind: "error", message: `${label} is not implemented yet.` });
       return;
     }
-    if (settings !== null) {
-      setSettings(null);
-      setActiveId(id);
-      setRailPanelOpen(true);
-      return;
-    }
-    if (id === activeId) {
+    if (settings === null && id === activeId) {
+      railClicks.current++;
       setRailPanelOpen((open) => !open);
       return;
     }
-    setActiveId(id);
-    setRailPanelOpen(true);
+    showTab(id);
   };
+
+  const me = people.people?.characters.find(
+    (person) => person.id === people.people?.meId,
+  );
 
   return (
     <div className={styles.shell}>
@@ -299,12 +371,38 @@ function Shell() {
             saveOpenNote={() =>
               editorMenu.current?.flush() ?? Promise.resolve(true)
             }
+            me={me}
+            photoVersion={people.photoVersion}
+            onOpenMe={() =>
+              me && showTab("world", { screen: "sheet", id: me.id })
+            }
+          />
+        )}
+        {settings === null && activeId === "world" && (
+          <WorldMenu
+            gameDate={people.world?.gameDate}
+            onGameDateSaved={people.setWorld}
+            section="people"
+            onSelect={async () => {
+              if (await leavePeopleForm()) setPeopleView({ screen: "list" });
+            }}
           />
         )}
       </RailPanel>
       <MainPanel>
         {settings === "providers" ? (
           <ProvidersSettings />
+        ) : activeId === "world" ? (
+          <PeopleMenu
+            data={people}
+            view={peopleView}
+            setView={setPeopleView}
+            prefs={peoplePrefs}
+            setPrefs={setPeoplePrefs}
+            onFormDirty={(dirty) => {
+              peopleFormDirty.current = dirty;
+            }}
+          />
         ) : (
           <EditorMenu
             ref={editorMenu}
@@ -354,6 +452,16 @@ function Shell() {
           />
         )}
       </SidePanel>
+      {discardAnswer && (
+        <ConfirmDialog
+          title="Discard changes?"
+          message=""
+          confirmLabel="Discard"
+          danger
+          onConfirm={() => discardAnswer(true)}
+          onCancel={() => discardAnswer(false)}
+        />
+      )}
     </div>
   );
 }

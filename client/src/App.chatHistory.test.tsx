@@ -2,6 +2,7 @@ import { act, render, screen, within } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import { beforeEach, describe, expect, it, vi } from "vitest";
 import App from "@/App";
+import confirmStyles from "@/components/ConfirmDialog/ConfirmDialog.module.css";
 import type { Chat, Send } from "@/lib/chat/chatApi";
 import * as chatApi from "@/lib/chat/chatApi";
 import * as historyApi from "@/lib/chat/historyApi";
@@ -354,6 +355,9 @@ describe("Chat history", () => {
     await remove();
     let dialog = screen.getByRole("alertdialog", { name: "Delete chat?" });
     expect(dialog).toHaveTextContent("“Lich tower” will be deleted.");
+    expect(within(dialog).getByRole("button", { name: "Delete" })).toHaveClass(
+      confirmStyles.danger,
+    );
     await user.click(within(dialog).getByRole("button", { name: "Cancel" }));
     expect(history.deleteChat).not.toHaveBeenCalled();
     expect(titles()).toContain("Lich tower");

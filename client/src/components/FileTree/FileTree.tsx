@@ -699,6 +699,7 @@ export function FileTree({
       {deleting && (
         <ConfirmDialog
           {...confirmDelete(deleting)}
+          danger
           onCancel={() => {
             returnFocusTo(deleting.path);
             setDeleting(undefined);

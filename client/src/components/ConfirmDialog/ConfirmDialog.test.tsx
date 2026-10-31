@@ -5,6 +5,7 @@ import {
   ConfirmDialog,
   type ConfirmDialogProps,
 } from "@/components/ConfirmDialog/ConfirmDialog";
+import styles from "@/components/ConfirmDialog/ConfirmDialog.module.css";
 
 function renderDialog(props: Partial<ConfirmDialogProps> = {}) {
   const onConfirm = vi.fn();
@@ -32,6 +33,41 @@ describe("ConfirmDialog", () => {
     expect(dialog).toHaveAttribute("aria-modal", "true");
     expect(dialog).toHaveAccessibleDescription("This cannot be undone.");
     expect(screen.getByRole("button", { name: "Discard" })).toBeInTheDocument();
+  });
+
+  it("renders no message paragraph when the message is empty", () => {
+    renderDialog({ message: "" });
+
+    const dialog = screen.getByRole("alertdialog", {
+      name: "Discard the draft?",
+    });
+    expect(dialog.querySelector("p")).toBeNull();
+    expect(dialog).not.toHaveAttribute("aria-describedby");
+  });
+
+  it("gives the confirm button the danger style only when danger is set", () => {
+    const { unmount } = render(
+      <ConfirmDialog
+        title="Keep?"
+        message=""
+        confirmLabel="Keep"
+        onConfirm={vi.fn()}
+        onCancel={vi.fn()}
+      />,
+    );
+    expect(screen.getByRole("button", { name: "Keep" })).not.toHaveClass(
+      styles.danger,
+    );
+    unmount();
+
+    renderDialog({ danger: true });
+
+    expect(screen.getByRole("button", { name: "Discard" })).toHaveClass(
+      styles.danger,
+    );
+    expect(screen.getByRole("button", { name: "Cancel" })).not.toHaveClass(
+      styles.danger,
+    );
   });
 
   it("labels the cancel button Cancel by default", () => {

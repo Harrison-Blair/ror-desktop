@@ -3,6 +3,7 @@ mod config;
 mod notes;
 mod secrets;
 mod web;
+mod world;
 
 use notes::{Entry, Kind, NotesError};
 use notify_debouncer_mini::{
@@ -270,7 +271,19 @@ pub fn run() {
             chat::chat_tool_result,
             chat::chat_stop,
             web::web_search,
-            web::web_fetch
+            web::web_fetch,
+            world::people_list,
+            world::people_create,
+            world::people_update,
+            world::people_delete,
+            world::people_set_me,
+            world::people_clear_me,
+            world::people_choose_photo,
+            world::people_set_photo,
+            world::people_read_photo,
+            world::world_get,
+            world::world_set_game_date,
+            world::world_set_stat_names
         ])
         .build(tauri::generate_context!())
         .expect("error while running Ror Desktop")

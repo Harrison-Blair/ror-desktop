@@ -442,13 +442,43 @@ describe("Model menu", () => {
     expect(within(menu).queryByText(/Providers and keys/)).toBeNull();
   });
 
-  it("a provider without a key shows only No key", async () => {
+  it("a provider without a key shows No key and points to Settings in text", async () => {
     const user = userEvent.setup();
     render(<App />);
     const menu = await openModelMenu(user);
     expect(await within(menu).findByText("No key")).toBeInTheDocument();
+    expect(within(menu).getByText("Add a key in Settings")).toBeInTheDocument();
+    expect(within(menu).queryByRole("link")).not.toBeInTheDocument();
     expect(within(menu).queryByRole("button")).not.toBeInTheDocument();
     expect(menu.querySelector("input")).toBeNull();
-    expect(within(menu).queryByText(/Add a key/)).toBeNull();
+  });
+
+  it("a provider with a key has no Add a key line", async () => {
+    keys["opencode-go"] = true;
+    const user = userEvent.setup();
+    render(<App />);
+    const menu = await openModelMenu(user);
+    expect(await within(menu).findByText("Key saved")).toBeInTheDocument();
+    expect(within(menu).queryByText("Add a key in Settings")).toBeNull();
+  });
+
+  it("a line separates the provider groups", async () => {
+    keys["opencode-go"] = true;
+    const user = userEvent.setup();
+    render(<App />);
+    const menu = await openModelMenu(user);
+    await within(menu).findByRole("list", { name: "OpenCode Go" });
+    const separator = within(menu).getByRole("separator");
+    const codex = within(menu).getByRole("heading", { name: "Codex" });
+    const goList = within(menu).getByRole("list", { name: "OpenCode Go" });
+    // After the OpenCode Go models, before the Codex heading.
+    expect(
+      goList.compareDocumentPosition(separator) &
+        Node.DOCUMENT_POSITION_FOLLOWING,
+    ).toBeTruthy();
+    expect(
+      separator.compareDocumentPosition(codex) &
+        Node.DOCUMENT_POSITION_FOLLOWING,
+    ).toBeTruthy();
   });
 });

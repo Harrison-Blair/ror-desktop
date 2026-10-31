@@ -2,6 +2,7 @@ import {
   ArrowUp,
   Check,
   ChevronDown,
+  ChevronUp,
   CircleAlert,
   Copy,
   History,
@@ -369,7 +370,11 @@ function Composer({ chat }: { chat: ChatController }) {
             <span className={styles.modelName}>
               {chat.model ?? "Choose model"}
             </span>
-            <ChevronDown size={14} strokeWidth={1.75} aria-hidden />
+            {menuOpen ? (
+              <ChevronUp size={14} strokeWidth={1.75} aria-hidden />
+            ) : (
+              <ChevronDown size={14} strokeWidth={1.75} aria-hidden />
+            )}
           </button>
           {menuOpen && (
             <ModelMenu

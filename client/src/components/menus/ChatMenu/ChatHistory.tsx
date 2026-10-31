@@ -257,6 +257,7 @@ export function ChatHistory({ chat }: { chat: ChatController }) {
           title="Delete chat?"
           message={`“${titleOf(deleting)}” will be deleted. This can't be undone.`}
           confirmLabel="Delete"
+          danger
           onConfirm={() => remove(deleting)}
           onCancel={() => setDeleting(null)}
         />

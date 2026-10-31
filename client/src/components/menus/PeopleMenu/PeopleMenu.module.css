@@ -1,0 +1,743 @@
+/* World › People of interest in the main panel. */
+.page {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-4);
+}
+
+.top {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: var(--space-3);
+}
+
+.h1 {
+  margin: 0;
+  font: 600 20px / 28px var(--font-sans);
+}
+
+.spacer {
+  flex: 1;
+}
+
+.page button:focus-visible,
+.sheet button:focus-visible {
+  outline: 2px solid var(--focus);
+  outline-offset: 2px;
+}
+
+/* Buttons */
+.button {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  height: 32px;
+  padding: 0 var(--space-3);
+  color: var(--ink);
+  font: 600 14px / 20px var(--font-sans);
+  background: transparent;
+  border: 1px solid var(--line-control);
+  border-radius: var(--radius-1);
+  cursor: pointer;
+}
+
+.button:hover {
+  background: var(--raised);
+}
+
+.button:disabled {
+  color: var(--ink-muted);
+  cursor: not-allowed;
+}
+
+.button:disabled:hover {
+  background: transparent;
+}
+
+.input:disabled {
+  color: var(--ink-muted);
+  cursor: not-allowed;
+}
+
+.quiet {
+  color: var(--ink-muted);
+  font-weight: 500;
+}
+
+.small {
+  height: 28px;
+  padding: 0 10px;
+  font-size: 13px;
+}
+
+.danger {
+  color: var(--error);
+  border-color: var(--error);
+}
+
+.danger:hover {
+  background: var(--error-wash);
+}
+
+.link {
+  padding: 0;
+  color: var(--ink);
+  font: inherit;
+  text-decoration: underline;
+  background: none;
+  border: 0;
+  cursor: pointer;
+}
+
+/* Segmented switches: the view and the filter. */
+.segments {
+  display: flex;
+  min-inline-size: 0;
+  margin: 0;
+  padding: 0;
+  overflow: hidden;
+  border: 1px solid var(--line-control);
+  border-radius: var(--radius-1);
+}
+
+.segment {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  height: 32px;
+  padding: 0 var(--space-3);
+  color: var(--ink-muted);
+  font: inherit;
+  background: transparent;
+  border: 0;
+  border-right: 1px solid var(--line);
+  cursor: pointer;
+}
+
+.segment:last-child {
+  border-right: 0;
+}
+
+.segment:hover {
+  color: var(--ink);
+  background: var(--raised);
+}
+
+.segment[aria-pressed="true"] {
+  color: var(--ink);
+  background: var(--well);
+}
+
+.iconSegment {
+  justify-content: center;
+  width: 36px;
+  padding: 0;
+}
+
+.count {
+  color: var(--ink-muted);
+  font: 400 12px / 16px var(--font-mono);
+}
+
+.search {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  box-sizing: border-box;
+  width: 240px;
+  height: 32px;
+  padding: 0 var(--space-2);
+  color: var(--ink-muted);
+  background: var(--ground);
+  border: 1px solid var(--line-control);
+  border-radius: var(--radius-1);
+}
+
+.search:focus-within {
+  outline: 2px solid var(--focus);
+  outline-offset: 2px;
+}
+
+.search input {
+  flex: 1;
+  min-width: 0;
+  padding: 0;
+  color: var(--ink);
+  font: inherit;
+  background: transparent;
+  border: 0;
+  outline: none;
+}
+
+.search input::placeholder {
+  color: var(--ink-muted);
+}
+
+.sortLabel {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  color: var(--ink-muted);
+}
+
+.select {
+  height: 32px;
+  padding: 0 var(--space-2);
+  color: var(--ink);
+  font: inherit;
+  background: var(--ground);
+  border: 1px solid var(--line-control);
+  border-radius: var(--radius-1);
+}
+
+.select:focus-visible {
+  outline: 2px solid var(--focus);
+  outline-offset: 2px;
+}
+
+.mono {
+  font: 400 13px / 18px var(--font-mono);
+}
+
+/* Long text: one line that ends with an ellipsis. */
+.clip {
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.star {
+  flex: none;
+  color: var(--star);
+}
+
+.photoImage {
+  width: 100%;
+  height: 100%;
+  object-fit: cover;
+  border-radius: inherit;
+}
+
+/* Cards */
+.grid {
+  display: grid;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  gap: var(--space-3);
+}
+
+.card {
+  display: flex;
+  align-items: center;
+  gap: var(--space-3);
+  min-width: 0;
+  padding: var(--space-3);
+  color: var(--ink);
+  font: inherit;
+  text-align: left;
+  background: var(--raised);
+  border: 1px solid var(--line);
+  border-radius: var(--radius-1);
+  cursor: pointer;
+}
+
+.card:hover {
+  border-color: var(--line-control);
+}
+
+.card.mine {
+  border-color: var(--ink-muted);
+}
+
+.card.dead,
+.tr.dead {
+  color: var(--ink-muted);
+}
+
+.cardPhoto {
+  display: grid;
+  flex: none;
+  place-items: center;
+  width: 64px;
+  height: 64px;
+  overflow: hidden;
+  color: var(--ink-muted);
+  font: 600 20px / 1 var(--font-sans);
+  background: var(--well);
+  border-radius: 2px;
+}
+
+.cardBody {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-1);
+  min-width: 0;
+}
+
+.cardName {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  min-width: 0;
+  font: 600 15px / 20px var(--font-sans);
+}
+
+.cardLine {
+  color: var(--ink-muted);
+  font-size: 13px;
+  line-height: 18px;
+}
+
+/* Table: rows are grids, so the columns keep the board's widths. */
+.table {
+  display: flex;
+  flex-direction: column;
+  border-collapse: collapse;
+}
+
+.table thead,
+.table tbody {
+  display: contents;
+}
+
+.th {
+  font: inherit;
+  text-align: left;
+}
+
+.cell,
+.th {
+  padding: 0;
+}
+
+.tr {
+  display: grid;
+  grid-template-columns: minmax(0, 2.4fr) minmax(0, 1.6fr) 56px;
+  column-gap: var(--space-3);
+  align-items: center;
+  min-height: 48px;
+  padding: 0 var(--space-3);
+  border-bottom: 1px solid var(--line);
+}
+
+.tr:hover {
+  background: var(--raised);
+}
+
+tbody .tr {
+  cursor: pointer;
+}
+
+.tr.mine {
+  background: var(--sunken);
+}
+
+.thead {
+  min-height: 32px;
+  color: var(--ink-muted);
+  font: 600 12px / 16px var(--font-sans);
+  letter-spacing: 0.02em;
+}
+
+.thead:hover {
+  background: transparent;
+}
+
+.sortButton {
+  display: inline-flex;
+  align-items: center;
+  gap: var(--space-1);
+  padding: 0;
+  color: inherit;
+  font: inherit;
+  letter-spacing: inherit;
+  background: none;
+  border: 0;
+  cursor: pointer;
+}
+
+.sortButton:hover,
+[aria-sort="ascending"] > .sortButton,
+[aria-sort="descending"] > .sortButton {
+  color: var(--ink);
+}
+
+.cell {
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.nameButton {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  max-width: 100%;
+  min-width: 0;
+  padding: 0;
+  color: inherit;
+  font: inherit;
+  font-weight: 500;
+  text-align: left;
+  background: none;
+  border: 0;
+  cursor: pointer;
+}
+
+.nameButton:hover .rowName {
+  text-decoration: underline;
+}
+
+.avatar {
+  display: grid;
+  flex: none;
+  place-items: center;
+  box-sizing: border-box;
+  width: 28px;
+  height: 28px;
+  overflow: hidden;
+  color: var(--ink-muted);
+  font: 600 11px / 1 var(--font-sans);
+  background: var(--well);
+  border: 1px solid var(--line);
+  border-radius: 50%;
+}
+
+/* Empty list and no matches */
+.empty {
+  display: flex;
+  flex-direction: column;
+  align-items: flex-start;
+  gap: 10px;
+  padding: var(--space-5);
+  color: var(--ink-muted);
+  border: 1px dashed var(--line-control);
+  border-radius: var(--radius-1);
+}
+
+.empty p {
+  margin: 0;
+}
+
+/* A damaged file, in place of the list. */
+.loadError {
+  margin: 0;
+  padding: var(--space-4);
+  color: var(--error);
+  overflow-wrap: anywhere;
+  border: 1px solid var(--error);
+  border-radius: var(--radius-1);
+}
+
+/* Sheet and form */
+.sheet {
+  display: flex;
+  flex-direction: column;
+  gap: 28px;
+  max-width: 960px;
+}
+
+.sheetBar {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: var(--space-3);
+  min-height: 32px;
+}
+
+.back {
+  display: inline-flex;
+  align-items: center;
+  gap: var(--space-1);
+  margin-left: -6px;
+  padding: var(--space-1) 6px;
+  color: var(--ink-muted);
+  font: inherit;
+  font-weight: 500;
+  background: none;
+  border: 0;
+  border-radius: var(--radius-1);
+  cursor: pointer;
+}
+
+.back:hover {
+  color: var(--ink);
+  background: var(--raised);
+}
+
+.actions {
+  display: flex;
+  gap: var(--space-2);
+  margin-left: auto;
+}
+
+/* This is me: a plain outline star that fills on hover. */
+.starButton {
+  display: inline-grid;
+  place-items: center;
+  width: 32px;
+  height: 32px;
+  padding: 0;
+  color: var(--star);
+  background: transparent;
+  border: 0;
+  border-radius: var(--radius-1);
+  cursor: pointer;
+}
+
+.starButton:hover svg {
+  fill: currentColor;
+}
+
+.editing {
+  color: var(--ink-muted);
+  font: 600 13px / 16px var(--font-sans);
+  letter-spacing: 0.02em;
+}
+
+.sheetHead {
+  display: flex;
+  flex-direction: column;
+  min-width: 0;
+}
+
+.sheetName {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  min-width: 0;
+  margin: 0;
+  font: 600 30px / 38px var(--font-sans);
+  letter-spacing: -0.01em;
+  overflow-wrap: anywhere;
+}
+
+.sheetAge {
+  color: var(--ink-muted);
+  font-weight: 400;
+}
+
+.sheetLine {
+  margin: var(--space-2) 0 0;
+  color: var(--ink-muted);
+}
+
+.sheetLine + .sheetLine {
+  margin-top: 3px;
+}
+
+.sheetBody {
+  display: grid;
+  grid-template-columns: 240px minmax(0, 1fr);
+  gap: 36px;
+  align-items: start;
+}
+
+.portrait {
+  display: grid;
+  place-items: center;
+  box-sizing: border-box;
+  width: 240px;
+  height: 300px;
+  overflow: hidden;
+  color: var(--ink-muted);
+  font: 600 56px / 1 var(--font-sans);
+  letter-spacing: 0.04em;
+  background: var(--well);
+  border: 1px solid var(--line);
+  border-radius: var(--radius-1);
+}
+
+.portraitColumn {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 10px;
+  min-width: 0;
+}
+
+.stats {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-1);
+  min-width: 0;
+}
+
+.h3 {
+  margin: 0;
+  color: var(--ink);
+  font: 600 18px / 24px var(--font-sans);
+}
+
+.stats > .h3 {
+  margin-bottom: var(--space-2);
+}
+
+.section {
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+  padding-top: var(--space-4);
+  border-top: 1px solid var(--line);
+}
+
+.description {
+  max-width: 720px;
+  margin: 0;
+  line-height: 22px;
+  white-space: pre-line;
+}
+
+.pair {
+  display: grid;
+  grid-template-columns: 88px 32px minmax(0, 1fr) 32px 88px;
+  gap: 10px;
+  align-items: center;
+  min-height: 28px;
+}
+
+.statName {
+  min-width: 0;
+  color: var(--ink-muted);
+  font-size: 13px;
+  overflow-wrap: anywhere;
+}
+
+.statValue {
+  text-align: right;
+}
+
+.right {
+  text-align: right;
+}
+
+.bar {
+  display: flex;
+  height: 8px;
+  overflow: hidden;
+  border-radius: 4px;
+}
+
+.fill {
+  display: block;
+  height: 100%;
+  background: var(--stat-left);
+}
+
+.rest {
+  flex: 1;
+  background: var(--stat-right);
+}
+
+.unset {
+  display: flex;
+  align-items: center;
+  gap: var(--space-2);
+  color: var(--ink-muted);
+  font-size: 12px;
+}
+
+.unset::before,
+.unset::after {
+  content: "";
+  flex: 1;
+  height: 8px;
+  border: 1px dashed var(--line-control);
+  border-radius: 4px;
+}
+
+/* Form */
+.form {
+  display: grid;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  gap: 14px var(--space-4);
+}
+
+.wide {
+  display: flex;
+  flex-direction: column;
+  grid-column: 1 / -1;
+}
+
+.field {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-1);
+  min-width: 0;
+}
+
+.fieldLabel {
+  color: var(--ink-muted);
+  font: 600 12px / 16px var(--font-sans);
+  letter-spacing: 0.02em;
+}
+
+.input {
+  box-sizing: border-box;
+  min-width: 0;
+  height: 32px;
+  padding: 0 var(--space-2);
+  color: var(--ink);
+  font: inherit;
+  background: var(--ground);
+  border: 1px solid var(--line-control);
+  border-radius: var(--radius-1);
+}
+
+.input:focus-visible {
+  outline: 2px solid var(--focus);
+  outline-offset: 2px;
+}
+
+.input::placeholder {
+  color: var(--ink-muted);
+}
+
+.textarea {
+  height: auto;
+  min-height: 72px;
+  padding: 6px var(--space-2);
+  resize: vertical;
+}
+
+/* Validation: messages show under their field after the first Save. */
+.input.invalid {
+  border-color: var(--error);
+}
+
+.fieldError {
+  color: var(--error);
+  font: 400 12px / 16px var(--font-sans);
+}
+
+.note {
+  max-width: 100%;
+  margin: 0;
+  overflow: hidden;
+  color: var(--ink-muted);
+  font-size: 12px;
+  line-height: 16px;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.pairEdit {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+}
+
+.editRow {
+  grid-template-columns: 120px 64px minmax(0, 1fr) 32px 120px;
+}
+
+.editRow .input {
+  height: 28px;
+}
+
+/* Under the value box: the 120px name column and the 10px gap. */
+.statError {
+  padding-left: 130px;
+}
