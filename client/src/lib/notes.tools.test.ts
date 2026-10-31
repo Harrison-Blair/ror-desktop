@@ -66,6 +66,8 @@ beforeEach(() => {
     showNote: vi.fn(),
     pathChanged: vi.fn(),
     addRoll: vi.fn(),
+    showPerson: vi.fn(async () => true),
+    peopleChanged: vi.fn(),
   };
   context = { app, reads: new Map(), notifyOnce: vi.fn() };
 });

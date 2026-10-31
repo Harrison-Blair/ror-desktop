@@ -155,6 +155,11 @@ function Shell() {
         );
       },
       addRoll: (result) => addRoll(result),
+      // From the Notes tab or another person's form too, so the form asks
+      // first.
+      showPerson: async (id) =>
+        (await leavePeopleForm()) && showTab("world", { screen: "sheet", id }),
+      peopleChanged: () => reloadPeople(),
     },
   });
   const loadChat = chat.load;
@@ -277,20 +282,22 @@ function Shell() {
   };
 
   // Shows a tab. World replaces the editor, so the open note's edit is saved
-  // first; a failed save keeps the editor and its text.
+  // first; a failed save keeps the editor and its text. Resolves false when
+  // the tab wasn't shown.
   const showTab = async (id: string, view?: PeopleView) => {
     const click = ++railClicks.current;
     if (id === "world" && !(await (editorMenu.current?.flush() ?? true))) {
-      return;
+      return false;
     }
-    if (id !== "world" && !(await leavePeopleForm())) return;
-    if (click !== railClicks.current) return;
+    if (id !== "world" && !(await leavePeopleForm())) return false;
+    if (click !== railClicks.current) return false;
     // The files may have been fixed or changed since the last load.
     if (id === "world") reloadPeople();
     if (view) setPeopleView(view);
     setSettings(null);
     setActiveId(id);
     setRailPanelOpen(true);
+    return true;
   };
 
   const selectRailItem = (id: string) => {
