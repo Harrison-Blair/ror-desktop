@@ -18,6 +18,9 @@ pub struct Config {
     pub chat_backend: Option<BackendId>,
     #[serde(default)]
     pub permission_mode: PermissionMode,
+    /// The id of this device's character in People of interest.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub me_id: Option<String>,
 }
 
 /// Whether the chat agent asks before it runs a write tool.
@@ -34,7 +37,7 @@ static UPDATE: Mutex<()> = Mutex::new(());
 
 /// Reads the config. A missing file counts as the defaults. A file that
 /// can't be read or parsed is an error.
-fn read(config_file: &Path) -> io::Result<Config> {
+pub fn read(config_file: &Path) -> io::Result<Config> {
     let text = match fs::read_to_string(config_file) {
         Ok(text) => text,
         Err(e) if e.kind() == io::ErrorKind::NotFound => return Ok(Config::default()),
@@ -233,6 +236,24 @@ mod tests {
         let config = load(&dirs.config_file);
         assert_eq!(config.chat_model.as_deref(), Some("gpt-5.5"));
         assert_eq!(config.chat_backend, Some(BackendId::Codex));
+    }
+
+    #[test]
+    fn my_character_id_round_trips_and_keeps_the_other_settings() {
+        let dirs = dirs();
+        save_notes_dir(&dirs.config_file, &dirs.other).unwrap();
+        update(&dirs.config_file, |c| c.me_id = Some("ada-id".into())).unwrap();
+        let saved: serde_json::Value =
+            serde_json::from_str(&fs::read_to_string(&dirs.config_file).unwrap()).unwrap();
+        assert_eq!(
+            saved,
+            serde_json::json!({
+                "notesDir": dirs.other,
+                "permissionMode": "manual",
+                "meId": "ada-id"
+            })
+        );
+        assert_eq!(load(&dirs.config_file).me_id.as_deref(), Some("ada-id"));
     }
 
     // Configs saved before the custom provider was removed.
