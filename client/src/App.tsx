@@ -450,6 +450,7 @@ function Shell() {
           title="Discard changes?"
           message=""
           confirmLabel="Discard"
+          danger
           onConfirm={() => discardAnswer(true)}
           onCancel={() => discardAnswer(false)}
         />

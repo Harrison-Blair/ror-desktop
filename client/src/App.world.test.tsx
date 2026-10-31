@@ -8,6 +8,7 @@ import {
 import userEvent from "@testing-library/user-event";
 import { beforeEach, describe, expect, it, vi } from "vitest";
 import App from "@/App";
+import confirmStyles from "@/components/ConfirmDialog/ConfirmDialog.module.css";
 import styles from "@/components/menus/PeopleMenu/PeopleMenu.module.css";
 import { api, character, resetPeople, store } from "@/test/fakePeople";
 
@@ -739,6 +740,9 @@ describe("Sheet", () => {
     expect(
       dialog.getByRole("heading", { name: "Delete Otto Brandt?" }),
     ).toBeInTheDocument();
+    expect(dialog.getByRole("button", { name: "Delete" })).toHaveClass(
+      confirmStyles.danger,
+    );
     await user.click(dialog.getByRole("button", { name: "Delete" }));
 
     await waitFor(() => expect(card("Rosa Alvarez")).toBeInTheDocument());
@@ -929,6 +933,9 @@ describe("Leaving World", () => {
     await user.type(main().getByLabelText("Name"), "Ada");
 
     await user.click(screen.getByRole("button", { name: "Notes" }));
+    expect(discard().getByRole("button", { name: "Discard" })).toHaveClass(
+      confirmStyles.danger,
+    );
     await user.click(discard().getByRole("button", { name: "Cancel" }));
     expect(
       screen.queryByRole("alertdialog", { name: "Discard changes?" }),

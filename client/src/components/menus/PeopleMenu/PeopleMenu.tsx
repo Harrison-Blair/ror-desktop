@@ -282,6 +282,7 @@ export function PeopleMenu({
           title={`Delete ${dialogPerson.name}?`}
           message="This cannot be undone."
           confirmLabel="Delete"
+          danger
           onConfirm={() => confirmDelete(dialogPerson.id)}
           onCancel={() => setDialog(null)}
         />

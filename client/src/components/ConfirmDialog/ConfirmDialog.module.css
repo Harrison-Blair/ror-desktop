@@ -65,3 +65,13 @@
   color: var(--ink);
   font-weight: 600;
 }
+
+.danger {
+  color: var(--error);
+  border-color: var(--error);
+}
+
+.danger:hover {
+  color: var(--error);
+  background: var(--error-wash);
+}
