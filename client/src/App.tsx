@@ -368,6 +368,7 @@ function Shell() {
             setExpanded={setNotesExpanded}
             selected={notesSelected}
             setSelected={setNotesSelected}
+            openNote={openNote}
             setOpenNote={setOpenNote}
             // A pending edit is saved to the open note's old path first.
             saveOpenNote={() =>

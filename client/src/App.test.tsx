@@ -569,5 +569,47 @@ describe("App frame", () => {
       expect(api.chooseNotesFolder).not.toHaveBeenCalled();
       expect(await shownText("Ada.md")).toBe("Hello!");
     });
+
+    it("names the open note when a selected folder blocks a folder switch", async () => {
+      notesList = [
+        {
+          kind: "folder",
+          name: "People",
+          path: "People",
+          children: [{ kind: "file", name: "Ada.md", path: "People/Ada.md" }],
+        },
+      ];
+      disk = { "People/Ada.md": "Hello" };
+      const user = renderApp();
+      const people = await screen.findByRole("treeitem", { name: "People" });
+      await user.click(people.firstElementChild as HTMLElement);
+      await user.click(
+        screen.getByRole("treeitem", { name: "Ada.md" })
+          .firstElementChild as HTMLElement,
+      );
+      const content = await within(screen.getByRole("main")).findByRole(
+        "textbox",
+        { name: "Ada.md" },
+      );
+      act(() => {
+        EditorView.findFromDOM(content)?.dispatch({
+          changes: { from: 5, insert: "!" },
+        });
+      });
+      await user.click(people.firstElementChild as HTMLElement);
+      diskFull = true;
+
+      await user.click(
+        screen.getByRole("button", { name: "Choose notes folder" }),
+      );
+
+      expect(
+        await toast().findByText(
+          "Couldn't save “Ada.md”, so the notes folder wasn't changed.",
+        ),
+      ).toBeInTheDocument();
+      expect(api.chooseNotesFolder).not.toHaveBeenCalled();
+      expect(await shownText("Ada.md")).toBe("Hello!");
+    });
   });
 });

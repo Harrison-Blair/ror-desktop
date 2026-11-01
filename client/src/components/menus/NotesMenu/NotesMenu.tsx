@@ -115,6 +115,7 @@ export type NotesMenuProps = {
   setSelected: Dispatch<SetStateAction<string | null>>;
   // The note displayed in the main panel. This is separate from the tree's
   // selected row, so selecting a folder leaves the current note open.
+  openNote: string | null;
   setOpenNote: Dispatch<SetStateAction<string | null>>;
   // Saves the open note before a rename, move or folder switch. Resolving
   // false means it couldn't be saved, which cancels the change.
@@ -132,6 +133,7 @@ export function NotesMenu({
   setExpanded,
   selected,
   setSelected,
+  openNote,
   setOpenNote,
   saveOpenNote = async () => true,
   me,
@@ -150,10 +152,10 @@ export function NotesMenu({
   const saveFirst = useCallback(
     async (change: string) => {
       if (await saveOpenNote()) return;
-      const name = selected?.slice(selected.lastIndexOf("/") + 1);
+      const name = openNote?.slice(openNote.lastIndexOf("/") + 1);
       throw new Error(`Couldn't save “${name}”, so ${change}.`);
     },
-    [saveOpenNote, selected],
+    [openNote, saveOpenNote],
   );
 
   const load = useCallback(async () => {
