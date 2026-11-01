@@ -101,70 +101,77 @@ export function PersonSheet({
   );
   const jobs = sortResume(person.resume);
 
+  // An open section blocks every other action until Save or Cancel.
+  const star = (claim: boolean, onClick: () => void) => {
+    const label = claim ? "This is me" : "Not my character";
+    return (
+      <button
+        type="button"
+        className={styles.starButton}
+        aria-label={label}
+        title={label}
+        disabled={editing !== undefined}
+        onClick={onClick}
+      >
+        <Star
+          size={20}
+          strokeWidth={1.75}
+          fill={claim ? "none" : "currentColor"}
+          aria-hidden
+        />
+      </button>
+    );
+  };
+  const mine = isPlayer(person, meId);
+  // Outside the heading, so that its name stays the person's name and age.
+  const starButton =
+    onClaim && canClaim(person, meId)
+      ? star(true, onClaim)
+      : onUnclaim && mine
+        ? star(false, onUnclaim)
+        : null;
+  const back = onBack && (
+    <BackLink onClick={onBack} disabled={editing !== undefined} />
+  );
+  const remove = canDelete(person, meId) && (
+    <button
+      type="button"
+      className={`${styles.button} ${styles.danger}`}
+      aria-label={`Delete ${person.name}`}
+      disabled={editing !== undefined}
+      onClick={onDelete}
+    >
+      <Trash2 size={16} strokeWidth={1.75} aria-hidden />
+      Delete
+    </button>
+  );
+
   return (
     <div className={styles.sheet}>
-      <div className={styles.sheetBar}>
-        {/* An open section blocks every other action until Save or Cancel. */}
-        {onBack && (
-          <BackLink onClick={onBack} disabled={editing !== undefined} />
-        )}
-        <div className={styles.actions}>
-          {onClaim && canClaim(person, meId) && (
-            <button
-              type="button"
-              className={styles.starButton}
-              aria-label="This is me"
-              title="This is me"
-              disabled={editing !== undefined}
-              onClick={onClaim}
-            >
-              <Star size={20} strokeWidth={1.75} aria-hidden />
-            </button>
-          )}
-          {onUnclaim && isPlayer(person, meId) && (
-            <button
-              type="button"
-              className={styles.starButton}
-              aria-label="Not my character"
-              title="Not my character"
-              disabled={editing !== undefined}
-              onClick={onUnclaim}
-            >
-              <Star
-                size={20}
-                strokeWidth={1.75}
-                fill="currentColor"
-                aria-hidden
-              />
-            </button>
-          )}
-          {canDelete(person, meId) && (
-            <button
-              type="button"
-              className={`${styles.button} ${styles.danger}`}
-              aria-label={`Delete ${person.name}`}
-              disabled={editing !== undefined}
-              onClick={onDelete}
-            >
-              <Trash2 size={16} strokeWidth={1.75} aria-hidden />
-              Delete
-            </button>
-          )}
+      {/* Only with a control in it: an empty bar would push the name down. */}
+      {(back || remove) && (
+        <div className={styles.sheetBar}>
+          {back}
+          {remove && <div className={styles.actions}>{remove}</div>}
         </div>
-      </div>
+      )}
       {editing === "top" ? (
         editor("top")
       ) : (
         <>
           <div className={styles.sheetHead}>
             <div className={styles.sectionHead}>
-              <h1 className={styles.sheetName}>
-                {person.name}
-                {age !== null && (
-                  <span className={styles.sheetAge}>({age})</span>
-                )}
-                {isPlayer(person, meId) && <MineStar size={20} />}
-              </h1>
+              <div className={styles.nameRow}>
+                <h1 className={styles.sheetName}>
+                  {person.name}
+                  {age !== null && (
+                    <span className={styles.sheetAge}>({age})</span>
+                  )}
+                  {/* The embedded sheet can't unclaim: a plain star. */}
+                  {mine && !starButton && <MineStar size={20} />}
+                </h1>
+                {starButton}
+              </div>
               {pencil("top")}
             </div>
             {/* Wraps: only the card and the table clip the occupation. */}

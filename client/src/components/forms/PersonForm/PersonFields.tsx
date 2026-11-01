@@ -244,10 +244,14 @@ export function TopFields({
       ...d,
       stats: d.stats.map((s, j) => (j === i ? { ...s, [side]: value } : s)),
     }));
+  // Counts the picks: a new pick of the same path shows the file again.
+  const [pick, setPick] = useState(0);
   const pickPhoto = async () => {
     try {
       const path = await choosePhoto();
-      if (path !== null) setDraft((d) => ({ ...d, photo: path }));
+      if (path === null) return;
+      setDraft((d) => ({ ...d, photo: path }));
+      setPick((n) => n + 1);
     } catch (e) {
       notify({ kind: "error", message: errorMessage(e) });
     }
@@ -303,21 +307,18 @@ export function TopFields({
       </div>
       <div className={styles.sheetBody}>
         <div className={styles.portraitColumn}>
-          {person?.photo || draft.name.trim() ? (
-            <PersonPhoto
-              person={{
-                id: person?.id ?? "",
-                name: draft.name,
-                photo: person?.photo ?? null,
-              }}
-              photoVersion={photoVersion}
-              className={styles.portrait}
-            />
-          ) : (
-            <span className={styles.portrait} aria-hidden="true">
-              <UserRound size={64} strokeWidth={1.25} />
-            </span>
-          )}
+          <PersonPhoto
+            person={{
+              id: person?.id ?? "",
+              name: draft.name,
+              photo: person?.photo ?? null,
+            }}
+            photoVersion={photoVersion}
+            picked={draft.photo}
+            pick={pick}
+            className={styles.portrait}
+            empty={<UserRound size={64} strokeWidth={1.25} />}
+          />
           <button
             type="button"
             className={`${styles.button} ${styles.quiet} ${styles.small}`}

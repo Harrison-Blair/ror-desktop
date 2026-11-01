@@ -1052,10 +1052,20 @@ describe("Sheet", () => {
     await user.click(dialog.getByRole("button", { name: "Confirm" }));
 
     await waitFor(() => expect(store.meId).toBe("rosa-alvarez"));
-    const heading = await main().findByRole("heading", {
-      name: /^Rosa Alvarez ?\(31\) ?Your character$/,
+    // One star: the filled button after the name, outside the heading.
+    const unclaim = await main().findByRole("button", {
+      name: "Not my character",
     });
-    expect(heading).toBeInTheDocument();
+    expect(
+      main().getByRole("heading", { name: /^Rosa Alvarez ?\(31\)$/ }),
+    ).toBeInTheDocument();
+    expect(unclaim.querySelector("svg")).toHaveAttribute(
+      "fill",
+      "currentColor",
+    );
+    expect(
+      main().queryByRole("img", { name: "Your character" }),
+    ).not.toBeInTheDocument();
     expect(
       main().queryByRole("button", { name: "This is me" }),
     ).not.toBeInTheDocument();
@@ -1143,9 +1153,7 @@ describe("Sheet", () => {
     expect(api.clearMe).not.toHaveBeenCalled();
     expect(store.meId).toBe("rosa-alvarez");
     expect(
-      main().getByRole("heading", {
-        name: /^Rosa Alvarez ?\(31\) ?Your character$/,
-      }),
+      main().getByRole("heading", { name: /^Rosa Alvarez ?\(31\)$/ }),
     ).toBeInTheDocument();
     expect(
       main().getByRole("button", { name: "Not my character" }),
@@ -1292,6 +1300,13 @@ describe("Notes character button", () => {
     ).toBeInTheDocument();
     expect(
       main().queryByRole("button", { name: "People of interest" }),
+    ).toBeNull();
+    // No Back, claim or Delete: no empty bar above the name.
+    expect(
+      screen.getByRole("main").querySelector(`.${styles.sheetBar}`),
+    ).toBeNull();
+    expect(
+      main().queryByRole("button", { name: "Not my character" }),
     ).toBeNull();
   });
 
@@ -1705,5 +1720,179 @@ describe("Leaving while something is saved", () => {
     expect(
       main().getByRole("heading", { name: /^Rosa Alvarez/ }),
     ).toBeInTheDocument();
+  });
+});
+
+describe("Photo preview before Save", () => {
+  // Each blob URL names the bytes it shows.
+  let blobs: Map<string, Blob>;
+  beforeEach(() => {
+    blobs = new Map();
+    URL.createObjectURL = vi.fn((blob: Blob) => {
+      const url = `blob:${blobs.size}`;
+      blobs.set(url, blob);
+      return url;
+    });
+  });
+  const bytes = (text: string) => new TextEncoder().encode(text).buffer;
+  const portrait = () =>
+    screen.getByRole("main").querySelector(`.${styles.portrait}`);
+  const portraitUrl = () =>
+    portrait()?.querySelector("img")?.getAttribute("src") ?? null;
+  // The text of the bytes the portrait shows, or null for no image.
+  const shown = async () => {
+    const url = portraitUrl();
+    return url === null ? null : ((await blobs.get(url)?.text()) ?? null);
+  };
+  const ottoWithPhoto = () => {
+    store.characters = [{ ...otto(), photo: "otto-brandt.png" }];
+    store.photos.set("otto-brandt", bytes("saved"));
+    store.pick = "/pics/new.png";
+    store.files.set("/pics/new.png", bytes("picked"));
+  };
+
+  it("Edit details shows the picked photo at once; Cancel shows the saved one and revokes the preview", async () => {
+    ottoWithPhoto();
+    const user = await openWorld();
+    await user.click(card("Otto Brandt"));
+    await user.click(main().getByRole("button", { name: "Edit details" }));
+    await waitFor(async () => expect(await shown()).toBe("saved"));
+
+    await user.click(main().getByRole("button", { name: "Change photo" }));
+    await waitFor(async () => expect(await shown()).toBe("picked"));
+    const preview = portraitUrl();
+    expect(main().getByText("New photo: new.png")).toBeInTheDocument();
+    expect(api.readPickedPhoto).toHaveBeenCalledWith("/pics/new.png");
+    expect(api.setPhoto).not.toHaveBeenCalled();
+
+    await user.click(main().getByRole("button", { name: "Cancel" }));
+    await waitFor(async () => expect(await shown()).toBe("saved"));
+    expect(URL.revokeObjectURL).toHaveBeenCalledWith(preview);
+    expect(api.setPhoto).not.toHaveBeenCalled();
+  });
+
+  it("Discard drops the preview: the sheet shows the saved photo again", async () => {
+    ottoWithPhoto();
+    const user = await openWorld();
+    await user.click(card("Otto Brandt"));
+    await user.click(main().getByRole("button", { name: "Edit details" }));
+    await user.click(main().getByRole("button", { name: "Change photo" }));
+    await waitFor(async () => expect(await shown()).toBe("picked"));
+    const preview = portraitUrl();
+
+    await user.click(screen.getByRole("button", { name: "Notes" }));
+    await user.click(
+      within(
+        screen.getByRole("alertdialog", { name: "Discard changes?" }),
+      ).getByRole("button", { name: "Discard" }),
+    );
+    expect(URL.revokeObjectURL).toHaveBeenCalledWith(preview);
+    await user.click(screen.getByRole("button", { name: "World" }));
+    await main().findByRole("heading", { name: /^Otto Brandt/ });
+    await waitFor(async () => expect(await shown()).toBe("saved"));
+    expect(api.setPhoto).not.toHaveBeenCalled();
+  });
+
+  it("Save stores the picked photo and the sheet shows it", async () => {
+    ottoWithPhoto();
+    const user = await openWorld();
+    await user.click(card("Otto Brandt"));
+    await user.click(main().getByRole("button", { name: "Edit details" }));
+    await user.click(main().getByRole("button", { name: "Change photo" }));
+    await waitFor(async () => expect(await shown()).toBe("picked"));
+    await user.click(main().getByRole("button", { name: "Save" }));
+
+    await main().findByRole("heading", { name: /^Otto Brandt/ });
+    expect(api.setPhoto).toHaveBeenCalledWith("otto-brandt", "/pics/new.png");
+    // The fake stores the source path as the photo's bytes.
+    await waitFor(async () => expect(await shown()).toBe("/pics/new.png"));
+  });
+
+  it("a failed preview keeps the saved photo and the note, and Save still works", async () => {
+    ottoWithPhoto();
+    store.files.clear();
+    const user = await openWorld();
+    await user.click(card("Otto Brandt"));
+    await user.click(main().getByRole("button", { name: "Edit details" }));
+    await user.click(main().getByRole("button", { name: "Change photo" }));
+
+    await waitFor(() => expect(api.readPickedPhoto).toHaveBeenCalled());
+    await expect(
+      api.readPickedPhoto.mock.results[0].value,
+    ).rejects.toBeDefined();
+    await waitFor(async () => expect(await shown()).toBe("saved"));
+    expect(main().getByText("New photo: new.png")).toBeInTheDocument();
+    await user.click(main().getByRole("button", { name: "Save" }));
+    await main().findByRole("heading", { name: /^Otto Brandt/ });
+    expect(api.setPhoto).toHaveBeenCalledWith("otto-brandt", "/pics/new.png");
+  });
+
+  it("a new pick of the same path shows the file as it is now", async () => {
+    ottoWithPhoto();
+    const user = await openWorld();
+    await user.click(card("Otto Brandt"));
+    await user.click(main().getByRole("button", { name: "Edit details" }));
+    await user.click(main().getByRole("button", { name: "Change photo" }));
+    await waitFor(async () => expect(await shown()).toBe("picked"));
+    const first = portraitUrl();
+
+    // The file changes in another app, then the user picks it again.
+    store.files.set("/pics/new.png", bytes("edited"));
+    await user.click(main().getByRole("button", { name: "Change photo" }));
+    await waitFor(async () => expect(await shown()).toBe("edited"));
+    expect(URL.revokeObjectURL).toHaveBeenCalledWith(first);
+  });
+
+  it("a failed preview read shows after a new pick of the same path", async () => {
+    ottoWithPhoto();
+    const ready = store.files.get("/pics/new.png") as ArrayBuffer;
+    store.files.clear();
+    const user = await openWorld();
+    await user.click(card("Otto Brandt"));
+    await user.click(main().getByRole("button", { name: "Edit details" }));
+    await user.click(main().getByRole("button", { name: "Change photo" }));
+    await waitFor(() => expect(api.readPickedPhoto).toHaveBeenCalledTimes(1));
+    await expect(
+      api.readPickedPhoto.mock.results[0].value,
+    ).rejects.toBeDefined();
+    await waitFor(async () => expect(await shown()).toBe("saved"));
+
+    // The file can now be read: picking it again shows it.
+    store.files.set("/pics/new.png", ready);
+    await user.click(main().getByRole("button", { name: "Change photo" }));
+    await waitFor(async () => expect(await shown()).toBe("picked"));
+  });
+
+  it("the Add form shows the picked photo, without a name too; Cancel drops it", async () => {
+    store.pick = "/pics/ada.png";
+    store.files.set("/pics/ada.png", bytes("ada"));
+    const user = await openWorld();
+    await user.click(main().getAllByRole("button", { name: "Add person" })[0]);
+    expect(portrait()?.querySelector("svg")).not.toBeNull();
+
+    await user.click(main().getByRole("button", { name: "Add photo" }));
+    await waitFor(async () => expect(await shown()).toBe("ada"));
+    const preview = portraitUrl();
+    expect(main().getByText("New photo: ada.png")).toBeInTheDocument();
+
+    await user.click(main().getByRole("button", { name: "Cancel" }));
+    expect(URL.revokeObjectURL).toHaveBeenCalledWith(preview);
+    expect(api.createPerson).not.toHaveBeenCalled();
+  });
+
+  it("in the Add form a failed preview shows the initials, and Save still works", async () => {
+    store.pick = "/pics/ada.png";
+    const user = await openWorld();
+    await user.click(main().getAllByRole("button", { name: "Add person" })[0]);
+    await user.type(main().getByLabelText("Name"), "Ada Byron");
+    await user.click(main().getByRole("button", { name: "Add photo" }));
+
+    await waitFor(() => expect(api.readPickedPhoto).toHaveBeenCalled());
+    expect(main().getByText("New photo: ada.png")).toBeInTheDocument();
+    expect(portrait()).toHaveTextContent("AB");
+    expect(portraitUrl()).toBeNull();
+    await user.click(main().getByRole("button", { name: "Save" }));
+    await main().findByRole("heading", { name: /^Ada Byron/ });
+    expect(api.setPhoto).toHaveBeenCalledWith("person-1", "/pics/ada.png");
   });
 });

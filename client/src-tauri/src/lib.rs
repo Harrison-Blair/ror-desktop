@@ -236,6 +236,7 @@ pub fn run() {
 
             app.manage(NotesRoot(Mutex::new(start.root)));
             app.manage(MissingNotesDir(start.missing));
+            app.manage(world::PickedPhoto::default());
             app.manage(chat::ChatState::with_codex_dir(
                 app.path().app_cache_dir()?.join("codex"),
             ));
@@ -281,6 +282,7 @@ pub fn run() {
             world::people_choose_photo,
             world::people_set_photo,
             world::people_read_photo,
+            world::people_read_picked_photo,
             world::world_get,
             world::world_update
         ])

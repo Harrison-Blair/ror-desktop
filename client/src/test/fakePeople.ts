@@ -32,6 +32,10 @@ type Store = {
   damaged: { characters?: string; world?: string; config?: string };
   // What the photo picker returns next.
   pick: string | null;
+  // The path the photo picker returned last.
+  picked: string | null;
+  // Bytes of the files the picker can return, by path.
+  files: Map<string, ArrayBuffer>;
   nextId: number;
 };
 
@@ -42,6 +46,8 @@ const fresh = (): Store => ({
   photos: new Map(),
   damaged: {},
   pick: null,
+  picked: null,
+  files: new Map(),
   nextId: 1,
 });
 
@@ -163,7 +169,10 @@ export const api = {
     configOk();
     store.meId = null;
   }),
-  choosePhoto: vi.fn(async () => store.pick),
+  choosePhoto: vi.fn(async () => {
+    if (store.pick !== null) store.picked = store.pick;
+    return store.pick;
+  }),
   setPhoto: vi.fn(async (id: string, source: string) => {
     charactersOk();
     const ext = source.slice(source.lastIndexOf(".") + 1).toLowerCase();
@@ -176,6 +185,14 @@ export const api = {
   readPhoto: vi.fn(async (id: string) => {
     const bytes = store.photos.get(id);
     if (!bytes) throw "This character has no photo.";
+    return bytes;
+  }),
+  readPickedPhoto: vi.fn(async (source: string) => {
+    if (source !== store.picked) {
+      throw "Only the image picked last can be shown before Save.";
+    }
+    const bytes = store.files.get(source);
+    if (!bytes) throw "Couldn't read the image: not found.";
     return bytes;
   }),
   getWorld: vi.fn(async () => {

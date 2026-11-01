@@ -1,10 +1,15 @@
-import { render, screen } from "@testing-library/react";
+import { render, screen, within } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import { describe, expect, it, vi } from "vitest";
 import { ToastProvider } from "@/components/Toast/Toast";
 import type { Character, Job } from "@/lib/peopleApi";
 import { character } from "@/test/fakePeople";
-import { PersonSheet, type SheetSection } from "./PersonSheet";
+import styles from "./PeopleMenu.module.css";
+import {
+  PersonSheet,
+  type PersonSheetProps,
+  type SheetSection,
+} from "./PersonSheet";
 
 vi.mock("@/lib/peopleApi", async () =>
   (await import("@/test/fakePeople")).mockModule(),
@@ -163,5 +168,118 @@ describe("Stat value boxes", () => {
     );
     expect(screen.getByLabelText("Scientific value")).toBeInTheDocument();
     expect(screen.getByLabelText("Stat 1 right value")).toBeInTheDocument();
+  });
+});
+
+describe("The star by the name and the sheet bar", () => {
+  const otto = character("Otto Brandt", { birthDate: "1904-01-21" });
+  const dead = character("Jun Nakamura", {
+    birthDate: "1925-11-09",
+    deathDate: "1961-08-03",
+  });
+  const show = (props: Partial<PersonSheetProps>) =>
+    render(
+      <ToastProvider>
+        <PersonSheet
+          person={otto}
+          meId={null}
+          gameDate="1962-02-10"
+          statNames={[]}
+          photoVersion={0}
+          onEdit={() => {}}
+          onCancelEdit={() => {}}
+          onSave={vi.fn()}
+          onDelete={() => {}}
+          {...props}
+        />
+      </ToastProvider>,
+    ).container;
+  const heading = () => screen.getByRole("heading", { level: 1 });
+  const bar = (container: HTMLElement) =>
+    container.querySelector(`.${styles.sheetBar}`);
+
+  it("another living person: an outline This is me star right after the age", async () => {
+    const onClaim = vi.fn();
+    const container = show({ onBack: () => {}, onClaim, onUnclaim: vi.fn() });
+    const star = screen.getByRole("button", { name: "This is me" });
+    expect(star).toHaveAttribute("title", "This is me");
+    expect(star.querySelector("svg")).toHaveAttribute("fill", "none");
+    // In the name row, after the heading, and not in the top bar.
+    expect(star.previousElementSibling).toBe(heading());
+    expect(heading()).toHaveAccessibleName(/^Otto Brandt ?\(58\)$/);
+    expect(bar(container)?.contains(star)).toBe(false);
+    await userEvent.setup().click(star);
+    expect(onClaim).toHaveBeenCalledTimes(1);
+  });
+
+  it("your character: one filled Not my character star; the heading is the name and age", async () => {
+    const onUnclaim = vi.fn();
+    show({ meId: otto.id, onBack: () => {}, onClaim: vi.fn(), onUnclaim });
+    const star = screen.getByRole("button", { name: "Not my character" });
+    expect(star).toHaveAttribute("title", "Not my character");
+    expect(star.querySelector("svg")).toHaveAttribute("fill", "currentColor");
+    expect(star.previousElementSibling).toBe(heading());
+    expect(heading()).toHaveAccessibleName(/^Otto Brandt ?\(58\)$/);
+    expect(screen.queryByRole("img", { name: "Your character" })).toBeNull();
+    expect(screen.queryByRole("button", { name: "This is me" })).toBeNull();
+    await userEvent.setup().click(star);
+    expect(onUnclaim).toHaveBeenCalledTimes(1);
+  });
+
+  it("a dead person who isn't yours gets no star", () => {
+    show({ person: dead, onClaim: vi.fn(), onUnclaim: vi.fn() });
+    expect(screen.queryByRole("button", { name: "This is me" })).toBeNull();
+    expect(
+      screen.queryByRole("button", { name: "Not my character" }),
+    ).toBeNull();
+  });
+
+  it("embedded, your character keeps the plain star and nothing claims or unclaims", () => {
+    show({ meId: otto.id });
+    expect(
+      within(heading()).getByRole("img", { name: "Your character" }),
+    ).toBeInTheDocument();
+    expect(screen.queryByRole("button", { name: "This is me" })).toBeNull();
+    expect(
+      screen.queryByRole("button", { name: "Not my character" }),
+    ).toBeNull();
+  });
+
+  it("an open section disables the star; the open top section hides it", () => {
+    const props = { onClaim: vi.fn(), onUnclaim: vi.fn() };
+    const view = show({ ...props, editing: "resume" });
+    expect(screen.getByRole("button", { name: "This is me" })).toBeDisabled();
+    view.remove();
+    show({ ...props, editing: "top" });
+    expect(screen.queryByRole("button", { name: "This is me" })).toBeNull();
+  });
+
+  it("the bar shows only with a control in it", () => {
+    // Notes: your character, no Back and no Delete.
+    let container = show({ meId: otto.id });
+    expect(bar(container)).toBeNull();
+    expect(container.firstElementChild?.firstElementChild).toBe(
+      heading().closest(`.${styles.sheetHead}`),
+    );
+    container.remove();
+    // World, your character: only Back.
+    container = show({ meId: otto.id, onBack: () => {} });
+    expect(bar(container)).not.toBeNull();
+    expect(
+      within(bar(container) as HTMLElement).getAllByRole("button"),
+    ).toHaveLength(1);
+    expect(
+      within(bar(container) as HTMLElement).getByRole("button", {
+        name: "People of interest",
+      }),
+    ).toBeInTheDocument();
+    container.remove();
+    // Someone else without Back: Delete alone.
+    container = show({});
+    expect(
+      within(bar(container) as HTMLElement).getByRole("button", {
+        name: "Delete Otto Brandt",
+      }),
+    ).toBeInTheDocument();
   });
 });

@@ -86,6 +86,11 @@ export const setPhoto = (id: string, source: string) =>
 export const readPhoto = (id: string) =>
   invoke<ArrayBuffer>("people_read_photo", { id });
 
+// The bytes of a picked image, for a preview before Save. Rejects any path
+// but the one that `choosePhoto` returned last.
+export const readPickedPhoto = (source: string) =>
+  invoke<ArrayBuffer>("people_read_picked_photo", { source });
+
 export const getWorld = () => invoke<World>("world_get");
 
 // Saves the full World together. Blank stat labels keep their saved values.
