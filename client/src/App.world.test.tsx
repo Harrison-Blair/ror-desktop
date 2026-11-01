@@ -183,6 +183,49 @@ describe("World Overview", () => {
     ).toBeVisible();
   });
 
+  it("keeps a saved World when an older reload finishes before a second save", async () => {
+    const user = await openOverview();
+    await user.click(screen.getByRole("button", { name: "Notes" }));
+    const stale = structuredClone(store.world);
+    let finish!: (world: typeof stale) => void;
+    api.getWorld.mockImplementationOnce(
+      () =>
+        new Promise((resolve) => {
+          finish = resolve;
+        }),
+    );
+    await user.click(screen.getByRole("button", { name: "World" }));
+    await user.clear(main().getByLabelText("Game date"));
+    await user.type(main().getByLabelText("Game date"), "12 March 1963");
+    await user.clear(main().getByLabelText("Stat 1 left name"));
+    await user.type(main().getByLabelText("Stat 1 left name"), "Order");
+    await user.click(main().getByRole("button", { name: "Save" }));
+    expect(store.world.gameDate).toBe("1963-03-12");
+    expect(store.world.statNames[0].left).toBe("Order");
+    await act(async () => {
+      finish(stale);
+    });
+    expect(main().getByLabelText("Game date")).toHaveValue("12 March 1963");
+    expect(main().getByLabelText("Stat 1 left name")).toHaveValue("Order");
+    await user.clear(main().getByLabelText("Stat 7 right name"));
+    await user.type(main().getByLabelText("Stat 7 right name"), "Chaos");
+    await user.click(main().getByRole("button", { name: "Save" }));
+    expect(api.updateWorld).toHaveBeenCalledTimes(2);
+    expect(api.updateWorld).toHaveBeenLastCalledWith({
+      gameDate: "1963-03-12",
+      statNames: [
+        { left: "Order", right: "[Stat 1B]" },
+        ...stale.statNames.slice(1, 6),
+        { left: "[Stat 7A]", right: "Chaos" },
+      ],
+    });
+    expect(store.world.gameDate).toBe("1963-03-12");
+    expect(store.world.statNames[0].left).toBe("Order");
+    expect(store.world.statNames[6].right).toBe("Chaos");
+    await user.click(screen.getByRole("button", { name: "Notes" }));
+    expect(screen.queryByRole("alertdialog")).not.toBeInTheDocument();
+  });
+
   it.each(["0001", "0849", "0999"])(
     "preserves early year %s through Overview blur and save",
     async (year) => {

@@ -46,11 +46,11 @@ export function usePeople(): PeopleData {
     reload();
   }, [reload]);
 
-  const setWorld = useCallback(
-    (world: World) =>
-      setState((prev) => ({ ...prev, world, worldError: undefined })),
-    [],
-  );
+  const setWorld = useCallback((world: World) => {
+    // A reload started before this save must not replace the saved World.
+    ++loadId.current;
+    setState((prev) => ({ ...prev, world, worldError: undefined }));
+  }, []);
   const photoChanged = useCallback(() => setPhotoVersion((v) => v + 1), []);
 
   return { ...state, photoVersion, reload, setWorld, photoChanged };
