@@ -282,8 +282,7 @@ pub fn run() {
             world::people_set_photo,
             world::people_read_photo,
             world::world_get,
-            world::world_set_game_date,
-            world::world_set_stat_names
+            world::world_update
         ])
         .build(tauri::generate_context!())
         .expect("error while running Ror Desktop")

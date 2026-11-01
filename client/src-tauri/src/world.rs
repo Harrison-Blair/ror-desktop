@@ -294,6 +294,17 @@ fn checked(mut f: CharacterFields) -> Result<CharacterFields> {
     Ok(f)
 }
 
+fn valid_death_date(fields: &CharacterFields, world: &World) -> Result<()> {
+    if fields
+        .death_date
+        .as_ref()
+        .is_some_and(|date| date > &world.game_date)
+    {
+        return Err("Death date is after the game date.".to_string());
+    }
+    Ok(())
+}
+
 /// A plain file name, never a path.
 fn is_file_name(name: &str) -> bool {
     Path::new(name).file_name() == Some(name.as_ref())
@@ -334,6 +345,7 @@ pub fn list(paths: &Paths) -> Result<People> {
 pub fn create(paths: &Paths, fields: CharacterFields) -> Result<Character> {
     let fields = checked(fields)?;
     let _guard = lock();
+    valid_death_date(&fields, &get_world(paths)?)?;
     let mut characters = read_characters(paths)?;
     let character = Character {
         id: uuid::Uuid::new_v4().to_string(),
@@ -349,6 +361,7 @@ pub fn create(paths: &Paths, fields: CharacterFields) -> Result<Character> {
 pub fn update(paths: &Paths, id: &str, fields: CharacterFields) -> Result<Character> {
     let fields = checked(fields)?;
     let _guard = lock();
+    valid_death_date(&fields, &get_world(paths)?)?;
     let mut characters = read_characters(paths)?;
     let character = characters
         .iter_mut()
@@ -503,36 +516,40 @@ pub fn get_world(paths: &Paths) -> Result<World> {
     read(&paths.world(), valid_world)
 }
 
-fn update_world(paths: &Paths, change: impl FnOnce(&mut World)) -> Result<World> {
-    let _guard = lock();
-    let mut world = get_world(paths)?;
-    change(&mut world);
-    write(&paths.world(), &world, "the world")?;
-    Ok(world)
-}
-
-pub fn set_game_date(paths: &Paths, date: &str) -> Result<World> {
-    if date.trim().is_empty() {
+/// Saves the complete World in one write. Empty stat names keep the saved name.
+pub fn update_world(paths: &Paths, mut world: World) -> Result<World> {
+    if world.game_date.trim().is_empty() {
         return Err("Enter a game date.".to_string());
     }
-    if !is_iso_date(date) {
+    if !is_iso_date(&world.game_date) {
         return Err("Not a real date.".to_string());
     }
-    update_world(paths, |w| w.game_date = date.to_string())
-}
-
-/// Renames the stats for every character. An empty name keeps the old name.
-pub fn set_stat_names(paths: &Paths, names: [StatName; STAT_COUNT]) -> Result<World> {
-    update_world(paths, |w| {
-        for (old, new) in w.stat_names.iter_mut().zip(names) {
-            for (old, new) in [(&mut old.left, new.left), (&mut old.right, new.right)] {
-                let new = new.trim();
-                if !new.is_empty() {
-                    *old = new.to_string();
-                }
-            }
+    let _guard = lock();
+    let saved = get_world(paths)?;
+    for (new, old) in world.stat_names.iter_mut().zip(saved.stat_names) {
+        for (new, old) in [(&mut new.left, old.left), (&mut new.right, old.right)] {
+            *new = if new.trim().is_empty() {
+                old
+            } else {
+                new.trim().to_string()
+            };
         }
-    })
+    }
+    for character in read_characters(paths)? {
+        if character
+            .fields
+            .death_date
+            .as_ref()
+            .is_some_and(|date| date > &world.game_date)
+        {
+            return Err(format!(
+                "Game date is before the death date of {}.",
+                character.fields.name
+            ));
+        }
+    }
+    write(&paths.world(), &world, "the world")?;
+    Ok(world)
 }
 
 fn app_paths(app: &AppHandle) -> Result<Paths> {
@@ -604,13 +621,8 @@ pub fn world_get(app: AppHandle) -> Result<World> {
 }
 
 #[tauri::command]
-pub fn world_set_game_date(app: AppHandle, date: String) -> Result<World> {
-    set_game_date(&app_paths(&app)?, &date)
-}
-
-#[tauri::command]
-pub fn world_set_stat_names(app: AppHandle, names: [StatName; STAT_COUNT]) -> Result<World> {
-    set_stat_names(&app_paths(&app)?, names)
+pub fn world_update(app: AppHandle, world: World) -> Result<World> {
+    update_world(&app_paths(&app)?, world)
 }
 
 #[cfg(test)]
@@ -761,6 +773,60 @@ mod tests {
     }
 
     #[test]
+    fn death_dates_cannot_be_after_the_saved_game_date() {
+        let (_temp, paths) = setup();
+        let mut fields = CharacterFields {
+            death_date: Some("1962-02-11".into()),
+            ..named("Ada")
+        };
+        assert_eq!(
+            create(&paths, fields.clone()),
+            Err("Death date is after the game date.".into())
+        );
+        assert!(!paths.characters().exists());
+        fields.death_date = Some("1962-02-10".into());
+        let ada = create(&paths, fields.clone()).unwrap();
+        let before = fs::read(paths.characters()).unwrap();
+        fields.death_date = Some("1962-02-11".into());
+        assert_eq!(
+            update(&paths, &ada.id, fields.clone()),
+            Err("Death date is after the game date.".into())
+        );
+        assert_eq!(fs::read(paths.characters()).unwrap(), before);
+        fields.death_date = Some("1962-02-09".into());
+        assert_eq!(
+            update(&paths, &ada.id, fields.clone()).unwrap().fields,
+            fields
+        );
+    }
+
+    #[test]
+    fn people_death_dates_use_the_saved_world_date() {
+        let (_temp, paths) = setup();
+        fs::create_dir_all(&paths.data).unwrap();
+        let world = World {
+            game_date: "1970-05-12".into(),
+            ..Default::default()
+        };
+        write(&paths.world(), &world, "the world").unwrap();
+        let ada = create(
+            &paths,
+            CharacterFields {
+                death_date: Some("1970-05-12".into()),
+                ..named("Ada")
+            },
+        )
+        .unwrap();
+        let fields = CharacterFields {
+            death_date: Some("1970-05-13".into()),
+            ..named("Bo")
+        };
+        assert!(create(&paths, fields.clone()).is_err());
+        assert!(update(&paths, &ada.id, fields).is_err());
+        assert_eq!(list(&paths).unwrap().characters, vec![ada]);
+    }
+
+    #[test]
     fn real_dates_and_empty_dates_are_accepted() {
         let (_temp, paths) = setup();
         let fields = CharacterFields {
@@ -897,11 +963,7 @@ mod tests {
             fs::write(&file, &text).unwrap();
             let error = get_world(&paths).unwrap_err();
             assert!(error.contains("world.json is damaged"), "{text}: {error}");
-            assert!(set_game_date(&paths, "1963-01-01").is_err(), "{text}");
-            assert!(
-                set_stat_names(&paths, World::default().stat_names).is_err(),
-                "{text}"
-            );
+            assert!(update_world(&paths, World::default()).is_err(), "{text}");
             assert_eq!(fs::read_to_string(&file).unwrap(), text);
         }
     }
@@ -1049,15 +1111,34 @@ mod tests {
     fn the_game_date_is_checked_and_saved() {
         let (_temp, paths) = setup();
         assert_eq!(
-            set_game_date(&paths, " "),
+            update_world(
+                &paths,
+                World {
+                    game_date: " ".into(),
+                    ..Default::default()
+                }
+            ),
             Err("Enter a game date.".to_string())
         );
         assert_eq!(
-            set_game_date(&paths, "1963-02-29"),
+            update_world(
+                &paths,
+                World {
+                    game_date: "1963-02-29".into(),
+                    ..Default::default()
+                }
+            ),
             Err("Not a real date.".to_string())
         );
         assert!(!paths.world().exists());
-        let world = set_game_date(&paths, "1963-03-01").unwrap();
+        let world = update_world(
+            &paths,
+            World {
+                game_date: "1963-03-01".into(),
+                ..Default::default()
+            },
+        )
+        .unwrap();
         assert_eq!(world.game_date, "1963-03-01");
         assert_eq!(get_world(&paths).unwrap(), world);
         assert_eq!(world.stat_names, World::default().stat_names);
@@ -1075,9 +1156,16 @@ mod tests {
             right: "Ambitious".into(),
         };
         names[6].right = "Rich".into();
-        let world = set_stat_names(&paths, names).unwrap();
+        let world = update_world(
+            &paths,
+            World {
+                game_date: "1963-03-01".into(),
+                stat_names: names,
+            },
+        )
+        .unwrap();
         assert_eq!(get_world(&paths).unwrap(), world);
-        assert_eq!(world.game_date, "1962-02-10");
+        assert_eq!(world.game_date, "1963-03-01");
         let saved = saved_json(&paths.world());
         assert_eq!(
             saved["statNames"][0],
@@ -1091,6 +1179,67 @@ mod tests {
             saved["statNames"][6],
             json!({ "left": "[Stat 7A]", "right": "Rich" })
         );
+    }
+
+    #[test]
+    fn a_world_update_cannot_move_before_any_saved_death_date() {
+        let (_temp, paths) = setup();
+        update_world(&paths, World::default()).unwrap();
+        for (name, date) in [("Ada", "1961-01-01"), ("Bo", "1962-02-10")] {
+            create(
+                &paths,
+                CharacterFields {
+                    death_date: Some(date.into()),
+                    ..named(name)
+                },
+            )
+            .unwrap();
+        }
+        let before = fs::read(paths.world()).unwrap();
+        let mut proposed = World::default();
+        proposed.game_date = "1962-02-09".into();
+        proposed.stat_names[0].left = "Changed".into();
+        assert_eq!(
+            update_world(&paths, proposed.clone()),
+            Err("Game date is before the death date of Bo.".into())
+        );
+        assert_eq!(fs::read(paths.world()).unwrap(), before);
+        assert!(!paths.data.join("world.json.tmp").exists());
+        proposed.game_date = "1962-02-10".into();
+        assert_eq!(update_world(&paths, proposed.clone()).unwrap(), proposed);
+        assert_eq!(get_world(&paths).unwrap(), proposed);
+    }
+
+    #[test]
+    fn failed_world_saves_keep_both_date_and_stat_names() {
+        let (_temp, paths) = setup();
+        update_world(&paths, World::default()).unwrap();
+        let before = fs::read(paths.world()).unwrap();
+        let mut proposed = World::default();
+        proposed.game_date = "1963-01-01".into();
+        proposed.stat_names[0].left = "Changed".into();
+        block(&paths.data.join("world.json.tmp"));
+        assert!(update_world(&paths, proposed)
+            .unwrap_err()
+            .starts_with("Couldn't save the world"));
+        assert_eq!(fs::read(paths.world()).unwrap(), before);
+    }
+
+    #[test]
+    fn damaged_people_block_world_updates_without_changing_either_file() {
+        let (_temp, paths) = setup();
+        update_world(&paths, World::default()).unwrap();
+        let before = fs::read(paths.world()).unwrap();
+        fs::write(paths.characters(), "{ damaged").unwrap();
+        let proposed = World {
+            game_date: "1963-01-01".into(),
+            ..Default::default()
+        };
+        assert!(update_world(&paths, proposed)
+            .unwrap_err()
+            .contains("characters.json is damaged"));
+        assert_eq!(fs::read(paths.world()).unwrap(), before);
+        assert_eq!(fs::read(paths.characters()).unwrap(), b"{ damaged");
     }
 
     // A non-empty folder where a file should be can't be removed or replaced
