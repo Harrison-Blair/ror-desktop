@@ -383,8 +383,6 @@ function Shell() {
         )}
         {settings === null && activeId === "world" && (
           <WorldMenu
-            gameDate={people.world?.gameDate}
-            onGameDateSaved={people.setWorld}
             section="people"
             onSelect={async () => {
               if (await leavePeopleForm()) setPeopleView({ screen: "list" });

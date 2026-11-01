@@ -126,7 +126,7 @@ export function PeopleList({
     prefs.sortDir,
     gameDate,
   );
-  // No one but your character: the list invites you to add people.
+  // No one but your character: leave the empty list clear.
   const noOthers = people.every((p) => isPlayer(p, meId));
 
   const flipDir = () =>
@@ -364,16 +364,6 @@ export function PeopleList({
         )}
       </div>
       {body}
-      {noOthers && !query && prefs.filter === "all" && (
-        <div className={styles.empty}>
-          <p>
-            {people.length === 0
-              ? "No people yet. Add person creates a character that no player plays."
-              : "No other people yet. Add person creates a character that no player plays."}
-          </p>
-          {addButton}
-        </div>
-      )}
     </>
   );
 }

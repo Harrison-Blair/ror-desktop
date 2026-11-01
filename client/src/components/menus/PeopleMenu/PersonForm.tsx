@@ -295,7 +295,16 @@ export function PersonForm({
           <h2 id={`${id}-stats`} className={styles.h3}>
             Stats
           </h2>
-          <p className={styles.note}>Stat names apply to every character.</p>
+          <div
+            className={`${styles.pair} ${styles.editRow} ${styles.statHeaders}`}
+            aria-hidden="true"
+          >
+            <span>Name</span>
+            <span>Value</span>
+            <span />
+            <span>Value</span>
+            <span>Name</span>
+          </div>
           {draft.statNames.map((name, i) => {
             const raw = draft.stats[i];
             const error = errors.stats[i];

@@ -1,10 +1,4 @@
-import {
-  cleanup,
-  render,
-  screen,
-  waitFor,
-  within,
-} from "@testing-library/react";
+import { render, screen, waitFor, within } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import { beforeEach, describe, expect, it, vi } from "vitest";
 import App from "@/App";
@@ -124,14 +118,9 @@ describe("World tab", () => {
   });
 
   // Check 1
-  it("starts empty with the default game date", async () => {
+  it("starts empty with an Add person button", async () => {
     await openWorld();
 
-    expect(
-      railPanel().getByRole("button", {
-        name: "Game date · 10 February 1962",
-      }),
-    ).toBeInTheDocument();
     expect(
       railPanel().getByRole("button", {
         name: "People of interest",
@@ -139,85 +128,43 @@ describe("World tab", () => {
       }),
     ).toBeInTheDocument();
     expect(
-      main().getByText(
+      main().getByRole("button", { name: "Add person" }),
+    ).toBeInTheDocument();
+    expect(
+      main().queryByText(
         "No people yet. Add person creates a character that no player plays.",
       ),
-    ).toBeInTheDocument();
+    ).not.toBeInTheDocument();
   });
 
-  it("with only your character, invites you to add others", async () => {
+  it("with only your character, keeps the top Add person button", async () => {
     store.characters = [rosa()];
     store.meId = "rosa-alvarez";
     await openWorld();
 
     expect(card("Rosa Alvarez")).toBeInTheDocument();
     expect(
-      main().getByText(
+      main().getByRole("button", { name: "Add person" }),
+    ).toBeInTheDocument();
+    expect(
+      main().queryByText(
         "No other people yet. Add person creates a character that no player plays.",
       ),
-    ).toBeInTheDocument();
-  });
-});
-
-describe("Game date", () => {
-  // Check 2
-  it("saves a typed date and keeps it after a restart", async () => {
-    const user = await openWorld();
-
-    await user.click(railPanel().getByRole("button", { name: /Game date/ }));
-    const box = railPanel().getByLabelText("Game date");
-    expect(box).toHaveValue("10 February 1962");
-    expect(box).toHaveFocus();
-    await user.clear(box);
-    await user.type(box, "3/8/1961{Enter}");
-
-    expect(
-      await railPanel().findByRole("button", {
-        name: "Game date · 3 August 1961",
-      }),
-    ).toBeInTheDocument();
-    expect(api.setGameDate).toHaveBeenCalledWith("1961-08-03");
-
-    // A restart: the app loads the saved files again.
-    cleanup();
-    await openWorld();
-    expect(
-      railPanel().getByRole("button", { name: "Game date · 3 August 1961" }),
-    ).toBeInTheDocument();
-  });
-
-  // Check 3
-  it("refuses an empty date and stays open; Escape restores the old one", async () => {
-    const user = await openWorld();
-
-    await user.click(railPanel().getByRole("button", { name: /Game date/ }));
-    const box = railPanel().getByLabelText("Game date");
-    await user.clear(box);
-    await user.keyboard("{Enter}");
-
-    expect(box).toHaveAccessibleDescription("Enter a game date.");
-    expect(box).toBeInTheDocument();
-    await user.click(
-      main().getByRole("heading", { name: "People of interest" }),
-    );
-    expect(railPanel().getByLabelText("Game date")).toBeInTheDocument();
-
-    await user.type(railPanel().getByLabelText("Game date"), "31 Feb 1962");
-    expect(railPanel().getByLabelText("Game date")).toHaveAccessibleDescription(
-      "Not a real date.",
-    );
-
-    await user.keyboard("{Escape}");
-    expect(
-      railPanel().getByRole("button", {
-        name: "Game date · 10 February 1962",
-      }),
-    ).toBeInTheDocument();
-    expect(api.setGameDate).not.toHaveBeenCalled();
+    ).not.toBeInTheDocument();
   });
 });
 
 describe("Add and edit form", () => {
+  it("labels the stat name and value columns", async () => {
+    const user = await openWorld();
+    await user.click(main().getByRole("button", { name: "Add person" }));
+
+    const headers = main()
+      .getByRole("region", { name: "Stats" })
+      .querySelector(`.${styles.statHeaders}`);
+    expect(headers?.textContent).toBe("NameValueValueName");
+  });
+
   // Check 4
   it("needs a name, and saves nothing without one", async () => {
     const user = await openWorld();
@@ -969,15 +916,12 @@ describe("Damaged files", () => {
     expect(store.characters.map((c) => c.name)).toEqual(["Otto Brandt"]);
   });
 
-  it("a damaged world.json shows its error, and the game date can't be changed", async () => {
+  it("a damaged world.json shows its error and disables Add person", async () => {
     store.characters = [otto()];
     store.damaged.world = DAMAGED("world.json");
     await openWorld();
 
     expect(main().getByRole("alert")).toHaveTextContent(DAMAGED("world.json"));
-    expect(
-      railPanel().queryByRole("button", { name: /Game date/ }),
-    ).not.toBeInTheDocument();
     expect(main().getByRole("button", { name: "Add person" })).toBeDisabled();
   });
 
@@ -1400,69 +1344,5 @@ describe("Leaving while something is saved", () => {
     expect(
       main().getByRole("heading", { name: /^Rosa Alvarez/ }),
     ).toBeInTheDocument();
-  });
-
-  it("the game date box is locked while its save is pending", async () => {
-    const user = await openWorld();
-    const first = deferred<never>();
-    api.setGameDate.mockImplementationOnce(() => first.promise);
-    await user.click(railPanel().getByRole("button", { name: /Game date/ }));
-    const box = railPanel().getByLabelText("Game date");
-    await user.clear(box);
-    await user.type(box, "3 August 1961{Enter}");
-
-    expect(box).toBeDisabled();
-    first.reject("Disk full.");
-    await waitFor(() => expect(box).toBeEnabled());
-    expect(box).toHaveAccessibleDescription("Disk full.");
-    expect(box).toHaveFocus();
-    expect(box).toHaveValue("3 August 1961");
-
-    await user.clear(box);
-    await user.type(box, "4 August 1961{Enter}");
-    expect(
-      await railPanel().findByRole("button", {
-        name: "Game date · 4 August 1961",
-      }),
-    ).toBeInTheDocument();
-  });
-
-  it("an invalid game date left by a tab switch is dropped, with a toast", async () => {
-    const user = await openWorld();
-    await user.click(railPanel().getByRole("button", { name: /Game date/ }));
-    const box = railPanel().getByLabelText("Game date");
-    await user.clear(box);
-    await user.type(box, "31 Feb 1962");
-    await user.click(screen.getByRole("button", { name: "Notes" }));
-
-    expect(await findAlert()).toHaveTextContent(
-      "The game date was not changed: Not a real date.",
-    );
-    expect(api.setGameDate).not.toHaveBeenCalled();
-    await user.click(screen.getByRole("button", { name: "World" }));
-    expect(
-      await railPanel().findByRole("button", {
-        name: "Game date · 10 February 1962",
-      }),
-    ).toBeInTheDocument();
-  });
-
-  it("a game date save that fails after a tab switch shows a toast", async () => {
-    const user = await openWorld();
-    const save = deferred<never>();
-    api.setGameDate.mockImplementationOnce(() => save.promise);
-    await user.click(railPanel().getByRole("button", { name: /Game date/ }));
-    const box = railPanel().getByLabelText("Game date");
-    await user.clear(box);
-    await user.type(box, "3 August 1961");
-    await user.click(screen.getByRole("button", { name: "Notes" }));
-    expect(api.setGameDate).toHaveBeenCalledWith("1961-08-03");
-
-    save.reject("Disk full.");
-    await waitFor(() =>
-      expect(alert()).toHaveTextContent(
-        "The game date was not changed: Disk full.",
-      ),
-    );
   });
 });
