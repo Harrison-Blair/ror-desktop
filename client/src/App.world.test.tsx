@@ -1,4 +1,4 @@
-import { render, screen, waitFor, within } from "@testing-library/react";
+import { act, render, screen, waitFor, within } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import { beforeEach, describe, expect, it, vi } from "vitest";
 import App from "@/App";
@@ -69,6 +69,10 @@ async function openWorld() {
   render(<App />);
   const user = userEvent.setup();
   await user.click(screen.getByRole("button", { name: "World" }));
+  await main().findByRole("heading", { name: "Overview" });
+  await user.click(
+    railPanel().getByRole("button", { name: "People of interest" }),
+  );
   await main().findByRole("heading", { name: "People of interest" });
   return user;
 }
@@ -94,6 +98,212 @@ async function addPerson(
   }
   await user.click(main().getByRole("button", { name: "Save" }));
 }
+
+describe("World Overview", () => {
+  const openOverview = async () => {
+    render(<App />);
+    const user = userEvent.setup();
+    await user.click(screen.getByRole("button", { name: "World" }));
+    await main().findByLabelText("Game date");
+    return user;
+  };
+
+  it("starts on Overview, followed by People in the rail, with seven label pairs", async () => {
+    await openOverview();
+    expect(
+      railPanel()
+        .getAllByRole("button")
+        .map((button) => button.textContent),
+    ).toEqual(["Overview", "People of interest"]);
+    expect(
+      railPanel().getByRole("button", { name: "Overview", pressed: true }),
+    ).toBeVisible();
+    expect(main().getByLabelText("Game date")).toHaveValue("10 February 1962");
+    expect(main().getAllByRole("textbox")).toHaveLength(15);
+    expect(main().getByLabelText("Stat 7 right name")).toHaveValue("[Stat 7B]");
+  });
+
+  it("refreshes pristine Overview fields on return without prompting or saving stale World values", async () => {
+    const user = await openOverview();
+    await user.click(screen.getByRole("button", { name: "Notes" }));
+    store.world = {
+      gameDate: "1963-03-12",
+      statNames: store.world.statNames.map((pair, i) =>
+        i === 0 ? { left: "Order", right: "Chaos" } : pair,
+      ),
+    };
+    let finish!: (world: typeof store.world) => void;
+    api.getWorld.mockImplementationOnce(
+      () =>
+        new Promise((resolve) => {
+          finish = resolve;
+        }),
+    );
+    await user.click(screen.getByRole("button", { name: "World" }));
+    expect(main().getByLabelText("Game date")).toHaveValue("10 February 1962");
+    await act(async () => {
+      finish(structuredClone(store.world));
+    });
+    await waitFor(() =>
+      expect(main().getByLabelText("Game date")).toHaveValue("12 March 1963"),
+    );
+    expect(main().getByLabelText("Stat 1 left name")).toHaveValue("Order");
+    expect(main().getByLabelText("Stat 1 right name")).toHaveValue("Chaos");
+    await user.click(screen.getByRole("button", { name: "Notes" }));
+    expect(screen.queryByRole("alertdialog")).not.toBeInTheDocument();
+    await user.click(screen.getByRole("button", { name: "World" }));
+    await user.click(main().getByRole("button", { name: "Save" }));
+    expect(api.updateWorld).toHaveBeenCalledWith(store.world);
+    expect(store.world.gameDate).toBe("1963-03-12");
+  });
+
+  it("preserves local Overview edits when an in-flight refresh arrives", async () => {
+    const user = await openOverview();
+    await user.click(screen.getByRole("button", { name: "Notes" }));
+    const refreshed = { ...store.world, gameDate: "1963-03-12" };
+    let finish!: (world: typeof refreshed) => void;
+    api.getWorld.mockImplementationOnce(
+      () =>
+        new Promise((resolve) => {
+          finish = resolve;
+        }),
+    );
+    await user.click(screen.getByRole("button", { name: "World" }));
+    await user.type(main().getByLabelText("Stat 1 left name"), " changed");
+    await act(async () => {
+      finish(refreshed);
+    });
+    expect(main().getByLabelText("Stat 1 left name")).toHaveValue(
+      "[Stat 1A] changed",
+    );
+    expect(main().getByLabelText("Game date")).toHaveValue("10 February 1962");
+    await user.click(screen.getByRole("button", { name: "Notes" }));
+    expect(
+      screen.getByRole("alertdialog", { name: "Discard changes?" }),
+    ).toBeVisible();
+  });
+
+  it.each(["0001", "0849", "0999"])(
+    "preserves early year %s through Overview blur and save",
+    async (year) => {
+      store.world = { ...store.world, gameDate: `${year}-01-01` };
+      const user = await openOverview();
+      const date = main().getByLabelText("Game date");
+      expect(date).toHaveValue(`1 January ${year}`);
+      await user.clear(date);
+      await user.type(date, `2 January ${year}`);
+      await user.tab();
+      expect(date).toHaveValue(`2 January ${year}`);
+      await user.click(main().getByRole("button", { name: "Save" }));
+      expect(api.updateWorld).toHaveBeenCalledWith({
+        ...store.world,
+        gameDate: `${year}-01-02`,
+      });
+      expect(date).toHaveValue(`2 January ${year}`);
+      expect(date).toHaveAttribute("aria-invalid", "false");
+      await user.click(screen.getByRole("button", { name: "Notes" }));
+      expect(screen.queryByRole("alertdialog")).not.toBeInTheDocument();
+    },
+  );
+
+  it("saves the full World explicitly, normalizes dates, and uses backend preserved blank labels", async () => {
+    store.characters = [otto()];
+    const user = await openOverview();
+    const date = main().getByLabelText("Game date");
+    await user.clear(date);
+    await user.type(date, "11/02/1963");
+    const left = main().getByLabelText("Stat 1 left name");
+    await user.clear(left);
+    await user.type(left, "Order");
+    await user.clear(main().getByLabelText("Stat 1 right name"));
+    expect(api.updateWorld).not.toHaveBeenCalled();
+    await user.click(main().getByRole("button", { name: "Save" }));
+    expect(api.updateWorld).toHaveBeenCalledWith({
+      gameDate: "1963-02-11",
+      statNames: [
+        { left: "Order", right: "" },
+        ...store.world.statNames.slice(1),
+      ],
+    });
+    expect(date).toHaveValue("11 February 1963");
+    expect(main().getByLabelText("Stat 1 right name")).toHaveValue("[Stat 1B]");
+    await user.click(
+      railPanel().getByRole("button", { name: "People of interest" }),
+    );
+    expect(screen.queryByRole("alertdialog")).not.toBeInTheDocument();
+    await user.click(card("Otto Brandt"));
+    expect(main().getByText("Order")).toBeVisible();
+    await user.click(main().getByRole("button", { name: "Edit" }));
+    expect(main().queryByLabelText("Stat 1 left name")).not.toBeInTheDocument();
+    expect(main().getByLabelText("Stat 1 value")).toHaveValue("58");
+  });
+
+  it.each([
+    ["", "Enter a game date."],
+    ["31 February 1962", "Not a real date."],
+  ])("rejects invalid game date %s before saving", async (value, message) => {
+    const user = await openOverview();
+    await user.clear(main().getByLabelText("Game date"));
+    if (value) await user.type(main().getByLabelText("Game date"), value);
+    await user.click(main().getByRole("button", { name: "Save" }));
+    expect(main().getByText(message)).toBeVisible();
+    expect(api.updateWorld).not.toHaveBeenCalled();
+  });
+
+  it("keeps all edits after a failed save and retries the full World", async () => {
+    const user = await openOverview();
+    api.updateWorld.mockRejectedValueOnce("Disk full.");
+    await user.clear(main().getByLabelText("Game date"));
+    await user.type(main().getByLabelText("Game date"), "11 February 1962");
+    await user.clear(main().getByLabelText("Stat 7 right name"));
+    await user.type(main().getByLabelText("Stat 7 right name"), "Chaos");
+    await user.click(main().getByRole("button", { name: "Save" }));
+    expect(await findAlert()).toHaveTextContent("Disk full.");
+    expect(store.world.gameDate).toBe("1962-02-10");
+    expect(main().getByLabelText("Stat 7 right name")).toHaveValue("Chaos");
+    await user.click(main().getByRole("button", { name: "Save" }));
+    expect(store.world.gameDate).toBe("1962-02-11");
+    expect(store.world.statNames[6].right).toBe("Chaos");
+  });
+
+  it.each(["People of interest", "Notes", "Settings"])(
+    "confirms unsaved edits before leaving for %s",
+    async (destination) => {
+      const user = await openOverview();
+      await user.type(main().getByLabelText("Stat 1 left name"), " changed");
+      const target = () =>
+        destination === "People of interest"
+          ? railPanel().getByRole("button", { name: destination })
+          : screen.getByRole("button", { name: destination });
+      await user.click(target());
+      await user.click(
+        within(screen.getByRole("alertdialog")).getByRole("button", {
+          name: "Cancel",
+        }),
+      );
+      expect(main().getByLabelText("Stat 1 left name")).toHaveValue(
+        "[Stat 1A] changed",
+      );
+      await user.click(target());
+      await user.click(
+        within(screen.getByRole("alertdialog")).getByRole("button", {
+          name: "Discard",
+        }),
+      );
+      if (destination === "People of interest") {
+        await user.click(railPanel().getByRole("button", { name: "Overview" }));
+      } else {
+        if (destination === "Settings")
+          await user.click(screen.getByRole("button", { name: "Settings" }));
+        await user.click(screen.getByRole("button", { name: "World" }));
+      }
+      expect(await main().findByLabelText("Stat 1 left name")).toHaveValue(
+        "[Stat 1A]",
+      );
+      expect(api.updateWorld).not.toHaveBeenCalled();
+    },
+  );
+});
 
 describe("World tab", () => {
   it("is a working tab; Session still is not", async () => {
@@ -225,7 +435,7 @@ describe("Leaving your character's form in Notes", () => {
       ).getByRole("button", { name: "Discard" }),
     );
     expect(
-      await main().findByRole("heading", { name: "People of interest" }),
+      await main().findByRole("heading", { name: "Overview" }),
     ).toBeInTheDocument();
 
     await user.click(screen.getByRole("button", { name: "Notes" }));
@@ -907,36 +1117,6 @@ describe("Sheet", () => {
     expect(api.deletePerson).toHaveBeenCalledWith("otto-brandt");
     expect(store.photos.has("otto-brandt")).toBe(false);
   });
-
-  // Check 16
-  it("a stat rename in one form renames it on every sheet; an empty name keeps the old", async () => {
-    store.characters = [otto(), rosa()];
-    const user = await openWorld();
-
-    await user.click(card("Otto Brandt"));
-    await user.click(main().getByRole("button", { name: "Edit" }));
-    const left = main().getByLabelText("Stat 1 left name");
-    await user.clear(left);
-    await user.type(left, "Order");
-    await user.click(main().getByRole("button", { name: "Save" }));
-    await main().findByRole("heading", { name: /^Otto Brandt ?\(58\)$/ });
-
-    await user.click(
-      main().getByRole("button", { name: "People of interest" }),
-    );
-    await user.click(card("Rosa Alvarez"));
-    expect(
-      within(main().getByRole("region", { name: "Stats" })).getByText("Order"),
-    ).toBeInTheDocument();
-
-    await user.click(main().getByRole("button", { name: "Edit" }));
-    await user.clear(main().getByLabelText("Stat 1 left name"));
-    await user.click(main().getByRole("button", { name: "Save" }));
-    await main().findByRole("heading", { name: /^Rosa Alvarez ?\(31\)$/ });
-    expect(
-      within(main().getByRole("region", { name: "Stats" })).getByText("Order"),
-    ).toBeInTheDocument();
-  });
 });
 
 describe("Notes character button", () => {
@@ -1181,60 +1361,6 @@ describe("A save that fails in part", () => {
     expect(api.setPhoto).toHaveBeenLastCalledWith("person-1", "/pics/ada.png");
     expect(store.characters).toHaveLength(1);
     expect(store.characters[0].photo).toBe("person-1.png");
-  });
-
-  it("failed stat names keep the Add form, as an Edit, with the new names", async () => {
-    const user = await openWorld();
-    api.setStatNames.mockRejectedValueOnce("Disk full.");
-    await user.click(main().getAllByRole("button", { name: "Add person" })[0]);
-    await user.type(main().getByLabelText("Name"), "Ada");
-    const left = main().getByLabelText("Stat 1 left name");
-    await user.clear(left);
-    await user.type(left, "Order");
-    await user.click(main().getByRole("button", { name: "Save" }));
-
-    expect(await findAlert()).toHaveTextContent(
-      "Ada is saved, but not the stat names (Disk full.).",
-    );
-    expect(main().getByText("Editing")).toBeInTheDocument();
-    expect(main().getByLabelText("Stat 1 left name")).toHaveValue("Order");
-    expect(store.world.statNames[0].left).toBe("[Stat 1A]");
-
-    await user.click(main().getByRole("button", { name: "Save" }));
-    await main().findByRole("heading", { name: /^Ada/ });
-    expect(api.createPerson).toHaveBeenCalledTimes(1);
-    expect(store.characters).toHaveLength(1);
-    expect(store.world.statNames[0].left).toBe("Order");
-  });
-
-  it("failed stat names keep the Edit form with its changes, but not the saved photo", async () => {
-    store.characters = [otto()];
-    const user = await openWorld();
-    api.setStatNames.mockRejectedValueOnce("Disk full.");
-    store.pick = "/pics/otto.png";
-    await user.click(card("Otto Brandt"));
-    await user.click(main().getByRole("button", { name: "Edit" }));
-    await user.click(main().getByRole("button", { name: "Add photo" }));
-    await user.type(main().getByLabelText("Description"), " And more.");
-    const left = main().getByLabelText("Stat 1 left name");
-    await user.clear(left);
-    await user.type(left, "Order");
-    await user.click(main().getByRole("button", { name: "Save" }));
-
-    expect(await findAlert()).toHaveTextContent(
-      "Otto Brandt is saved, but not the stat names (Disk full.).",
-    );
-    expect(main().getByLabelText("Stat 1 left name")).toHaveValue("Order");
-    expect(store.characters[0].description).toBe(
-      "Owns three mills in the Ruhr. And more.",
-    );
-    expect(store.characters[0].photo).toBe("otto-brandt.png");
-    expect(main().queryByText(/^New photo/)).not.toBeInTheDocument();
-
-    await user.click(main().getByRole("button", { name: "Save" }));
-    await main().findByRole("heading", { name: /^Otto Brandt/ });
-    expect(store.world.statNames[0].left).toBe("Order");
-    expect(api.setPhoto).toHaveBeenCalledTimes(1);
   });
 });
 

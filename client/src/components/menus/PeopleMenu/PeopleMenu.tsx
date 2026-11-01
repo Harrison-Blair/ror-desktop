@@ -17,10 +17,8 @@ import {
   clearMe,
   createPerson,
   deletePerson,
-  type StatName,
   setMe,
   setPhoto,
-  setStatNames,
   updatePerson,
 } from "@/lib/peopleApi";
 import { type ListPrefs, PeopleList } from "./PeopleList";
@@ -78,17 +76,10 @@ export function PeopleMenu({
   const moveFrom = (from: PeopleView, to: PeopleView) =>
     setView((current) => (current === from ? to : current));
 
-  // Saves the person, then the stat names and the photo. When one of those
-  // two fails, the person is saved but the form stays open with the unsaved
-  // part, and an Add becomes an Edit of the new person, so Save again
-  // doesn't make a second one.
+  // A failed photo keeps the saved person's Edit form open for retry.
   const save =
     (id: string | null) =>
-    async (
-      fields: CharacterFields,
-      names: StatName[],
-      photo: string | null,
-    ) => {
+    async (fields: CharacterFields, photo: string | null) => {
       const from = view;
       let saved: string;
       try {
@@ -100,19 +91,6 @@ export function PeopleMenu({
         fail(e);
         return { photoSaved: false };
       }
-      const failed: string[] = [];
-      const renamed = names.some(
-        (n, i) =>
-          n.left !== world?.statNames[i]?.left ||
-          n.right !== world?.statNames[i]?.right,
-      );
-      if (renamed) {
-        try {
-          data.setWorld(await setStatNames(names));
-        } catch (e) {
-          failed.push(`the stat names (${errorMessage(e)})`);
-        }
-      }
       let photoSaved = photo === null;
       if (photo !== null) {
         try {
@@ -120,23 +98,21 @@ export function PeopleMenu({
           data.photoChanged();
           photoSaved = true;
         } catch (e) {
-          failed.push(`the photo (${errorMessage(e)})`);
+          notify({
+            kind: "error",
+            message: `${fields.name} is saved, but not the photo (${errorMessage(e)}).`,
+          });
         }
       }
       await data.reload();
-      if (failed.length === 0) {
+      if (photoSaved) {
         moveFrom(from, { screen: "sheet", id: saved });
         return { photoSaved };
       }
-      notify({
-        kind: "error",
-        message: `${fields.name} is saved, but not ${failed.join(" or ")}.`,
-      });
       if (id === null) {
         setPending({
           id: saved,
-          statNames: names,
-          photo: photoSaved ? null : photo,
+          photo,
         });
         moveFrom(from, { screen: "edit", id: saved });
       }
@@ -238,9 +214,7 @@ export function PeopleMenu({
         gameDate={world.gameDate}
         photoVersion={photoVersion}
         pending={
-          pending?.id === person.id
-            ? { statNames: pending.statNames, photo: pending.photo }
-            : undefined
+          pending?.id === person.id ? { photo: pending.photo } : undefined
         }
         onCancel={() => setView({ screen: "sheet", id: person.id })}
         onDirty={onFormDirty}

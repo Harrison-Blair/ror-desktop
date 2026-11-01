@@ -400,7 +400,7 @@ describe("App frame", () => {
       await user.click(screen.getByRole("button", { name: "World" }));
       await waitFor(() => expect(disk).toEqual({ "Ada.md": "Hello!" }));
       expect(
-        await screen.findByRole("heading", { name: "People of interest" }),
+        await screen.findByRole("heading", { name: "Overview" }),
       ).toBeInTheDocument();
 
       await user.click(screen.getByRole("button", { name: "Notes" }));
@@ -460,7 +460,7 @@ describe("App frame", () => {
         screen.getByRole("button", { name: "Notes", pressed: true }),
       ).toBeInTheDocument();
       expect(
-        screen.queryByRole("heading", { name: "People of interest" }),
+        screen.queryByRole("heading", { name: "Overview" }),
       ).not.toBeInTheDocument();
     });
 

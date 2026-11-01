@@ -4,6 +4,7 @@ import {
   type ListPrefs,
 } from "@/components/menus/PeopleMenu/PeopleList";
 import type { PeopleView } from "@/components/menus/PeopleMenu/PeopleMenu";
+import type { WorldSection } from "@/components/menus/WorldMenu/WorldMenu";
 
 export type WorldPageOptions = {
   // True while the World tab is shown and Settings is closed.
@@ -16,8 +17,8 @@ export type WorldPageOptions = {
 export type WorldView = ReturnType<typeof useWorldView>;
 
 export type WorldPage = {
-  // Leaves the Add or Edit person form, asking first when it has unsaved
-  // changes. Resolves false to stay on the form.
+  // Leaves Overview or the person form, asking before discarding edits.
+  // Resolves false to keep editing.
   leave: () => Promise<boolean>;
   // Shows a person's sheet the next time World is shown.
   openPerson: (id: string) => void;
@@ -36,19 +37,24 @@ export function useWorldPage(options: WorldPageOptions): WorldPage {
 }
 
 function useWorldView({ active, confirmDiscard }: WorldPageOptions) {
+  const [section, setSection] = useState<WorldSection>("overview");
+  const [overviewVersion, setOverviewVersion] = useState(0);
   const [peopleView, setPeopleView] = useState<PeopleView>({ screen: "list" });
   const [prefs, setPrefs] = useState<ListPrefs>(DEFAULT_PREFS);
-  // True while the Add or Edit person form has unsaved changes.
+  // True while Overview or the person form has unsaved changes.
   const formDirty = useRef(false);
 
-  // Leaving drops the form, so World opens on the list or the sheet next
-  // time.
+  // Discarded Overview edits reset; person forms return to the list or sheet.
   const leave = async () => {
     const form = peopleView.screen === "add" || peopleView.screen === "edit";
-    if (!active || !form) return true;
+    if (!active || (section === "people" && !form)) return true;
     if (formDirty.current) {
       if (!(await confirmDiscard())) return false;
       formDirty.current = false;
+    }
+    if (section === "overview") {
+      setOverviewVersion((version) => version + 1);
+      return true;
     }
     setPeopleView(
       peopleView.screen === "edit"
@@ -58,14 +64,21 @@ function useWorldView({ active, confirmDiscard }: WorldPageOptions) {
     return true;
   };
 
-  const openPerson = (id: string) => setPeopleView({ screen: "sheet", id });
+  const openPerson = (id: string) => {
+    setSection("people");
+    setPeopleView({ screen: "sheet", id });
+  };
 
-  // The People section button shows the list.
-  const showList = async () => {
-    if (await leave()) setPeopleView({ screen: "list" });
+  const selectSection = async (next: WorldSection) => {
+    if (!(await leave())) return;
+    setSection(next);
+    if (next === "people") setPeopleView({ screen: "list" });
   };
 
   return {
+    section,
+    selectSection,
+    overviewVersion,
     peopleView,
     setPeopleView,
     prefs,
@@ -75,6 +88,5 @@ function useWorldView({ active, confirmDiscard }: WorldPageOptions) {
     },
     leave,
     openPerson,
-    showList,
   };
 }

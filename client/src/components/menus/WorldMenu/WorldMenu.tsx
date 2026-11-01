@@ -1,8 +1,8 @@
 import styles from "./WorldMenu.module.css";
 
-export type WorldSection = "people";
+export type WorldSection = "overview" | "people";
 
-// The World rail panel. Only People of interest is built so far.
+// The World rail sections.
 export function WorldMenu({
   section,
   onSelect,
@@ -11,13 +11,18 @@ export function WorldMenu({
   onSelect: (section: WorldSection) => void;
 }) {
   return (
-    <button
-      type="button"
-      className={styles.item}
-      aria-pressed={section === "people"}
-      onClick={() => onSelect("people")}
-    >
-      People of interest
-    </button>
+    <>
+      {(["overview", "people"] as const).map((item) => (
+        <button
+          key={item}
+          type="button"
+          className={styles.item}
+          aria-pressed={section === item}
+          onClick={() => onSelect(item)}
+        >
+          {item === "overview" ? "Overview" : "People of interest"}
+        </button>
+      ))}
+    </>
   );
 }

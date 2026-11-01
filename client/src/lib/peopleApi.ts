@@ -70,10 +70,6 @@ export const readPhoto = (id: string) =>
 
 export const getWorld = () => invoke<World>("world_get");
 
-// `date` is "YYYY-MM-DD".
-export const setGameDate = (date: string) =>
-  invoke<World>("world_set_game_date", { date });
-
-// Renames the stats for every character. An empty name keeps the old name.
-export const setStatNames = (names: StatName[]) =>
-  invoke<World>("world_set_stat_names", { names });
+// Saves the full World together. Blank stat labels keep their saved values.
+export const updateWorld = (world: World) =>
+  invoke<World>("world_update", { world });

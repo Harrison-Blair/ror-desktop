@@ -6,9 +6,11 @@ import { StatBar } from "@/components/menus/PeopleMenu/parts";
 import { useToast } from "@/components/Toast/Toast";
 import { errorMessage } from "@/lib/errorMessage";
 import {
+  type CharacterDraft,
+  characterDraftToFields,
+  characterToDraft,
   type FormErrors,
   formatBoxDate,
-  hasErrors,
   parseDate,
   validateForm,
 } from "@/lib/people";
@@ -16,68 +18,27 @@ import {
   type Character,
   type CharacterFields,
   choosePhoto,
-  STAT_COUNT,
   type StatName,
 } from "@/lib/peopleApi";
 
-type Draft = {
-  name: string;
-  birthDate: string;
-  birthCity: string;
-  birthCountry: string;
-  deathDate: string;
-  deathCity: string;
-  deathCountry: string;
-  stats: string[];
-  description: string;
-  statNames: StatName[];
+type Draft = CharacterDraft & {
   // The path of a newly picked photo, saved with the person.
   photo: string | null;
 };
 
-type TextField = Exclude<keyof Draft, "stats" | "statNames" | "photo">;
+type TextField = Exclude<keyof CharacterDraft, "stats">;
 
-const toDraft = (person: Character | undefined, names: StatName[]): Draft => ({
-  name: person?.name ?? "",
-  birthDate: person?.birthDate ? formatBoxDate(person.birthDate) : "",
-  birthCity: person?.birthCity ?? "",
-  birthCountry: person?.birthCountry ?? "",
-  deathDate: person?.deathDate ? formatBoxDate(person.deathDate) : "",
-  deathCity: person?.deathCity ?? "",
-  deathCountry: person?.deathCountry ?? "",
-  stats: Array.from({ length: STAT_COUNT }, (_, i) => {
-    const value = person?.stats[i];
-    return value === null || value === undefined ? "" : String(value);
-  }),
-  description: person?.description ?? "",
-  statNames: names.map((n) => ({ ...n })),
+const toDraft = (person?: Character): Draft => ({
+  ...characterToDraft(person),
   photo: null,
-});
-
-const dateOf = (text: string) => {
-  const parsed = parseDate(text);
-  return text.trim() && "date" in parsed ? parsed.date : null;
-};
-
-// Call only for a draft without errors.
-const toFields = (draft: Draft): CharacterFields => ({
-  name: draft.name.trim(),
-  birthDate: dateOf(draft.birthDate),
-  birthCity: draft.birthCity.trim(),
-  birthCountry: draft.birthCountry.trim(),
-  deathDate: dateOf(draft.deathDate),
-  deathCity: draft.deathCity.trim(),
-  deathCountry: draft.deathCountry.trim(),
-  stats: draft.stats.map((s) => (s.trim() ? Number(s) : null)),
-  description: draft.description,
 });
 
 const NO_ERRORS: FormErrors = { stats: [] };
 
 const fileName = (path: string) => path.slice(path.search(/[^/\\]*$/));
 
-// The changes a form keeps after a save that failed in part.
-export type Pending = Pick<Draft, "statNames" | "photo">;
+// A picked photo retained after the character fields were saved.
+export type Pending = Pick<Draft, "photo">;
 
 export type PersonFormProps = {
   // Undefined for a new person.
@@ -85,7 +46,7 @@ export type PersonFormProps = {
   statNames: StatName[];
   gameDate: string;
   photoVersion: number;
-  // Unsaved stat names and photo to start with.
+  // An unsaved photo to start with.
   pending?: Pending;
   onCancel: () => void;
   // Called with true while the form has unsaved changes.
@@ -93,7 +54,6 @@ export type PersonFormProps = {
   // When the form stays open after a save, tells if the photo was saved.
   onSave: (
     fields: CharacterFields,
-    statNames: StatName[],
     photo: string | null,
   ) => Promise<{ photoSaved: boolean }>;
 };
@@ -111,7 +71,7 @@ export function PersonForm({
   const notify = useToast();
   const id = useId();
   const [draft, setDraft] = useState(() => ({
-    ...toDraft(person, statNames),
+    ...toDraft(person),
     ...pending,
   }));
   // Errors show after the first Save, then follow the typing.
@@ -122,8 +82,7 @@ export function PersonForm({
   const errors = shown ? validateForm(draft, gameDate) : NO_ERRORS;
   // A pending save counts too, so leaving the form asks first.
   const dirty =
-    busy ||
-    JSON.stringify(draft) !== JSON.stringify(toDraft(person, statNames));
+    busy || JSON.stringify(draft) !== JSON.stringify(toDraft(person));
   useEffect(() => {
     onDirty?.(dirty);
     return () => onDirty?.(false);
@@ -134,22 +93,16 @@ export function PersonForm({
   // A valid date is rewritten as "21 January 1904".
   const tidyDate = (field: "birthDate" | "deathDate") => () =>
     setDraft((d) => {
-      const iso = dateOf(d[field]);
-      return iso ? { ...d, [field]: formatBoxDate(iso) } : d;
+      const parsed = parseDate(d[field]);
+      return "date" in parsed
+        ? { ...d, [field]: formatBoxDate(parsed.date) }
+        : d;
     });
   const setStat = (i: number, value: string) =>
     setDraft((d) => ({
       ...d,
       stats: d.stats.map((s, j) => (j === i ? value : s)),
     }));
-  const setStatName = (i: number, side: keyof StatName, value: string) =>
-    setDraft((d) => ({
-      ...d,
-      statNames: d.statNames.map((n, j) =>
-        j === i ? { ...n, [side]: value } : n,
-      ),
-    }));
-
   const pickPhoto = async () => {
     try {
       const path = await choosePhoto();
@@ -162,15 +115,12 @@ export function PersonForm({
   const save = async () => {
     if (saving.current) return;
     setShown(true);
-    if (hasErrors(validateForm(draft, gameDate))) return;
+    const result = characterDraftToFields(draft, gameDate);
+    if ("errors" in result) return;
     saving.current = true;
     setBusy(true);
     try {
-      const { photoSaved } = await onSave(
-        toFields(draft),
-        draft.statNames,
-        draft.photo,
-      );
+      const { photoSaved } = await onSave(result.fields, draft.photo);
       if (photoSaved) setDraft((d) => ({ ...d, photo: null }));
     } finally {
       saving.current = false;
@@ -305,7 +255,7 @@ export function PersonForm({
             <span>Value</span>
             <span>Name</span>
           </div>
-          {draft.statNames.map((name, i) => {
+          {statNames.map((name, i) => {
             const raw = draft.stats[i];
             const error = errors.stats[i];
             const value =
@@ -318,14 +268,7 @@ export function PersonForm({
               // biome-ignore lint/suspicious/noArrayIndexKey: see above
               <div key={i} className={styles.pairEdit}>
                 <div className={`${styles.pair} ${styles.editRow}`}>
-                  <input
-                    className={styles.input}
-                    type="text"
-                    value={name.left}
-                    aria-label={`Stat ${n} left name`}
-                    onChange={(e) => setStatName(i, "left", e.target.value)}
-                    disabled={busy}
-                  />
+                  <span>{name.left}</span>
                   <input
                     className={`${styles.input} ${styles.mono} ${error ? styles.invalid : ""}`}
                     type="text"
@@ -341,14 +284,7 @@ export function PersonForm({
                   <span className={styles.mono}>
                     {value === null ? "" : 100 - value}
                   </span>
-                  <input
-                    className={`${styles.input} ${styles.right}`}
-                    type="text"
-                    value={name.right}
-                    aria-label={`Stat ${n} right name`}
-                    onChange={(e) => setStatName(i, "right", e.target.value)}
-                    disabled={busy}
-                  />
+                  <span className={styles.right}>{name.right}</span>
                 </div>
                 {error && (
                   <span

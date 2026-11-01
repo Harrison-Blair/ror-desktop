@@ -169,18 +169,13 @@ export const api = {
     if (store.damaged.world) throw store.damaged.world;
     return copy(store.world);
   }),
-  setGameDate: vi.fn(async (date: string) => {
-    if (store.damaged.world) throw store.damaged.world;
-    store.world = { ...store.world, gameDate: date };
-    return copy(store.world);
-  }),
-  setStatNames: vi.fn(async (names: StatName[]) => {
+  updateWorld: vi.fn(async (world: World) => {
     if (store.damaged.world) throw store.damaged.world;
     store.world = {
-      ...store.world,
-      statNames: names.map((n, i) => ({
-        left: n.left.trim() || store.world.statNames[i].left,
-        right: n.right.trim() || store.world.statNames[i].right,
+      gameDate: world.gameDate,
+      statNames: world.statNames.map((names, i) => ({
+        left: names.left.trim() || store.world.statNames[i].left,
+        right: names.right.trim() || store.world.statNames[i].right,
       })),
     };
     return copy(store.world);
