@@ -6,10 +6,8 @@ import {
   useState,
 } from "react";
 import { ConfirmDialog } from "@/components/ConfirmDialog/ConfirmDialog";
-import {
-  type Pending,
-  PersonForm,
-} from "@/components/forms/PersonForm/PersonForm";
+import type { Pending } from "@/components/forms/PersonForm/PersonFields";
+import { PersonForm } from "@/components/forms/PersonForm/PersonForm";
 import { useToast } from "@/components/Toast/Toast";
 import { errorMessage } from "@/lib/errorMessage";
 import {
@@ -23,14 +21,15 @@ import {
 } from "@/lib/peopleApi";
 import { type ListPrefs, PeopleList } from "./PeopleList";
 import styles from "./PeopleMenu.module.css";
-import { PersonSheet } from "./PersonSheet";
+import { PersonSheet, type SheetSection } from "./PersonSheet";
 import type { PeopleData } from "./usePeople";
 
 // What the main panel shows in World › People of interest.
 export type PeopleView =
   | { screen: "list" }
   | { screen: "sheet"; id: string }
-  | { screen: "edit"; id: string }
+  // The sheet with one section open for editing.
+  | { screen: "edit"; id: string; section: SheetSection }
   | { screen: "add" };
 
 export type PeopleMenuProps = {
@@ -55,9 +54,10 @@ export function PeopleMenu({
   onFormDirty,
 }: PeopleMenuProps) {
   const notify = useToast();
-  // The unsaved part of an Add whose person was created, for its Edit form.
+  // The unsaved photo of an Add whose person was created, for the top
+  // section of its sheet.
   const [pending, setPending] = useState<Pending & { id: string }>();
-  // It is for that one Edit form only.
+  // It is for that one open section only.
   if (pending && !(view.screen === "edit" && view.id === pending.id)) {
     setPending(undefined);
   }
@@ -76,7 +76,7 @@ export function PeopleMenu({
   const moveFrom = (from: PeopleView, to: PeopleView) =>
     setView((current) => (current === from ? to : current));
 
-  // A failed photo keeps the saved person's Edit form open for retry.
+  // A failed photo keeps the saved person's top section open for retry.
   const save =
     (id: string | null) =>
     async (fields: CharacterFields, photo: string | null) => {
@@ -114,7 +114,7 @@ export function PeopleMenu({
           id: saved,
           photo,
         });
-        moveFrom(from, { screen: "edit", id: saved });
+        moveFrom(from, { screen: "edit", id: saved, section: "top" });
       }
       return { photoSaved };
     };
@@ -204,26 +204,11 @@ export function PeopleMenu({
   };
 
   let screen: ReactNode;
-  if (person && view.screen === "edit") {
-    screen = (
-      <PersonForm
-        // A new form for each person.
-        key={person.id}
-        person={person}
-        statNames={world.statNames}
-        gameDate={world.gameDate}
-        photoVersion={photoVersion}
-        pending={
-          pending?.id === person.id ? { photo: pending.photo } : undefined
-        }
-        onCancel={() => setView({ screen: "sheet", id: person.id })}
-        onDirty={onFormDirty}
-        onSave={save(person.id)}
-      />
-    );
-  } else if (person) {
+  if (person) {
     screen = (
       <PersonSheet
+        // A new sheet, and so new editors, for each person.
+        key={person.id}
         person={person}
         meId={meId}
         gameDate={world.gameDate}
@@ -240,7 +225,16 @@ export function PeopleMenu({
             ? undefined
             : () => setDialog({ kind: "unclaim", id: person.id })
         }
-        onEdit={() => setView({ screen: "edit", id: person.id })}
+        editing={view.screen === "edit" ? view.section : undefined}
+        pending={
+          pending?.id === person.id ? { photo: pending.photo } : undefined
+        }
+        onEdit={(section) =>
+          setView({ screen: "edit", id: person.id, section })
+        }
+        onCancelEdit={() => setView({ screen: "sheet", id: person.id })}
+        onDirty={onFormDirty}
+        onSave={save(person.id)}
         onDelete={() => setDialog({ kind: "delete", id: person.id })}
       />
     );

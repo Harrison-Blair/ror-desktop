@@ -60,12 +60,15 @@ export const character = (
   name,
   birthDate: null,
   birthCity: "",
+  birthState: "",
   birthCountry: "",
   deathDate: null,
   deathCity: "",
+  deathState: "",
   deathCountry: "",
   stats: Array.from({ length: 8 }, () => ({ left: null, right: null })),
   description: "",
+  resume: [],
   photo: null,
   ...extra,
 });
@@ -94,9 +97,16 @@ const checked = (fields: CharacterFields): CharacterFields => {
     ...fields,
     name,
     birthCity: fields.birthCity.trim(),
+    birthState: fields.birthState.trim(),
     birthCountry: fields.birthCountry.trim(),
     deathCity: fields.deathCity.trim(),
+    deathState: fields.deathState.trim(),
     deathCountry: fields.deathCountry.trim(),
+    // Like the Rust side, a job without an id gets one.
+    resume: fields.resume.map((job) => ({
+      ...job,
+      id: job.id || `job-${store.nextId++}`,
+    })),
   };
 };
 

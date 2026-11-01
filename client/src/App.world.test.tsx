@@ -340,9 +340,9 @@ describe("World Overview", () => {
     expect(screen.queryByRole("alertdialog")).not.toBeInTheDocument();
     await user.click(card("Otto Brandt"));
     expect(main().getByText("Order")).toBeVisible();
-    await user.click(main().getByRole("button", { name: "Edit" }));
+    await user.click(main().getByRole("button", { name: "Edit details" }));
     expect(main().queryByLabelText("Stat 1 left name")).not.toBeInTheDocument();
-    expect(main().getByLabelText("Stat 1 left value")).toHaveValue("58");
+    expect(main().getByLabelText("Order value")).toHaveValue("58");
   });
 
   it.each([
@@ -480,7 +480,7 @@ describe("Notes character sheet", () => {
 
     await user.click(
       await screen.findByRole("button", {
-        name: /Rosa Alvarez.*Your character/,
+        name: "Rosa Alvarez",
       }),
     );
 
@@ -497,7 +497,7 @@ describe("Notes character sheet", () => {
       main().queryByRole("button", { name: "Not my character" }),
     ).toBeNull();
 
-    await user.click(main().getByRole("button", { name: "Edit" }));
+    await user.click(main().getByRole("button", { name: "Edit details" }));
     await user.type(main().getByLabelText("Name"), " Diaz");
     await user.click(main().getByRole("button", { name: "Save" }));
 
@@ -518,10 +518,10 @@ describe("Leaving your character's form in Notes", () => {
     const user = userEvent.setup();
     await user.click(
       await screen.findByRole("button", {
-        name: /Rosa Alvarez.*Your character/,
+        name: "Rosa Alvarez",
       }),
     );
-    await user.click(main().getByRole("button", { name: "Edit" }));
+    await user.click(main().getByRole("button", { name: "Edit details" }));
     await user.type(main().getByLabelText("Name"), " Diaz");
 
     await user.click(screen.getByRole("button", { name: "World" }));
@@ -557,8 +557,8 @@ describe("Add and edit form", () => {
     const user = await openWorld();
     await user.click(main().getAllByRole("button", { name: "Add person" })[0]);
 
-    expect(main().getByLabelText("Stat 1 left value")).toBeInTheDocument();
-    expect(main().getByLabelText("Stat 1 right value")).toBeInTheDocument();
+    expect(main().getByLabelText("Scientific value")).toBeInTheDocument();
+    expect(main().getByLabelText("Religious value")).toBeInTheDocument();
     expect(main().getByText("Scientific")).toBeInTheDocument();
     expect(main().getByText("Religious")).toBeInTheDocument();
   });
@@ -631,11 +631,11 @@ describe("Add and edit form", () => {
     const user = await openWorld();
     await addPerson(user, {
       Name: "Ada",
-      "Stat 1 left value": "4.5",
-      "Stat 1 right value": "-42",
+      "Scientific value": "4.5",
+      "Religious value": "-42",
     });
-    const left = main().getByLabelText("Stat 1 left value");
-    const right = main().getByLabelText("Stat 1 right value");
+    const left = main().getByLabelText("Scientific value");
+    const right = main().getByLabelText("Religious value");
     expect(left).toHaveAccessibleDescription(
       "Use a whole number within the safe integer range.",
     );
@@ -666,7 +666,7 @@ describe("Add and edit form", () => {
       "Birth date": "21 January 1904",
       "Birthplace city": "Dortmund",
       "Birthplace country": "Germany",
-      "Stat 1 left value": "58",
+      "Scientific value": "58",
     });
 
     expect(
@@ -685,6 +685,9 @@ describe("Add and edit form", () => {
         right: null,
       })),
       description: "",
+      birthState: "",
+      deathState: "",
+      resume: [],
     });
     expect(main().getByText("January 21, 1904")).toBeInTheDocument();
     expect(main().getByText("Dortmund, Germany")).toBeInTheDocument();
@@ -709,8 +712,10 @@ describe("Add and edit form", () => {
     expect(card("Otto Brandt")).toBeInTheDocument();
 
     await user.click(card("Otto Brandt"));
-    await user.click(main().getByRole("button", { name: "Edit" }));
-    expect(main().getByText("Editing")).toBeInTheDocument();
+    await user.click(main().getByRole("button", { name: "Edit details" }));
+    expect(
+      main().getByText("Editing · Name, dates, places, photo and stats"),
+    ).toBeInTheDocument();
     expect(main().getByLabelText("Birth date")).toHaveValue("21 January 1904");
     await user.type(main().getByLabelText("Name"), "x");
     await user.click(main().getByRole("button", { name: "Cancel" }));
@@ -721,32 +726,47 @@ describe("Add and edit form", () => {
     expect(api.updatePerson).not.toHaveBeenCalled();
   });
 
-  it("Edit saves every field and returns to the sheet", async () => {
+  it("a section's Save sends every field and returns to the sheet", async () => {
     store.characters = [otto()];
     const user = await openWorld();
+    const stats = [58, null, null, null, null, null, null, null].map(
+      (left) => ({ left, right: null }),
+    );
 
     await user.click(card("Otto Brandt"));
-    await user.click(main().getByRole("button", { name: "Edit" }));
-    await user.clear(main().getByLabelText("Stat 4 left value"));
-    await user.type(main().getByLabelText("Description"), " And a newspaper.");
+    await user.click(main().getByRole("button", { name: "Edit details" }));
+    await user.clear(main().getByLabelText("Globalist value"));
     await user.click(main().getByRole("button", { name: "Save" }));
 
     expect(
       await main().findByRole("heading", { name: /^Otto Brandt ?\(58\)$/ }),
     ).toBeInTheDocument();
-    expect(api.updatePerson).toHaveBeenCalledWith("otto-brandt", {
+    expect(api.updatePerson).toHaveBeenLastCalledWith("otto-brandt", {
       ...otto(),
       id: undefined,
       photo: undefined,
-      stats: [58, null, null, null, null, null, null, null].map((left) => ({
-        left,
-        right: null,
-      })),
-      description: "Owns three mills in the Ruhr. And a newspaper.",
+      stats,
     });
+
+    await user.click(main().getByRole("button", { name: "Edit description" }));
+    await user.type(main().getByLabelText("Description"), " And a newspaper.");
+    await user.click(main().getByRole("button", { name: "Save" }));
+
+    await waitFor(() =>
+      expect(
+        main().queryByRole("textbox", { name: "Description" }),
+      ).not.toBeInTheDocument(),
+    );
     expect(
       main().getByText("Owns three mills in the Ruhr. And a newspaper."),
     ).toBeInTheDocument();
+    expect(api.updatePerson).toHaveBeenLastCalledWith("otto-brandt", {
+      ...otto(),
+      id: undefined,
+      photo: undefined,
+      stats,
+      description: "Owns three mills in the Ruhr. And a newspaper.",
+    });
   });
 
   it("a refused save shows the error and keeps the form", async () => {
@@ -808,7 +828,7 @@ describe("Cards and table", () => {
     await user.click(card("Ada"));
     const head = main().getByRole("heading", { name: /^Ada ?\(39\)$/ });
     // biome-ignore lint/style/noNonNullAssertion: the title block holds it
-    expect(head.parentElement!).toHaveTextContent(
+    expect(head.closest(`.${styles.sheetHead}`)!).toHaveTextContent(
       /^Ada\(39\)May 1, 1920 – January 1, 1960$/,
     );
   });
@@ -839,11 +859,13 @@ describe("Cards and table", () => {
     await user.click(card("Ada"));
     const head = main().getByRole("heading", { name: "Ada" });
     // biome-ignore lint/style/noNonNullAssertion: the title block holds it
-    expect(head.parentElement!).toHaveTextContent(/^AdaLyon, France$/);
+    expect(head.closest(`.${styles.sheetHead}`)!).toHaveTextContent(
+      /^AdaLyon, France$/,
+    );
   });
 
   // Check 18
-  it("the table has Name, Birthplace and Age, and sorts by a column", async () => {
+  it("the table has Name, Occupation, Birthplace and Age, and sorts by a column", async () => {
     store.characters = [
       otto(),
       rosa(),
@@ -857,7 +879,7 @@ describe("Cards and table", () => {
     const table = within(main().getByRole("table"));
     expect(
       table.getAllByRole("columnheader").map((h) => h.textContent),
-    ).toEqual(["Name", "Birthplace", "Age"]);
+    ).toEqual(["Name", "Occupation", "Birthplace", "Age"]);
     const names = () =>
       table
         .getAllByRole("row")
@@ -997,7 +1019,7 @@ describe("Sheet", () => {
     await user.click(card("Otto Brandt"));
     store.pick = "/pics/otto.png";
 
-    await user.click(main().getByRole("button", { name: "Edit" }));
+    await user.click(main().getByRole("button", { name: "Edit details" }));
     await user.click(main().getByRole("button", { name: "Add photo" }));
     expect(main().getByText("New photo: otto.png")).toBeInTheDocument();
     await user.click(main().getByRole("button", { name: "Save" }));
@@ -1256,7 +1278,7 @@ describe("Notes character button", () => {
     );
 
     const button = await notes.findByRole("button", {
-      name: /^Rosa Alvarez ?Your character$/,
+      name: "Rosa Alvarez",
     });
     await user.click(button);
 
@@ -1413,18 +1435,21 @@ describe("Leaving World", () => {
     expect(api.createPerson).not.toHaveBeenCalled();
   });
 
-  it("an Edit form with changes asks first: Cancel keeps it, Discard drops it", async () => {
+  it("an open section with changes asks first: Cancel keeps it, Discard drops it", async () => {
     store.characters = [otto()];
     const user = await openWorld();
     await user.click(card("Otto Brandt"));
-    await user.click(main().getByRole("button", { name: "Edit" }));
-    await user.type(main().getByLabelText("Description"), " And more.");
+    await user.click(main().getByRole("button", { name: "Edit description" }));
+    await user.type(
+      main().getByRole("textbox", { name: "Description" }),
+      " And more.",
+    );
 
     await user.click(
       railPanel().getByRole("button", { name: "People of interest" }),
     );
     await user.click(discard().getByRole("button", { name: "Cancel" }));
-    expect(main().getByLabelText("Description")).toHaveValue(
+    expect(main().getByRole("textbox", { name: "Description" })).toHaveValue(
       "Owns three mills in the Ruhr. And more.",
     );
 
@@ -1451,7 +1476,7 @@ describe("Leaving World", () => {
     await main().findByRole("heading", { name: "People of interest" });
 
     await user.click(card("Otto Brandt"));
-    await user.click(main().getByRole("button", { name: "Edit" }));
+    await user.click(main().getByRole("button", { name: "Edit details" }));
     await user.click(screen.getByRole("button", { name: "Settings" }));
     expect(screen.queryByRole("alertdialog")).not.toBeInTheDocument();
     expect(main().queryByLabelText("Name")).not.toBeInTheDocument();
@@ -1459,7 +1484,7 @@ describe("Leaving World", () => {
 });
 
 describe("A save that fails in part", () => {
-  it("a failed photo keeps the Add form as an Edit of the saved person", async () => {
+  it("a failed photo opens the saved person's top section with the photo", async () => {
     const user = await openWorld();
     store.pick = "/pics/ada.png";
     api.setPhoto.mockRejectedValueOnce("The photo can't be read.");
@@ -1471,7 +1496,9 @@ describe("A save that fails in part", () => {
     expect(await findAlert()).toHaveTextContent(
       "Ada is saved, but not the photo (The photo can't be read.).",
     );
-    expect(main().getByText("Editing")).toBeInTheDocument();
+    expect(
+      main().getByText("Editing · Name, dates, places, photo and stats"),
+    ).toBeInTheDocument();
     expect(main().getByLabelText("Name")).toHaveValue("Ada");
     expect(main().getByText("New photo: ada.png")).toBeInTheDocument();
     expect(store.characters.map((c) => c.name)).toEqual(["Ada"]);
@@ -1544,21 +1571,20 @@ describe("Leaving while something is saved", () => {
       return real!(...args);
     });
     await user.click(card("Otto Brandt"));
-    await user.click(main().getByRole("button", { name: "Edit" }));
-    await user.type(main().getByLabelText("Description"), " And more.");
+    await user.click(main().getByRole("button", { name: "Edit details" }));
+    await user.type(main().getByLabelText("Name"), " Jr");
     await user.click(main().getByRole("button", { name: "Save" }));
 
-    expect(main().getByLabelText("Description")).toBeDisabled();
     expect(main().getByLabelText("Name")).toBeDisabled();
-    expect(main().getByLabelText("Stat 1 left value")).toBeDisabled();
+    expect(main().getByLabelText("Birthplace State / Province")).toBeDisabled();
+    expect(main().getByLabelText("Scientific value")).toBeDisabled();
     expect(main().getByRole("button", { name: "Save" })).toBeDisabled();
     expect(main().getByRole("button", { name: "Cancel" })).toBeDisabled();
     expect(main().getByRole("button", { name: "Add photo" })).toBeDisabled();
 
     update.resolve();
-    await main().findByRole("heading", { name: /^Otto Brandt/ });
     expect(
-      main().getByText("Owns three mills in the Ruhr. And more."),
+      await main().findByRole("heading", { name: /^Otto Brandt Jr/ }),
     ).toBeInTheDocument();
   });
 
@@ -1598,7 +1624,7 @@ describe("Leaving while something is saved", () => {
     const update = deferred<void>();
     api.updatePerson.mockImplementationOnce(() => update.promise as never);
     await user.click(card("Otto Brandt"));
-    await user.click(main().getByRole("button", { name: "Edit" }));
+    await user.click(main().getByRole("button", { name: "Edit details" }));
     await user.click(main().getByRole("button", { name: "Save" }));
 
     await user.click(screen.getByRole("button", { name: "Notes" }));

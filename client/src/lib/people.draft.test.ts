@@ -1,5 +1,9 @@
 import { describe, expect, it } from "vitest";
-import { characterDraftToFields, characterToDraft } from "@/lib/people";
+import {
+  characterDraftToFields,
+  characterToDraft,
+  jobToDraft,
+} from "@/lib/people";
 import type { Character } from "@/lib/peopleApi";
 
 const pairs = <T>(values: T[], right: T) =>
@@ -12,12 +16,32 @@ const person: Character = {
   name: "Rosa",
   birthDate: "1930-06-14",
   birthCity: "Havana",
+  birthState: "La Habana",
   birthCountry: "Cuba",
   deathDate: "1961-08-03",
   deathCity: "London",
+  deathState: "England",
   deathCountry: "UK",
   stats: pairs([0, 100, null, 45, null, 7, 50, null], null),
   description: "  A printer.\nKnows everyone.  ",
+  resume: [
+    {
+      id: "job-1",
+      job: "Printer",
+      employer: "La Prensa",
+      startDate: "1950",
+      endDate: "1955-03",
+      description: " Night shift.\n",
+    },
+    {
+      id: "job-2",
+      job: "Editor",
+      employer: "",
+      startDate: "1955-04-01",
+      endDate: null,
+      description: "",
+    },
+  ],
 };
 
 describe("character draft adapter", () => {
@@ -28,6 +52,7 @@ describe("character draft adapter", () => {
         ...person,
         birthDate: `${year}-01-01`,
         deathDate: `${year}-12-31`,
+        resume: [],
       };
       const draft = characterToDraft(fields);
       expect(draft.birthDate).toBe(`1 January ${year}`);
@@ -44,12 +69,15 @@ describe("character draft adapter", () => {
       name: "",
       birthDate: "",
       birthCity: "",
+      birthState: "",
       birthCountry: "",
       deathDate: "",
       deathCity: "",
+      deathState: "",
       deathCountry: "",
       stats: pairs(["", "", "", "", "", "", "", ""], ""),
       description: "",
+      resume: [],
     });
     draft.stats[0].left = "50";
     expect(characterToDraft().stats[0].left).toBe("");
@@ -60,12 +88,15 @@ describe("character draft adapter", () => {
         name: "Ada",
         birthDate: null,
         birthCity: "",
+        birthState: "",
         birthCountry: "",
         deathDate: null,
         deathCity: "",
+        deathState: "",
         deathCountry: "",
         stats: pairs([null, null, null, null, null, null, null, null], null),
         description: "",
+        resume: [],
       },
     });
   });
@@ -77,6 +108,24 @@ describe("character draft adapter", () => {
     expect(draft.stats).toEqual(
       pairs(["0", "100", "", "45", "", "7", "50", ""], ""),
     );
+    expect(draft.resume).toEqual([
+      {
+        id: "job-1",
+        job: "Printer",
+        employer: "La Prensa",
+        startDate: "1950",
+        endDate: "March 1955",
+        description: " Night shift.\n",
+      },
+      {
+        id: "job-2",
+        job: "Editor",
+        employer: "",
+        startDate: "1 April 1955",
+        endDate: "",
+        description: "",
+      },
+    ]);
     expect(draft).not.toHaveProperty("id");
     expect(draft).not.toHaveProperty("photo");
     const { id: _id, photo: _photo, ...fields } = person;
@@ -93,11 +142,31 @@ describe("character draft adapter", () => {
           name: "  Rosa  ",
           birthDate: " June 14, 1930 ",
           birthCity: " Havana ",
+          birthState: " La Habana ",
           birthCountry: " Cuba ",
           deathDate: "  ",
           deathCity: " London ",
+          deathState: " England ",
           deathCountry: " UK ",
           stats: pairs([" 0 ", "100", " ", "045", "", "7", "50", " "], ""),
+          resume: [
+            {
+              id: "",
+              job: " Printer ",
+              employer: " La Prensa ",
+              startDate: " Mar 1950 ",
+              endDate: " 1955-3 ",
+              description: " Night shift.\n",
+            },
+            {
+              id: "job-2",
+              job: "Editor",
+              employer: "",
+              startDate: "April 1, 1955",
+              endDate: "  ",
+              description: "",
+            },
+          ],
         },
         GAME,
       ),
@@ -106,12 +175,32 @@ describe("character draft adapter", () => {
         name: "Rosa",
         birthDate: "1930-06-14",
         birthCity: "Havana",
+        birthState: "La Habana",
         birthCountry: "Cuba",
         deathDate: null,
         deathCity: "London",
+        deathState: "England",
         deathCountry: "UK",
         stats: pairs([0, 100, null, 45, null, 7, 50, null], null),
         description: "  A printer.\nKnows everyone.  ",
+        resume: [
+          {
+            id: "",
+            job: "Printer",
+            employer: "La Prensa",
+            startDate: "1950-03",
+            endDate: "1955-03",
+            description: " Night shift.\n",
+          },
+          {
+            id: "job-2",
+            job: "Editor",
+            employer: "",
+            startDate: "1955-04-01",
+            endDate: null,
+            description: "",
+          },
+        ],
       },
     });
   });
@@ -124,6 +213,10 @@ describe("character draft adapter", () => {
         birthDate: "31 April 1904",
         deathDate: "11 February 1962",
         stats: pairs(["-1", "101", "4.5", "1e2", "no", "", "50"], ""),
+        resume: [
+          { ...jobToDraft(), job: "Clerk", startDate: "1950" },
+          { ...jobToDraft(), startDate: "1962-03" },
+        ],
       },
       GAME,
     );
@@ -144,6 +237,14 @@ describe("character draft adapter", () => {
           ],
           undefined,
         ),
+        resume: [
+          { job: undefined, startDate: undefined, endDate: undefined },
+          {
+            job: "Enter a job.",
+            startDate: "Start date is after the game date.",
+            endDate: undefined,
+          },
+        ],
       },
     });
     expect(result).not.toHaveProperty("fields");

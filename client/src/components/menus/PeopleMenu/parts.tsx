@@ -15,9 +15,20 @@ export function MineStar({ size = 16 }: { size?: number }) {
   );
 }
 
-export function BackLink({ onClick }: { onClick: () => void }) {
+export function BackLink({
+  onClick,
+  disabled = false,
+}: {
+  onClick: () => void;
+  disabled?: boolean;
+}) {
   return (
-    <button type="button" className={styles.back} onClick={onClick}>
+    <button
+      type="button"
+      className={styles.back}
+      disabled={disabled}
+      onClick={onClick}
+    >
       <ChevronLeft size={16} strokeWidth={1.75} aria-hidden />
       People of interest
     </button>

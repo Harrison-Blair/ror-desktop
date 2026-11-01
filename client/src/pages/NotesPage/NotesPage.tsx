@@ -47,6 +47,7 @@ export function NotesPageRail({
       // A pending edit is saved to the open note's old path first.
       saveOpenNote={notes.flush}
       me={me}
+      gameDate={people.world?.gameDate}
       photoVersion={people.photoVersion}
       onOpenMe={() => me && notes.openCharacter(me.id)}
     />

@@ -11,8 +11,10 @@ import {
   birthplace,
   cardDateLine,
   compareAge,
+  compareOccupation,
   isDead,
   isPlayer,
+  occupationLine,
   placeLine,
 } from "@/lib/people";
 import type { Character } from "@/lib/peopleApi";
@@ -20,7 +22,7 @@ import styles from "./PeopleMenu.module.css";
 import { PersonPhoto } from "./PersonPhoto";
 import { MineStar } from "./parts";
 
-type SortKey = "name" | "birthplace" | "age";
+type SortKey = "name" | "occupation" | "birthplace" | "age";
 type SortDir = "asc" | "desc";
 type Filter = "all" | "players" | "npcs";
 
@@ -53,14 +55,15 @@ const FILTERS: { id: Filter; label: string }[] = [
 
 const COLUMNS: { key: SortKey; label: string }[] = [
   { key: "name", label: "Name" },
+  { key: "occupation", label: "Occupation" },
   { key: "birthplace", label: "Birthplace" },
   { key: "age", label: "Age" },
 ];
 
 const byName = (a: Character, b: Character) => a.name.localeCompare(b.name);
 
-// Your character first, then by `key`; people with no age or no birthplace
-// last in both directions; ties by name.
+// Your character first, then by `key`; people with no age, occupation or
+// birthplace last in both directions; ties by name.
 function sorted(
   people: Character[],
   meId: string | null,
@@ -75,6 +78,7 @@ function sorted(
     let order = 0;
     if (key === "name") order = sign * byName(a, b);
     if (key === "age") order = compareAge(a, b, gameDate, dir);
+    if (key === "occupation") order = compareOccupation(a, b, gameDate, dir);
     if (key === "birthplace") {
       const x = birthplace(a);
       const y = birthplace(b);
@@ -160,6 +164,7 @@ export function PeopleList({
     body = (
       <div className={styles.grid}>
         {rows.map((p) => {
+          const occupation = occupationLine(p, gameDate);
           const dates = cardDateLine(p, gameDate);
           const places = placeLine(p);
           return (
@@ -182,9 +187,19 @@ export function PeopleList({
               />
               <span className={styles.cardBody}>
                 <span className={styles.cardName}>
-                  <span className={styles.clip}>{p.name}</span>
+                  <span className={styles.clip} title={p.name}>
+                    {p.name}
+                  </span>
                   {isPlayer(p, meId) && <MineStar />}
                 </span>
+                {occupation && (
+                  <span
+                    className={`${styles.cardLine} ${styles.clip}`}
+                    title={occupation}
+                  >
+                    {occupation}
+                  </span>
+                )}
                 {dates && <span className={styles.cardLine}>{dates}</span>}
                 {places && (
                   <span
@@ -240,6 +255,7 @@ export function PeopleList({
         <tbody>
           {rows.map((p) => {
             const place = birthplace(p);
+            const occupation = occupationLine(p, gameDate);
             return (
               // A click anywhere in the row opens the sheet. Keyboard users
               // open it with the name button, whose click reaches the row.
@@ -261,11 +277,17 @@ export function PeopleList({
                       photoVersion={photoVersion}
                       className={styles.avatar}
                     />
-                    <span className={`${styles.rowName} ${styles.clip}`}>
+                    <span
+                      className={`${styles.rowName} ${styles.clip}`}
+                      title={p.name}
+                    >
                       {p.name}
                     </span>
                     {isPlayer(p, meId) && <MineStar />}
                   </button>
+                </td>
+                <td className={styles.cell} title={occupation}>
+                  {occupation}
                 </td>
                 <td className={styles.cell} title={place}>
                   {place}

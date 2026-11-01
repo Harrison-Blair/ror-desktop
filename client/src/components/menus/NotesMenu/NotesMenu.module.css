@@ -41,6 +41,11 @@
   cursor: pointer;
 }
 
+/* Name only, with no occupation below it. */
+.meShort {
+  height: 40px;
+}
+
 .me:hover {
   background: var(--raised);
 }
