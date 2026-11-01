@@ -10,7 +10,7 @@ use std::io;
 use std::path::{Path, PathBuf};
 use std::sync::Mutex;
 use tauri::ipc::Response;
-use tauri::{AppHandle, Manager, WebviewWindow};
+use tauri::{AppHandle, Manager, State, WebviewWindow};
 use tauri_plugin_dialog::DialogExt;
 
 pub const STAT_COUNT: usize = 8;
@@ -788,10 +788,36 @@ pub fn people_clear_me(app: AppHandle) -> Result<()> {
     clear_me(&app_paths(&app)?)
 }
 
-// Async so that the open picker doesn't block the main thread.
+/// The path that the photo picker last returned. Only this path can be read
+/// for a preview before Save.
+#[derive(Default)]
+pub struct PickedPhoto(Mutex<Option<PathBuf>>);
+
+impl PickedPhoto {
+    fn remember(&self, path: PathBuf) {
+        *self.0.lock().unwrap_or_else(|e| e.into_inner()) = Some(path);
+    }
+
+    /// The bytes of the image at `source`. Refuses any path but the one that
+    /// the picker last returned.
+    pub fn read(&self, source: &str) -> Result<Vec<u8>> {
+        let picked = self.0.lock().unwrap_or_else(|e| e.into_inner()).clone();
+        let path = picked
+            .filter(|p| p.as_os_str() == source)
+            .ok_or("Only the image picked last can be shown before Save.")?;
+        fs::read(path).map_err(|e| format!("Couldn't read the image: {e}."))
+    }
+}
+
+// Async so that the open picker doesn't block the main thread. A Cancel keeps
+// the path picked before, which the form still shows.
 #[tauri::command]
-pub async fn people_choose_photo(app: AppHandle, window: WebviewWindow) -> Result<Option<String>> {
-    let Some(picked) = app
+pub async fn people_choose_photo(
+    app: AppHandle,
+    window: WebviewWindow,
+    picked: State<'_, PickedPhoto>,
+) -> Result<Option<String>> {
+    let Some(picked_file) = app
         .dialog()
         .file()
         .set_parent(&window)
@@ -800,8 +826,20 @@ pub async fn people_choose_photo(app: AppHandle, window: WebviewWindow) -> Resul
     else {
         return Ok(None);
     };
-    let path = picked.into_path().map_err(|e| e.to_string())?;
-    Ok(Some(path.to_string_lossy().into_owned()))
+    let path = picked_file.into_path().map_err(|e| e.to_string())?;
+    let text = path.to_string_lossy().into_owned();
+    // The page gets the path as text, so a path that isn't UTF-8 is kept as
+    // that text: the read then compares like with like.
+    picked.remember(PathBuf::from(&text));
+    Ok(Some(text))
+}
+
+#[tauri::command]
+pub fn people_read_picked_photo(
+    picked: State<'_, PickedPhoto>,
+    source: String,
+) -> Result<Response> {
+    Ok(Response::new(picked.read(&source)?))
 }
 
 #[tauri::command]
@@ -1972,5 +2010,29 @@ mod tests {
         assert_eq!(fs::read(paths.world()).unwrap(), before);
         proposed.game_date = "1961-03-01".into();
         assert_eq!(update_world(&paths, proposed.clone()).unwrap(), proposed);
+    }
+
+    #[test]
+    fn a_picked_photo_reads_only_the_path_the_picker_returned_last() {
+        let temp = tempfile::tempdir().unwrap();
+        let first = temp.path().join("first.png");
+        let second = temp.path().join("second.png");
+        fs::write(&first, b"first").unwrap();
+        fs::write(&second, b"second").unwrap();
+        let picked = PickedPhoto::default();
+        let text = |p: &Path| p.to_str().unwrap().to_string();
+        // Nothing picked yet.
+        assert_eq!(
+            picked.read(&text(&first)),
+            Err("Only the image picked last can be shown before Save.".to_string())
+        );
+        picked.remember(first.clone());
+        assert_eq!(picked.read(&text(&first)).unwrap(), b"first");
+        // A path the picker didn't return, even one that exists.
+        assert!(picked.read(&text(&second)).is_err());
+        picked.remember(second.clone());
+        assert_eq!(picked.read(&text(&second)).unwrap(), b"second");
+        // Only the last pick counts.
+        assert!(picked.read(&text(&first)).is_err());
     }
 }

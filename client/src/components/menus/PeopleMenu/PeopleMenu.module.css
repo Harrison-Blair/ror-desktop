@@ -595,6 +595,14 @@ tbody .tr {
   min-width: 0;
 }
 
+/* The name and the claim star after it. */
+.nameRow {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  min-width: 0;
+}
+
 .sheetName {
   display: flex;
   align-items: center;
