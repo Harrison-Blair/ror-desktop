@@ -243,6 +243,43 @@ describe("App frame", () => {
     ).toHaveTextContent(/^Ada\.md$/);
   });
 
+  it("selects and toggles a folder without changing the open note", async () => {
+    notesList = [
+      {
+        kind: "folder",
+        name: "People",
+        path: "People",
+        children: [{ kind: "file", name: "Ada.md", path: "People/Ada.md" }],
+      },
+    ];
+    const user = renderApp();
+    await user.click(
+      (await screen.findByRole("treeitem", { name: "People" }))
+        .firstElementChild as HTMLElement,
+    );
+    await user.click(
+      screen.getByRole("treeitem", { name: "Ada.md" })
+        .firstElementChild as HTMLElement,
+    );
+    await within(screen.getByRole("main")).findByRole("textbox", {
+      name: "Ada.md",
+    });
+
+    await user.click(
+      screen.getByRole("treeitem", { name: "People" })
+        .firstElementChild as HTMLElement,
+    );
+
+    expect(
+      screen.getByRole("treeitem", { name: "People", selected: true }),
+    ).toHaveAttribute("aria-expanded", "false");
+    expect(
+      within(screen.getByRole("main")).getByRole("textbox", {
+        name: "Ada.md",
+      }),
+    ).toBeInTheDocument();
+  });
+
   it("keeps open folders and the selection after the rail panel closes and reopens", async () => {
     notesList = [
       {

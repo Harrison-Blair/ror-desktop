@@ -92,8 +92,8 @@ function Shell() {
   const nextRollId = useRef(1);
   const notesMenu = useRef<NotesMenuHandle>(null);
   const editorMenu = useRef<EditorMenuHandle>(null);
-  // Kept here so the folder, open folders and the selection survive closing
-  // the rail panel.
+  // Kept here so the folder, open folders, tree selection and open note
+  // survive closing the rail panel.
   const [notesFolder, setNotesFolder] = useState<string>();
   // Stops StrictMode from asking twice for the startup folder.
   const askedNotesFolder = useRef(false);
@@ -103,6 +103,7 @@ function Shell() {
     () => new Set(),
   );
   const [notesSelected, setNotesSelected] = useState<string | null>(null);
+  const [openNote, setOpenNote] = useState<string | null>(null);
   // Shared by World and the Notes character button.
   const people = usePeople();
   const reloadPeople = people.reload;
@@ -122,15 +123,14 @@ function Shell() {
   const [panelWidth, setPanelWidth] = useState(PANEL_WIDTH.default);
   const [windowWidth, setWindowWidth] = useState(window.innerWidth);
   const chat = useChat({
-    openNote: notesSelected?.toLowerCase().endsWith(".md")
-      ? notesSelected
-      : null,
+    openNote: openNote?.toLowerCase().endsWith(".md") ? openNote : null,
     app: {
       notesFolder: () => notesFolder ?? null,
-      openNote: () => notesSelected,
+      openNote: () => openNote,
       flushOpenNote: () => editorMenu.current?.flush() ?? Promise.resolve(true),
       showNote: (path) => {
         setNotesSelected(path);
+        setOpenNote(path);
         // Shows the note in the tree too.
         const parts = path.split("/").slice(0, -1);
         const folders = parts.map((_, i) => parts.slice(0, i + 1).join("/"));
@@ -144,6 +144,7 @@ function Shell() {
               ? null
               : to + path.slice(from.length);
         setNotesSelected((path) => (path === null ? null : moved(path)));
+        setOpenNote((path) => (path === null ? null : moved(path)));
         setNotesExpanded(
           (prev) =>
             new Set(
@@ -367,6 +368,7 @@ function Shell() {
             setExpanded={setNotesExpanded}
             selected={notesSelected}
             setSelected={setNotesSelected}
+            setOpenNote={setOpenNote}
             // A pending edit is saved to the open note's old path first.
             saveOpenNote={() =>
               editorMenu.current?.flush() ?? Promise.resolve(true)
@@ -406,8 +408,11 @@ function Shell() {
         ) : (
           <EditorMenu
             ref={editorMenu}
-            path={notesSelected}
-            onOpenNote={setNotesSelected}
+            path={openNote}
+            onOpenNote={(path) => {
+              setNotesSelected(path);
+              setOpenNote(path);
+            }}
           />
         )}
       </MainPanel>

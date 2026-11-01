@@ -101,7 +101,7 @@ describe("EditorMenu", () => {
     disk["Lore/UP.MD"] = "Shout";
     await open("Lore/UP.MD");
     expect(api.readNote).toHaveBeenCalledWith("Lore/UP.MD");
-    expect(screen.getByText("UP.MD")).toBeInTheDocument();
+    expect(screen.getByRole("heading", { name: "UP" })).toBeInTheDocument();
     expect(editor("UP.MD").state.doc.toString()).toBe("Shout");
   });
 

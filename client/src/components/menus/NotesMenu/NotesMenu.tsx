@@ -113,6 +113,9 @@ export type NotesMenuProps = {
   setExpanded: Dispatch<SetStateAction<Set<string>>>;
   selected: string | null;
   setSelected: Dispatch<SetStateAction<string | null>>;
+  // The note displayed in the main panel. This is separate from the tree's
+  // selected row, so selecting a folder leaves the current note open.
+  setOpenNote: Dispatch<SetStateAction<string | null>>;
   // Saves the open note before a rename, move or folder switch. Resolving
   // false means it couldn't be saved, which cancels the change.
   saveOpenNote?: () => Promise<boolean>;
@@ -129,6 +132,7 @@ export function NotesMenu({
   setExpanded,
   selected,
   setSelected,
+  setOpenNote,
   saveOpenNote = async () => true,
   me,
   photoVersion = 0,
@@ -195,10 +199,11 @@ export function NotesMenu({
         setFolder(path);
         setExpanded(new Set());
         setSelected(null);
+        setOpenNote(null);
         load();
       },
     }),
-    [load, notify, saveFirst, setFolder, setExpanded, setSelected],
+    [load, notify, saveFirst, setFolder, setExpanded, setOpenNote, setSelected],
   );
 
   // Runs after the render so that the tree has already moved the selection
@@ -208,7 +213,17 @@ export function NotesMenu({
     const paths = pathsOf(entries);
     setExpanded((prev) => new Set([...prev].filter((p) => paths.has(p))));
     setSelected((path) => (path !== null && paths.has(path) ? path : null));
-  }, [entries, setExpanded, setSelected]);
+    setOpenNote((path) => (path !== null && paths.has(path) ? path : null));
+  }, [entries, setExpanded, setOpenNote, setSelected]);
+
+  const remapOpenNote = (from: string, to: string | null) =>
+    setOpenNote((path) =>
+      path === null || (path !== from && !path.startsWith(`${from}/`))
+        ? path
+        : to === null
+          ? null
+          : to + path.slice(from.length),
+    );
 
   // A failed change may still have changed the disk, so reload either way.
   const reloadAfter = <T,>(change: Promise<T>) =>
@@ -248,22 +263,38 @@ export function NotesMenu({
         setExpanded={setExpanded}
         selected={selected}
         setSelected={setSelected}
+        onActivate={(entry) => {
+          if (entry.kind === "file") setOpenNote(entry.path);
+        }}
         onCreate={(parent, kind, name) =>
-          reloadAfterNameEdit(createEntry(parent, kind, name))
+          reloadAfterNameEdit(createEntry(parent, kind, name)).then((path) => {
+            if (kind === "file") setOpenNote(path);
+            return path;
+          })
         }
         onRename={(path, newName) =>
           reloadAfterNameEdit(
-            saveFirst("it wasn't renamed").then(() =>
-              renameEntry(path, newName),
-            ),
+            saveFirst("it wasn't renamed")
+              .then(() => renameEntry(path, newName))
+              .then((next) => {
+                remapOpenNote(path, next);
+                return next;
+              }),
           )
         }
         onMove={(path, newParent) =>
           reloadAfter(
-            saveFirst("it wasn't moved").then(() => moveEntry(path, newParent)),
+            saveFirst("it wasn't moved")
+              .then(() => moveEntry(path, newParent))
+              .then((next) => {
+                remapOpenNote(path, next);
+                return next;
+              }),
           )
         }
-        onDelete={(path) => reloadAfter(deleteEntry(path))}
+        onDelete={(path) =>
+          reloadAfter(deleteEntry(path)).then(() => remapOpenNote(path, null))
+        }
         confirmDelete={(entry) => ({
           title: deleteQuestion(entry),
           message: "You can restore it from the system trash.",
