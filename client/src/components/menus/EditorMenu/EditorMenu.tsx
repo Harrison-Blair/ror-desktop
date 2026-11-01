@@ -78,6 +78,7 @@ export function EditorMenu({ ref, path, onOpenNote }: EditorMenuProps) {
     return <p className={styles.empty}>This file can't be shown yet.</p>;
   }
   const name = path.slice(path.lastIndexOf("/") + 1);
+  const title = name.replace(/\.md$/i, "");
 
   // Web and mail links open outside the app. A link with no scheme names a
   // note relative to this one.
@@ -119,7 +120,7 @@ export function EditorMenu({ ref, path, onOpenNote }: EditorMenuProps) {
   return (
     <div className={styles.menu}>
       <div className={styles.bar}>
-        <span className={styles.name}>{name}</span>
+        <h1 className={styles.noteTitle}>{title}</h1>
         <button
           type="button"
           className={styles.toggle}

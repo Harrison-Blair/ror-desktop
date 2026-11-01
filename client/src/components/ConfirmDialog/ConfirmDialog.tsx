@@ -6,6 +6,8 @@ export type ConfirmDialogProps = {
   message: string;
   confirmLabel: string;
   cancelLabel?: string;
+  // Shows the confirm button in the error colour, for an action that deletes.
+  danger?: boolean;
   onConfirm: () => void;
   onCancel: () => void;
 };
@@ -15,6 +17,7 @@ export function ConfirmDialog({
   message,
   confirmLabel,
   cancelLabel = "Cancel",
+  danger = false,
   onConfirm,
   onCancel,
 }: ConfirmDialogProps) {
@@ -47,16 +50,18 @@ export function ConfirmDialog({
         role="alertdialog"
         aria-modal="true"
         aria-labelledby={`${id}-title`}
-        aria-describedby={`${id}-text`}
+        aria-describedby={message ? `${id}-text` : undefined}
         className={styles.dialog}
         onKeyDown={onKeyDown}
       >
         <h2 id={`${id}-title`} className={styles.title}>
           {title}
         </h2>
-        <p id={`${id}-text`} className={styles.text}>
-          {message}
-        </p>
+        {message && (
+          <p id={`${id}-text`} className={styles.text}>
+            {message}
+          </p>
+        )}
         <div className={styles.actions}>
           <button
             ref={cancel}
@@ -68,7 +73,7 @@ export function ConfirmDialog({
           </button>
           <button
             type="button"
-            className={`${styles.button} ${styles.primary}`}
+            className={`${styles.button} ${styles.primary}${danger ? ` ${styles.danger}` : ""}`}
             onClick={onConfirm}
           >
             {confirmLabel}

@@ -236,6 +236,12 @@
   max-width: 100%;
 }
 
+/* The model button while its menu is open. */
+.toggle[aria-expanded="true"] {
+  color: var(--ink);
+  background: var(--raised);
+}
+
 .modelName {
   min-width: 0;
   overflow: hidden;
@@ -353,6 +359,15 @@
   composes: iconSlot from "@/components/ContextMenu/ContextMenu.module.css";
   display: grid;
   place-items: center;
+}
+
+/* Between provider groups. */
+.separator {
+  flex: none;
+  height: 1px;
+  margin: var(--space-1) 0;
+  background: var(--line);
+  border: 0;
 }
 
 /* A heading with a muted label at the right. */

@@ -26,6 +26,8 @@ import {
   onNotesChanged,
   renameEntry,
 } from "@/lib/notesApi";
+import type { Character } from "@/lib/peopleApi";
+import { CharacterButton } from "./CharacterButton";
 import { deleteQuestion } from "./deleteQuestion";
 import styles from "./NotesMenu.module.css";
 
@@ -111,9 +113,21 @@ export type NotesMenuProps = {
   setExpanded: Dispatch<SetStateAction<Set<string>>>;
   selected: string | null;
   setSelected: Dispatch<SetStateAction<string | null>>;
+  // The note displayed in the main panel. This is separate from the tree's
+  // selected row, so selecting a folder leaves the current note open.
+  openNote: string | null;
+  setOpenNote: Dispatch<SetStateAction<string | null>>;
+  // Opens a file in the main panel. It can keep a pending person edit open.
+  onOpenNote?: (path: string) => void;
+  // Runs before changing the notes root. Resolving false keeps it unchanged.
+  beforeChooseFolder?: () => Promise<boolean>;
   // Saves the open note before a rename, move or folder switch. Resolving
   // false means it couldn't be saved, which cancels the change.
   saveOpenNote?: () => Promise<boolean>;
+  // This device's character, shown above the tree, or undefined for none.
+  me?: Character;
+  photoVersion?: number;
+  onOpenMe?: () => void;
 };
 
 export function NotesMenu({
@@ -123,7 +137,14 @@ export function NotesMenu({
   setExpanded,
   selected,
   setSelected,
+  openNote,
+  setOpenNote,
+  onOpenNote = setOpenNote,
+  beforeChooseFolder = async () => true,
   saveOpenNote = async () => true,
+  me,
+  photoVersion = 0,
+  onOpenMe = () => {},
 }: NotesMenuProps) {
   const notify = useToast();
   const [entries, setEntries] = useState<TreeEntry[]>();
@@ -137,10 +158,10 @@ export function NotesMenu({
   const saveFirst = useCallback(
     async (change: string) => {
       if (await saveOpenNote()) return;
-      const name = selected?.slice(selected.lastIndexOf("/") + 1);
+      const name = openNote?.slice(openNote.lastIndexOf("/") + 1);
       throw new Error(`Couldn't save “${name}”, so ${change}.`);
     },
-    [saveOpenNote, selected],
+    [openNote, saveOpenNote],
   );
 
   const load = useCallback(async () => {
@@ -173,6 +194,7 @@ export function NotesMenu({
         picking.current = true;
         let path: string | null;
         try {
+          if (!(await beforeChooseFolder())) return;
           await saveFirst("the notes folder wasn't changed");
           path = await chooseNotesFolder();
         } catch (e) {
@@ -186,10 +208,20 @@ export function NotesMenu({
         setFolder(path);
         setExpanded(new Set());
         setSelected(null);
+        setOpenNote(null);
         load();
       },
     }),
-    [load, notify, saveFirst, setFolder, setExpanded, setSelected],
+    [
+      beforeChooseFolder,
+      load,
+      notify,
+      saveFirst,
+      setFolder,
+      setExpanded,
+      setOpenNote,
+      setSelected,
+    ],
   );
 
   // Runs after the render so that the tree has already moved the selection
@@ -199,7 +231,17 @@ export function NotesMenu({
     const paths = pathsOf(entries);
     setExpanded((prev) => new Set([...prev].filter((p) => paths.has(p))));
     setSelected((path) => (path !== null && paths.has(path) ? path : null));
-  }, [entries, setExpanded, setSelected]);
+    setOpenNote((path) => (path !== null && paths.has(path) ? path : null));
+  }, [entries, setExpanded, setOpenNote, setSelected]);
+
+  const remapOpenNote = (from: string, to: string | null) =>
+    setOpenNote((path) =>
+      path === null || (path !== from && !path.startsWith(`${from}/`))
+        ? path
+        : to === null
+          ? null
+          : to + path.slice(from.length),
+    );
 
   // A failed change may still have changed the disk, so reload either way.
   const reloadAfter = <T,>(change: Promise<T>) =>
@@ -221,35 +263,62 @@ export function NotesMenu({
     );
 
   return (
-    <FileTree
-      ref={tree}
-      label="Notes"
-      labels={{ file: "file", newFile: "New note" }}
-      newFileName="Untitled.md"
-      entries={entries ?? NO_ENTRIES}
-      expanded={expanded}
-      setExpanded={setExpanded}
-      selected={selected}
-      setSelected={setSelected}
-      onCreate={(parent, kind, name) =>
-        reloadAfterNameEdit(createEntry(parent, kind, name))
-      }
-      onRename={(path, newName) =>
-        reloadAfterNameEdit(
-          saveFirst("it wasn't renamed").then(() => renameEntry(path, newName)),
-        )
-      }
-      onMove={(path, newParent) =>
-        reloadAfter(
-          saveFirst("it wasn't moved").then(() => moveEntry(path, newParent)),
-        )
-      }
-      onDelete={(path) => reloadAfter(deleteEntry(path))}
-      confirmDelete={(entry) => ({
-        title: deleteQuestion(entry),
-        message: "You can restore it from the system trash.",
-        confirmLabel: "Move to trash",
-      })}
-    />
+    <>
+      {me && (
+        <CharacterButton
+          me={me}
+          photoVersion={photoVersion}
+          onOpen={onOpenMe}
+        />
+      )}
+      <FileTree
+        ref={tree}
+        label="Notes"
+        labels={{ file: "file", newFile: "New note" }}
+        newFileName="Untitled.md"
+        entries={entries ?? NO_ENTRIES}
+        expanded={expanded}
+        setExpanded={setExpanded}
+        selected={selected}
+        setSelected={setSelected}
+        onActivate={(entry) => {
+          if (entry.kind === "file") onOpenNote(entry.path);
+        }}
+        onCreate={(parent, kind, name) =>
+          reloadAfterNameEdit(createEntry(parent, kind, name)).then((path) => {
+            if (kind === "file") onOpenNote(path);
+            return path;
+          })
+        }
+        onRename={(path, newName) =>
+          reloadAfterNameEdit(
+            saveFirst("it wasn't renamed")
+              .then(() => renameEntry(path, newName))
+              .then((next) => {
+                remapOpenNote(path, next);
+                return next;
+              }),
+          )
+        }
+        onMove={(path, newParent) =>
+          reloadAfter(
+            saveFirst("it wasn't moved")
+              .then(() => moveEntry(path, newParent))
+              .then((next) => {
+                remapOpenNote(path, next);
+                return next;
+              }),
+          )
+        }
+        onDelete={(path) =>
+          reloadAfter(deleteEntry(path)).then(() => remapOpenNote(path, null))
+        }
+        confirmDelete={(entry) => ({
+          title: deleteQuestion(entry),
+          message: "You can restore it from the system trash.",
+          confirmLabel: "Move to trash",
+        })}
+      />
+    </>
   );
 }

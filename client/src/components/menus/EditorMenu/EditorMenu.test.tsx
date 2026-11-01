@@ -3,6 +3,7 @@ import { act, fireEvent, render, screen } from "@testing-library/react";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import styles from "@/components/MarkdownEditor/MarkdownEditor.module.css";
 import { EditorMenu } from "@/components/menus/EditorMenu/EditorMenu";
+import menuStyles from "@/components/menus/EditorMenu/EditorMenu.module.css";
 import { ToastProvider } from "@/components/Toast/Toast";
 import * as linksApi from "@/lib/linksApi";
 import * as notesApi from "@/lib/notesApi";
@@ -101,7 +102,9 @@ describe("EditorMenu", () => {
     disk["Lore/UP.MD"] = "Shout";
     await open("Lore/UP.MD");
     expect(api.readNote).toHaveBeenCalledWith("Lore/UP.MD");
-    expect(screen.getByText("UP.MD")).toBeInTheDocument();
+    expect(screen.getByRole("heading", { name: "UP" })).toHaveClass(
+      menuStyles.noteTitle,
+    );
     expect(editor("UP.MD").state.doc.toString()).toBe("Shout");
   });
 

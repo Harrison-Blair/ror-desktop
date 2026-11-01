@@ -5,6 +5,7 @@
 import { type Tool, ToolRegistry } from "@/lib/chat/registry";
 import { diceRoll } from "@/lib/dice.tools";
 import { notesTools } from "@/lib/notes.tools";
+import { peopleTools } from "@/lib/people.tools";
 import { webFetchTool, webSearchTool } from "@/lib/web.tools";
 
 export type ChatFeature = {
@@ -55,8 +56,9 @@ export const features: ChatFeature[] = [
   },
   {
     name: "World",
-    summary: "World is not built yet.",
-    tools: [],
+    summary:
+      "World holds People of interest: the characters of the campaign, with dates, places, stats and a description. The people tools list, read, open, create, edit and delete them.",
+    tools: peopleTools,
   },
 ];
 

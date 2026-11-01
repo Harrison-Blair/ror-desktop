@@ -41,7 +41,7 @@
 }
 
 .button {
-  height: 36px;
+  height: var(--menu-item-height);
   padding: 0 14px;
   color: var(--ink-muted);
   font: 500 14px / 20px var(--font-sans);
@@ -64,4 +64,14 @@
 .primary {
   color: var(--ink);
   font-weight: 600;
+}
+
+.danger {
+  color: var(--error);
+  border-color: var(--error);
+}
+
+.danger:hover {
+  color: var(--error);
+  background: var(--error-wash);
 }

@@ -58,6 +58,7 @@ function Harness() {
   const tree = useRef<NotesMenuHandle>(null);
   const [expanded, setExpanded] = useState<Set<string>>(() => new Set());
   const [selected, setSelected] = useState<string | null>(null);
+  const [openNote, setOpenNote] = useState<string | null>(null);
   const [folder, setFolder] = useState("/home/x/Notes");
   return (
     <ToastProvider>
@@ -73,6 +74,8 @@ function Harness() {
         setExpanded={setExpanded}
         selected={selected}
         setSelected={setSelected}
+        openNote={openNote}
+        setOpenNote={setOpenNote}
       />
     </ToastProvider>
   );

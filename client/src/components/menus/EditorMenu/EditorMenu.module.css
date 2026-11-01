@@ -8,15 +8,14 @@
   align-items: center;
   justify-content: space-between;
   gap: var(--space-3);
-  padding-bottom: var(--space-2);
-  border-bottom: 1px solid var(--line);
 }
 
-.name {
+.noteTitle {
+  margin: 0;
   min-width: 0;
   overflow: hidden;
-  color: var(--ink-muted);
-  font: 500 13px / 20px var(--font-sans);
+  color: var(--ink);
+  font: 600 28px / 36px var(--font-sans);
   text-overflow: ellipsis;
   white-space: nowrap;
 }

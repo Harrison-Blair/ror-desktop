@@ -12,19 +12,26 @@
   padding: 0 var(--space-4) var(--space-4);
 }
 
-/* The model menu's text field. */
 .field {
-  composes: textField from "./ChatMenu.module.css";
-  width: 100%;
-}
-
-/* More specific than the composed rules, which may load after this file. */
-.filters > .field {
   flex: none;
+  box-sizing: border-box;
+  width: 100%;
+  height: 28px;
+  padding: 0 var(--space-2);
+  color: var(--ink);
+  font: 400 13px / 18px var(--font-sans);
+  background: var(--ground);
+  border: 1px solid var(--line-control);
+  border-radius: var(--radius-1);
 }
 
 .field::placeholder {
   color: var(--ink-muted);
+}
+
+.field:focus-visible {
+  outline: 2px solid var(--focus);
+  outline-offset: 2px;
 }
 
 .views {

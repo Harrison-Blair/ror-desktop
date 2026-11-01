@@ -26,12 +26,18 @@ export type AppBridge = {
   // Saves the open note's pending edit. Resolves false when it couldn't be
   // saved, which then stays in the editor.
   flushOpenNote: () => Promise<boolean>;
-  // Opens a note in the editor.
-  showNote: (path: string) => void;
+  // Opens a note in the editor. Resolves false when a pending person edit
+  // stays open.
+  showNote: (path: string) => Promise<boolean>;
   // An item was renamed or moved to `to`, or deleted when `to` is null.
   pathChanged: (from: string, to: string | null) => void;
   // Adds a roll to the Dice history.
   addRoll: (result: DiceResult) => void;
+  // Opens a person's sheet in World. Resolves false when it didn't open:
+  // the user kept an unsaved person form, or the open note couldn't be saved.
+  showPerson: (id: string) => Promise<boolean>;
+  // The people changed, so the People screens load them again.
+  peopleChanged: () => void;
 };
 
 export type ToolContext = {

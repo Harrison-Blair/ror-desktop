@@ -2,6 +2,7 @@ import { act, fireEvent, render, screen, within } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import { useState } from "react";
 import { beforeEach, describe, expect, it, vi } from "vitest";
+import confirmStyles from "@/components/ConfirmDialog/ConfirmDialog.module.css";
 import {
   FileTree,
   type FileTreeHandle,
@@ -170,6 +171,9 @@ describe("FileTree", () => {
     });
     expect(dialog).toHaveAccessibleDescription("It goes away for good.");
     expect(confirmDelete).toHaveBeenCalledWith(entries[1]);
+    expect(within(dialog).getByRole("button", { name: "Remove" })).toHaveClass(
+      confirmStyles.danger,
+    );
     await user.click(within(dialog).getByRole("button", { name: "Cancel" }));
     expect(screen.queryByRole("alertdialog")).toBeNull();
     expect(onDelete).not.toHaveBeenCalled();

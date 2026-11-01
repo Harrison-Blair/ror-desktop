@@ -93,6 +93,8 @@ export function useChat({
     showNote: (path) => appRef.current.showNote(path),
     pathChanged: (from, to) => appRef.current.pathChanged(from, to),
     addRoll: (result) => appRef.current.addRoll(result),
+    showPerson: (id) => appRef.current.showPerson(id),
+    peopleChanged: () => appRef.current.peopleChanged(),
   }).current;
   // The notes the agent read in this chat, for notes_write. A chat that
   // starts or reopens begins with none.

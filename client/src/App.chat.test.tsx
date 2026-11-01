@@ -500,6 +500,22 @@ describe("Chat panel", () => {
     expect(api.sendToolResult).not.toHaveBeenCalled();
   });
 
+  it("the model button points its chevron up while the menu is open", async () => {
+    const user = await openChat();
+    const button = screen.getByRole("button", { name: "Model: glm-5.3" });
+    expect(button).toHaveAttribute("aria-expanded", "false");
+    expect(button.querySelector(".lucide-chevron-down")).not.toBeNull();
+    expect(button.querySelector(".lucide-chevron-up")).toBeNull();
+
+    await user.click(button);
+    expect(button).toHaveAttribute("aria-expanded", "true");
+    expect(button.querySelector(".lucide-chevron-up")).not.toBeNull();
+    expect(button.querySelector(".lucide-chevron-down")).toBeNull();
+
+    await user.click(button);
+    expect(button.querySelector(".lucide-chevron-down")).not.toBeNull();
+  });
+
   it("the Codex group says when Codex is not installed", async () => {
     const user = await openChat();
     await user.click(screen.getByRole("button", { name: "Model: glm-5.3" }));
@@ -511,14 +527,12 @@ describe("Chat panel", () => {
     expect(within(menu).queryByRole("list", { name: "Codex" })).toBeNull();
   });
 
-  it("the Codex group asks for codex login and disables its models when signed out", async () => {
+  it("the Codex group says Not signed in and disables its models when signed out", async () => {
     codex = { state: "signedOut", models: ["gpt-6.1-sol", "gpt-5.6-terra"] };
     const user = await openChat();
     await user.click(screen.getByRole("button", { name: "Model: glm-5.3" }));
     const menu = screen.getByRole("dialog", { name: "Models" });
-    expect(
-      await within(menu).findByText("Run codex login"),
-    ).toBeInTheDocument();
+    expect(await within(menu).findByText("Not signed in")).toBeInTheDocument();
     expect(
       within(menu).getByText(
         "Run codex login in a terminal to use these models.",

@@ -166,7 +166,7 @@ describe("App frame", () => {
     expect(history().getAllByRole("listitem")).toHaveLength(1);
   });
 
-  it.each(["Session", "World"])(
+  it.each(["Session"])(
     "%s is not implemented: clicking it shows an error and leaves Notes active",
     async (name) => {
       const user = renderApp();
@@ -241,6 +241,43 @@ describe("App frame", () => {
         name: "Ada.md",
       }),
     ).toHaveTextContent(/^Ada\.md$/);
+  });
+
+  it("selects and toggles a folder without changing the open note", async () => {
+    notesList = [
+      {
+        kind: "folder",
+        name: "People",
+        path: "People",
+        children: [{ kind: "file", name: "Ada.md", path: "People/Ada.md" }],
+      },
+    ];
+    const user = renderApp();
+    await user.click(
+      (await screen.findByRole("treeitem", { name: "People" }))
+        .firstElementChild as HTMLElement,
+    );
+    await user.click(
+      screen.getByRole("treeitem", { name: "Ada.md" })
+        .firstElementChild as HTMLElement,
+    );
+    await within(screen.getByRole("main")).findByRole("textbox", {
+      name: "Ada.md",
+    });
+
+    await user.click(
+      screen.getByRole("treeitem", { name: "People" })
+        .firstElementChild as HTMLElement,
+    );
+
+    expect(
+      screen.getByRole("treeitem", { name: "People", selected: true }),
+    ).toHaveAttribute("aria-expanded", "false");
+    expect(
+      within(screen.getByRole("main")).getByRole("textbox", {
+        name: "Ada.md",
+      }),
+    ).toBeInTheDocument();
   });
 
   it("keeps open folders and the selection after the rail panel closes and reopens", async () => {
@@ -356,6 +393,34 @@ describe("App frame", () => {
       expect(disk).toEqual({ "Ada.md": "Hello!" });
     });
 
+    it("saves a pending edit when World opens, and shows the note again on Notes", async () => {
+      notesList = [{ kind: "file", name: "Ada.md", path: "Ada.md" }];
+      const user = await editAda();
+
+      await user.click(screen.getByRole("button", { name: "World" }));
+      await waitFor(() => expect(disk).toEqual({ "Ada.md": "Hello!" }));
+      expect(
+        await screen.findByRole("heading", { name: "Overview" }),
+      ).toBeInTheDocument();
+
+      await user.click(screen.getByRole("button", { name: "Notes" }));
+      expect(await shownText("Ada.md")).toBe("Hello!");
+    });
+
+    it("stays on the note, with its edit, when the edit can't be saved before World opens", async () => {
+      notesList = [{ kind: "file", name: "Ada.md", path: "Ada.md" }];
+      const user = await editAda();
+      diskFull = true;
+
+      await user.click(screen.getByRole("button", { name: "World" }));
+
+      expect(await toast().findByText("Disk full.")).toBeInTheDocument();
+      expect(
+        screen.getByRole("button", { name: "Notes", pressed: true }),
+      ).toBeInTheDocument();
+      expect(await shownText("Ada.md")).toBe("Hello!");
+    });
+
     it("does not open Settings after a slow save when another rail button was clicked meanwhile", async () => {
       notesList = [{ kind: "file", name: "Ada.md", path: "Ada.md" }];
       const user = await editAda();
@@ -375,6 +440,27 @@ describe("App frame", () => {
       );
       expect(
         screen.queryByRole("heading", { name: "Providers and keys" }),
+      ).not.toBeInTheDocument();
+    });
+
+    it("does not open World after a slow save when another rail button was clicked meanwhile", async () => {
+      notesList = [{ kind: "file", name: "Ada.md", path: "Ada.md" }];
+      const user = await editAda();
+      let finish = () => {};
+      slowWrite = new Promise((resolve) => {
+        finish = resolve;
+      });
+
+      await user.click(screen.getByRole("button", { name: "World" }));
+      await user.click(screen.getByRole("button", { name: "Notes" }));
+      await act(async () => finish());
+      await waitFor(() => expect(disk).toEqual({ "Ada.md": "Hello!" }));
+
+      expect(
+        screen.getByRole("button", { name: "Notes", pressed: true }),
+      ).toBeInTheDocument();
+      expect(
+        screen.queryByRole("heading", { name: "Overview" }),
       ).not.toBeInTheDocument();
     });
 
@@ -490,6 +576,48 @@ describe("App frame", () => {
     it("keeps the folder when the edit can't be saved", async () => {
       notesList = [{ kind: "file", name: "Ada.md", path: "Ada.md" }];
       const user = await editAda();
+      diskFull = true;
+
+      await user.click(
+        screen.getByRole("button", { name: "Choose notes folder" }),
+      );
+
+      expect(
+        await toast().findByText(
+          "Couldn't save “Ada.md”, so the notes folder wasn't changed.",
+        ),
+      ).toBeInTheDocument();
+      expect(api.chooseNotesFolder).not.toHaveBeenCalled();
+      expect(await shownText("Ada.md")).toBe("Hello!");
+    });
+
+    it("names the open note when a selected folder blocks a folder switch", async () => {
+      notesList = [
+        {
+          kind: "folder",
+          name: "People",
+          path: "People",
+          children: [{ kind: "file", name: "Ada.md", path: "People/Ada.md" }],
+        },
+      ];
+      disk = { "People/Ada.md": "Hello" };
+      const user = renderApp();
+      const people = await screen.findByRole("treeitem", { name: "People" });
+      await user.click(people.firstElementChild as HTMLElement);
+      await user.click(
+        screen.getByRole("treeitem", { name: "Ada.md" })
+          .firstElementChild as HTMLElement,
+      );
+      const content = await within(screen.getByRole("main")).findByRole(
+        "textbox",
+        { name: "Ada.md" },
+      );
+      act(() => {
+        EditorView.findFromDOM(content)?.dispatch({
+          changes: { from: 5, insert: "!" },
+        });
+      });
+      await user.click(people.firstElementChild as HTMLElement);
       diskFull = true;
 
       await user.click(

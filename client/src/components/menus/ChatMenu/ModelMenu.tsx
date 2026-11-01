@@ -154,14 +154,18 @@ export function ModelMenu({
           {goKey === null ? "" : goKey ? "Key saved" : "No key"}
         </span>
       </div>
+      {goKey === false && (
+        <p className={styles.menuNote}>Add a key in Settings</p>
+      )}
       {group("opencode-go", goModels)}
+      <hr className={styles.separator} />
       <div className={styles.groupHeading}>
         <h3 className={styles.heading}>Codex</h3>
         <span className={styles.headingLabel}>
           {codex?.state === "ready"
             ? "Signed in"
             : codex?.state === "signedOut"
-              ? "Run codex login"
+              ? "Not signed in"
               : codex?.state === "notInstalled"
                 ? "Install Codex"
                 : ""}

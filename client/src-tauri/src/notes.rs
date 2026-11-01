@@ -283,11 +283,17 @@ pub fn move_item(root: &Path, path: &str, new_parent: &str) -> Result<String> {
     } else {
         format!("“{}”", last_segment(new_parent))
     };
-    check_clash(&target, name, None, |_, _| {
-        format!("“{name}” is already in {place}.")
+    let clash = |what: &str| {
+        format!("Couldn't move “{name}”: {what} with that name is already in {place}.")
+    };
+    check_clash(&target, name, None, |kind, _| {
+        clash(match kind {
+            Kind::Folder => "a folder",
+            Kind::File => "a file",
+        })
     })?;
     let dest = target.join(name);
-    refuse_existing(&dest, || format!("“{name}” is already in {place}."))?;
+    refuse_existing(&dest, || clash("an item"))?;
     fs::rename(&abs, dest).map_err(|e| io_err("move", name, e))?;
     Ok(join(new_parent, name))
 }
@@ -849,7 +855,10 @@ mod tests {
         assert_eq!(e.message, "A file named “b” already exists in this folder.");
         let e = move_item(r, "a", "Lore").unwrap_err();
         assert_eq!(e.code, Code::NameTaken);
-        assert_eq!(e.message, "“a” is already in “Lore”.");
+        assert_eq!(
+            e.message,
+            "Couldn't move “a”: a file with that name is already in “Lore”."
+        );
         assert_eq!(fs::read_to_string(r.join("b")).unwrap(), "keep");
         assert_eq!(fs::read_to_string(r.join("Lore/a")).unwrap(), "keep");
         assert!(r.join("a").is_dir());
@@ -920,7 +929,10 @@ mod tests {
         let e = rename(&r, "draft.md", "LINK.md").unwrap_err();
         assert_eq!(e.code, Code::NameTaken);
         let e = move_item(&r, "draft.md", "Lore").unwrap_err();
-        assert_eq!(e.message, "“draft.md” is already in “Lore”.");
+        assert_eq!(
+            e.message,
+            "Couldn't move “draft.md”: a file with that name is already in “Lore”."
+        );
         assert!(r.join("draft.md").is_file());
         // Names can't start with a dot, so check a hidden folder directly.
         let e = check_clash(&r, ".GIT", None, exists_message).unwrap_err();
@@ -976,10 +988,31 @@ mod tests {
         mkdir(r, "plot");
         let e = move_item(r, "Plot.md", "Lore").unwrap_err();
         assert_eq!(e.code, Code::NameTaken);
-        assert_eq!(e.message, "“Plot.md” is already in “Lore”.");
+        assert_eq!(
+            e.message,
+            "Couldn't move “Plot.md”: a file with that name is already in “Lore”."
+        );
         let e = move_item(r, "Lore/plot.md", "").unwrap_err();
-        assert_eq!(e.message, "“plot.md” is already in the top level.");
+        assert_eq!(
+            e.message,
+            "Couldn't move “plot.md”: a file with that name is already in the top level."
+        );
         assert_eq!(move_item(r, "plot", "Lore").unwrap(), "Lore/plot");
+    }
+
+    #[test]
+    fn move_clash_with_a_folder_says_folder() {
+        let dir = root();
+        let r = dir.path();
+        mkdir(r, "People");
+        mkdir(r, "People/Chicago.md");
+        touch(r, "Chicago.md");
+        let e = move_item(r, "Chicago.md", "People").unwrap_err();
+        assert_eq!(e.code, Code::NameTaken);
+        assert_eq!(
+            e.message,
+            "Couldn't move “Chicago.md”: a folder with that name is already in “People”."
+        );
     }
 
     #[test]

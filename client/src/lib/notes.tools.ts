@@ -449,7 +449,11 @@ export const notesOpen: Tool = {
       (open) => open !== path,
       "the note wasn't opened",
     );
-    context.app.showNote(path);
+    if (!(await context.app.showNote(path))) {
+      throw new Error(
+        `Couldn't open "${path}" because the person edit was kept.`,
+      );
+    }
     return `Opened "${path}".`;
   },
 };

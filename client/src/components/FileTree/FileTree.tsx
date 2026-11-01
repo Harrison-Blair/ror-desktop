@@ -122,6 +122,8 @@ export type FileTreeProps = {
   setExpanded: Dispatch<SetStateAction<Set<string>>>;
   selected: string | null;
   setSelected: Dispatch<SetStateAction<string | null>>;
+  // Runs when a row is activated by click, Enter, or Space.
+  onActivate?: (entry: TreeEntry) => void;
   // Create, rename and move resolve to the entry's new path. A rejection
   // whose code is "invalid_name" or "name_taken" shows under the name box;
   // any other rejection raises a toast.
@@ -146,6 +148,7 @@ export function FileTree({
   setExpanded,
   selected,
   setSelected,
+  onActivate,
   onCreate,
   onRename,
   onMove,
@@ -254,6 +257,7 @@ export function FileTree({
   const activate = (entry: TreeEntry) => {
     setSelected(entry.path);
     if (entry.kind === "folder") toggle(entry.path);
+    onActivate?.(entry);
   };
 
   const startCreate = (kind: EntryKind, parent?: string) => {
@@ -699,6 +703,7 @@ export function FileTree({
       {deleting && (
         <ConfirmDialog
           {...confirmDelete(deleting)}
+          danger
           onCancel={() => {
             returnFocusTo(deleting.path);
             setDeleting(undefined);
