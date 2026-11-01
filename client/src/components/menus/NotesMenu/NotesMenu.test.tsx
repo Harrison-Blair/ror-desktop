@@ -685,7 +685,8 @@ describe("NotesTree", () => {
 
     await waitFor(() => expect(item("Detroit.md")).toBeInTheDocument());
     expect(item("Detroit.md")).toHaveAttribute("aria-selected", "true");
-    expect(item("Detroit.md")).toHaveFocus();
+    // The tree moves focus in an effect that can run after the row appears.
+    await waitFor(() => expect(item("Detroit.md")).toHaveFocus());
   });
 
   describe("drag to move", () => {
@@ -765,7 +766,8 @@ describe("NotesTree", () => {
       await waitFor(() =>
         expect(item("Chicago.md")).toHaveAttribute("aria-level", "2"),
       );
-      expect(item("Chicago.md")).toHaveFocus();
+      // The tree moves focus in an effect that can run after the row appears.
+      await waitFor(() => expect(item("Chicago.md")).toHaveFocus());
       expect(item("Places")).toHaveAttribute("aria-expanded", "true");
     });
 
