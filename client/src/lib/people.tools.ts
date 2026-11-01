@@ -12,8 +12,13 @@ import {
   characterToDraft,
   isDead,
   isPlayer,
+  type JobDraft,
+  jobToDraft,
+  occupationLine,
   placeLine,
+  resumeDateText,
   sheetDateLine,
+  sortResume,
 } from "@/lib/people";
 import {
   type Character,
@@ -52,9 +57,11 @@ const FIELDS = {
   name: { type: "string", description: "The person's name." },
   birth_date: DATE("birth date"),
   birth_city: PLACE("city of birth"),
+  birth_state: PLACE("state or province of birth"),
   birth_country: PLACE("country of birth"),
   death_date: DATE("death date. A date makes the person dead"),
   death_city: PLACE("city of death"),
+  death_state: PLACE("state or province of death"),
   death_country: PLACE("country of death"),
   stats: {
     type: "array",
@@ -78,9 +85,11 @@ const INPUT_OF: Record<Exclude<FieldName, "stats">, keyof CharacterFields> = {
   name: "name",
   birth_date: "birthDate",
   birth_city: "birthCity",
+  birth_state: "birthState",
   birth_country: "birthCountry",
   death_date: "deathDate",
   death_city: "deathCity",
+  death_state: "deathState",
   death_country: "deathCountry",
   description: "description",
 };
@@ -145,11 +154,21 @@ function applyInput(
   return next;
 }
 
+const JOB_INPUT_OF = {
+  job: "job",
+  employer: "employer",
+  start_date: "startDate",
+  end_date: "endDate",
+  description: "description",
+} as const;
+
 // The fields to save, or the form's errors as one message the agent can act
-// on.
+// on. The errors of resume row `row`, the job a job tool changes, are named
+// by the tool's inputs; other rows' errors by their job id.
 function checkedFields(
   draft: CharacterDraft,
   gameDate: string,
+  row?: number,
 ): CharacterFields {
   const result = characterDraftToFields(draft, gameDate);
   if ("errors" in result) {
@@ -163,6 +182,13 @@ function checkedFields(
           (side) => e[side] && `stats item ${i + 1} ${side}: ${e[side]}`,
         ),
       ),
+      ...(errors.resume ?? []).flatMap((e, i) =>
+        (["job", "start_date", "end_date"] as const).map((name) => {
+          const message = e[JOB_INPUT_OF[name]];
+          const where = i === row ? "" : `job_id "${draft.resume[i].id}" `;
+          return message && `${where}${name}: ${message}`;
+        }),
+      ),
     ].filter(Boolean);
     throw new Error(
       `Not saved. Fix these fields and try again:\n${lines.join("\n")}`,
@@ -171,30 +197,49 @@ function checkedFields(
   return result.fields;
 }
 
-// The full sheet as text, for people_read and the approval card.
+// The full sheet as text, for people_read and the approval card. Stored
+// texts are quoted, so a text can't read as a word for an empty value, and
+// every stored value shows: a change to one always changes the diff.
 function sheet(
   fields: CharacterFields,
   statNames: StatName[],
   gameDate: string,
 ) {
   const age = ageOf(fields, gameDate);
-  const or = (value: string | null, none = "unknown") => value || none;
+  const quoted = (value: string, none = "unknown") =>
+    value ? JSON.stringify(value) : none;
   return [
-    `Name: ${fields.name}`,
-    `Birth date: ${or(fields.birthDate)}`,
-    `Birth city: ${or(fields.birthCity)}`,
-    `Birth country: ${or(fields.birthCountry)}`,
-    `Death date: ${or(fields.deathDate, "none (alive)")}`,
-    `Death city: ${or(fields.deathCity)}`,
-    `Death country: ${or(fields.deathCountry)}`,
+    `Name: ${quoted(fields.name)}`,
+    `Birth date: ${fields.birthDate ?? "unknown"}`,
+    `Birth city: ${quoted(fields.birthCity)}`,
+    `Birth state: ${quoted(fields.birthState)}`,
+    `Birth country: ${quoted(fields.birthCountry)}`,
+    `Death date: ${fields.deathDate ?? "none (alive)"}`,
+    `Death city: ${quoted(fields.deathCity)}`,
+    `Death state: ${quoted(fields.deathState)}`,
+    `Death country: ${quoted(fields.deathCountry)}`,
     `Age: ${age === null ? "unknown" : age}`,
+    `Occupation: ${quoted(occupationLine(fields, gameDate), "none")}`,
     "Stats (left value / right value):",
     ...fields.stats.map((value, i) => {
       const names = statNames[i] ?? { left: "?", right: "?" };
       return `${i + 1}. ${names.left} ${value.left ?? "not set"} / ${names.right} ${value.right ?? "not set"}`;
     }),
-    "Description:",
-    fields.description || "(none)",
+    "Resume (newest first):",
+    ...(fields.resume.length === 0
+      ? ["(none)"]
+      : sortResume(fields.resume).map((job) =>
+          [
+            `- job id: ${job.id || "(new)"}`,
+            `job: ${quoted(job.job, "none")}`,
+            `employer: ${quoted(job.employer, "none")}`,
+            `dates: ${resumeDateText(job, fields.deathDate)} (stored: start ${job.startDate}, end ${job.endDate ?? "open"})`,
+            `description: ${quoted(job.description, "none")}`,
+          ].join(" | "),
+        )),
+    // An empty description is on the heading line, so no text can match it.
+    fields.description ? "Description:" : "Description: (none)",
+    ...(fields.description ? [fields.description] : []),
   ].join("\n");
 }
 
@@ -272,7 +317,7 @@ export const peopleList: Tool = {
 export const peopleRead: Tool = {
   name: "people_read",
   description:
-    "Returns a person's full sheet: every field, the stats with their names, and the description. Dates are YYYY-MM-DD.",
+    'Returns a person\'s full sheet: every field, the current occupation, the stats with their names, the resume and the description. The person\'s dates are YYYY-MM-DD. Texts are quoted; unknown, none and not set mean empty. Each resume line has the job id that the job tools take, the job, the employer, the dates and the description. The dates show as exactly as they were given, such as "1950", "Mar 1950" or "Mar 3, 1950"; an open job ends at "present", or at the death date for the dead. After them come the stored start and end, as YYYY, YYYY-MM or YYYY-MM-DD; end open means the job goes on.',
   inputSchema: object({ id: ID }),
   kind: "read",
   run: async (input) => {
@@ -347,7 +392,7 @@ async function editedFields(input: Record<string, unknown>) {
 export const peopleEdit: Tool = {
   name: "people_edit",
   description:
-    "Changes a person's fields. Give only the fields to change; the others stay.",
+    "Changes a person's fields. Give only the fields to change; the others stay. The resume changes only with people_add_job, people_edit_job and people_remove_job.",
   inputSchema: object({ id: ID, ...FIELDS }, ["id"]),
   kind: "write",
   preview: async (input) => {
@@ -399,6 +444,171 @@ export const peopleDelete: Tool = {
   },
 };
 
+const JOB_ID = {
+  type: "string",
+  description: "The job's id, from the resume in people_read.",
+};
+
+const JOB_DATE = (what: string) => ({
+  type: "string",
+  description: `The ${what}: a year "1950", a month "March 1950" or "1950-03", or a full date such as "21 March 1950" or "1950-03-21". Give it as exactly as it is known.`,
+});
+
+// The job inputs, by input name.
+const JOB_FIELDS = {
+  job: { type: "string", description: 'The job title, such as "Printer".' },
+  employer: {
+    type: "string",
+    description: 'Who the person worked for. "" for none.',
+  },
+  start_date: JOB_DATE("start date"),
+  end_date: JOB_DATE('end date. "" for a job that goes on'),
+  description: {
+    type: "string",
+    description: 'The job\'s description, in plain text. "" for none.',
+  },
+};
+
+// Puts the job inputs onto the row. Values are checked by the form's rules
+// after.
+function applyJobInput(
+  row: JobDraft,
+  input: Record<string, unknown>,
+): JobDraft {
+  const next = { ...row };
+  for (const [name, key] of Object.entries(JOB_INPUT_OF)) {
+    if (input[name] !== undefined) next[key] = text(input, name);
+  }
+  return next;
+}
+
+type ResumeChange = (
+  resume: JobDraft[],
+  person: Character,
+  input: Record<string, unknown>,
+) => { resume: JobDraft[]; row?: number };
+
+// The person now and their fields after `change` makes the new draft
+// resume. `change` gives the index of the row it changed, unless it removed
+// it.
+async function changedResume(
+  input: Record<string, unknown>,
+  change: ResumeChange,
+) {
+  const id = text(input, "id");
+  const [{ person }, world] = await Promise.all([findPerson(id), getWorld()]);
+  const draft = characterToDraft(person);
+  const { resume, row } = change(draft.resume, person, input);
+  const after = checkedFields({ ...draft, resume }, world.gameDate, row);
+  return { person, after, world };
+}
+
+// The index of the job with the input's job_id.
+function jobIndex(
+  resume: JobDraft[],
+  person: Character,
+  input: Record<string, unknown>,
+) {
+  const jobId = text(input, "job_id");
+  const index = resume.findIndex((row) => row.id === jobId);
+  if (index === -1) {
+    throw new Error(
+      `${person.name} has no job with the id "${jobId}". Use people_read to find the job ids.`,
+    );
+  }
+  return index;
+}
+
+// A write tool that changes a person's resume, with the sheet diff on the
+// approval card.
+function resumeTool(
+  tool: Pick<Tool, "name" | "description" | "inputSchema">,
+  change: ResumeChange,
+  done: (
+    before: Character,
+    saved: Character,
+    input: Record<string, unknown>,
+  ) => string,
+): Tool {
+  return {
+    ...tool,
+    kind: "write",
+    preview: async (input) => {
+      const { person, after, world } = await changedResume(input, change);
+      return {
+        target: label(person),
+        diff: lineDiff(
+          sheet(person, world.statNames, world.gameDate),
+          sheet(after, world.statNames, world.gameDate),
+        ),
+        seen: JSON.stringify(person),
+      };
+    },
+    run: async (input, { app }, approved) => {
+      const { person, after } = await changedResume(input, change);
+      checkApproved(person, approved);
+      const saved = await updatePerson(person.id, after);
+      app.peopleChanged();
+      return done(person, saved, input);
+    },
+  };
+}
+
+export const peopleAddJob = resumeTool(
+  {
+    name: "people_add_job",
+    description:
+      "Adds a job to a person's resume. id, job and start_date are required. Returns the new job's id.",
+    inputSchema: object({ id: ID, ...JOB_FIELDS }, ["id", "job", "start_date"]),
+  },
+  (resume, _person, input) => {
+    for (const name of ["job", "start_date"]) text(input, name);
+    return { resume: [applyJobInput(jobToDraft(), input), ...resume], row: 0 };
+  },
+  (before, saved) => {
+    const old = new Set(before.resume.map((job) => job.id));
+    const made = saved.resume.find((job) => !old.has(job.id));
+    return `Added the job ${made?.id} to ${label(saved)}.`;
+  },
+);
+
+export const peopleEditJob = resumeTool(
+  {
+    name: "people_edit_job",
+    description:
+      "Changes a job in a person's resume. Give only the fields to change; the others stay.",
+    inputSchema: object({ id: ID, job_id: JOB_ID, ...JOB_FIELDS }, [
+      "id",
+      "job_id",
+    ]),
+  },
+  (resume, person, input) => {
+    const row = jobIndex(resume, person, input);
+    return {
+      resume: resume.map((job, i) =>
+        i === row ? applyJobInput(job, input) : job,
+      ),
+      row,
+    };
+  },
+  (_before, saved, input) =>
+    `Edited the job ${input.job_id} of ${label(saved)}.`,
+);
+
+export const peopleRemoveJob = resumeTool(
+  {
+    name: "people_remove_job",
+    description: "Removes a job from a person's resume.",
+    inputSchema: object({ id: ID, job_id: JOB_ID }),
+  },
+  (resume, person, input) => {
+    const row = jobIndex(resume, person, input);
+    return { resume: resume.filter((_, i) => i !== row) };
+  },
+  (_before, saved, input) =>
+    `Removed the job ${input.job_id} from ${label(saved)}.`,
+);
+
 export const peopleTools = [
   peopleList,
   peopleRead,
@@ -406,4 +616,7 @@ export const peopleTools = [
   peopleCreate,
   peopleEdit,
   peopleDelete,
+  peopleAddJob,
+  peopleEditJob,
+  peopleRemoveJob,
 ];
