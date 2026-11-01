@@ -225,12 +225,12 @@ export const birthplace = (
   person: Pick<Character, "birthCity" | "birthCountry">,
 ) => place(person.birthCity, person.birthCountry);
 
-// The edit form as typed. `stats` holds the eight left values as text.
+// The edit form as typed, with independent values for both sides.
 export type CharacterForm = {
   name: string;
   birthDate: string;
   deathDate: string;
-  stats: string[];
+  stats: { left: string; right: string }[];
 };
 
 // Shared editable fields. Photo selection and world stat names belong to the UI.
@@ -250,8 +250,11 @@ export const characterToDraft = (fields?: CharacterFields): CharacterDraft => ({
   deathCity: fields?.deathCity ?? "",
   deathCountry: fields?.deathCountry ?? "",
   stats: Array.from({ length: STAT_COUNT }, (_, i) => {
-    const value = fields?.stats[i];
-    return value === null || value === undefined ? "" : String(value);
+    const pair = fields?.stats[i];
+    return {
+      left: pair?.left == null ? "" : String(pair.left),
+      right: pair?.right == null ? "" : String(pair.right),
+    };
   }),
   description: fields?.description ?? "",
 });
@@ -260,8 +263,7 @@ export type FormErrors = {
   name?: string;
   birthDate?: string;
   deathDate?: string;
-  // One entry per stat pair, undefined when the value is fine.
-  stats: (string | undefined)[];
+  stats: { left?: string; right?: string }[];
 };
 
 const dateError = (text: string) => {
@@ -272,9 +274,9 @@ const dateError = (text: string) => {
 
 const statError = (text: string) => {
   const t = text.trim();
-  return !t || (/^\d+$/.test(t) && Number(t) <= 100)
+  return !t || (/^[+-]?\d+$/.test(t) && Number.isSafeInteger(Number(t)))
     ? undefined
-    : "Use a whole number from 0 to 100.";
+    : "Use a whole number within the safe integer range.";
 };
 
 // Checks the edit form against the game date ("YYYY-MM-DD").
@@ -286,7 +288,10 @@ export const validateForm = (
     name: form.name.trim() ? undefined : "Enter a name.",
     birthDate: dateError(form.birthDate),
     deathDate: dateError(form.deathDate),
-    stats: form.stats.map(statError),
+    stats: form.stats.map((pair) => ({
+      left: statError(pair.left),
+      right: statError(pair.right),
+    })),
   };
   const birth = parseDate(form.birthDate);
   const death = parseDate(form.deathDate);
@@ -305,7 +310,7 @@ export const hasErrors = (errors: FormErrors) =>
     errors.name ||
     errors.birthDate ||
     errors.deathDate ||
-    errors.stats.some(Boolean)
+    errors.stats.some((pair) => pair.left || pair.right)
   );
 
 // The error for the typed game date, or undefined when it is a real date.
@@ -336,7 +341,10 @@ export const characterDraftToFields = (
       deathDate: dateOf(draft.deathDate),
       deathCity: draft.deathCity.trim(),
       deathCountry: draft.deathCountry.trim(),
-      stats: draft.stats.map((s) => (s.trim() ? Number(s) : null)),
+      stats: draft.stats.map((pair) => ({
+        left: pair.left.trim() ? Number(pair.left) : null,
+        right: pair.right.trim() ? Number(pair.right) : null,
+      })),
       description: draft.description,
     },
   };

@@ -64,7 +64,7 @@ export const character = (
   deathDate: null,
   deathCity: "",
   deathCountry: "",
-  stats: Array(8).fill(null),
+  stats: Array.from({ length: 8 }, () => ({ left: null, right: null })),
   description: "",
   photo: null,
   ...extra,
@@ -89,9 +89,6 @@ const checked = (fields: CharacterFields): CharacterFields => {
     fields.deathDate < fields.birthDate
   ) {
     throw "Death date is before the birth date.";
-  }
-  if (fields.stats.some((s) => s !== null && (s < 0 || s > 100))) {
-    throw "Use a whole number from 0 to 100.";
   }
   return {
     ...fields,

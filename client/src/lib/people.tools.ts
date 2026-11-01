@@ -58,10 +58,13 @@ const FIELDS = {
   death_country: PLACE("country of death"),
   stats: {
     type: "array",
-    items: { type: ["integer", "null"] },
+    items: object({
+      left: { type: ["integer", "null"] },
+      right: { type: ["integer", "null"] },
+    }),
     minItems: STAT_COUNT,
     maxItems: STAT_COUNT,
-    description: `All ${STAT_COUNT} stats in order: the left value of each pair, a whole number from 0 to 100 (the right value is 100 minus it), or null when the pair is not set. people_read shows the stat names.`,
+    description: `All ${STAT_COUNT} stat pairs in order, each with independent left and right values: a signed whole number or null. people_read shows the stat names.`,
   },
   description: {
     type: "string",
@@ -116,13 +119,25 @@ function applyInput(
     if (
       !Array.isArray(stats) ||
       stats.length !== STAT_COUNT ||
-      stats.some((s) => s !== null && typeof s !== "number")
+      stats.some(
+        (s) =>
+          !s ||
+          typeof s !== "object" ||
+          Array.isArray(s) ||
+          Object.keys(s).length !== 2 ||
+          (["left", "right"] as const).some(
+            (side) => s[side] !== null && typeof s[side] !== "number",
+          ),
+      )
     ) {
       throw new Error(
-        `stats must be a list of ${STAT_COUNT} items, each a number or null.`,
+        `stats must be a list of ${STAT_COUNT} pairs, each with left and right numbers or null.`,
       );
     }
-    next.stats = stats.map((s) => (s === null ? "" : String(s)));
+    next.stats = stats.map((s) => ({
+      left: s.left === null ? "" : String(s.left),
+      right: s.right === null ? "" : String(s.right),
+    }));
   }
   return next;
 }
@@ -140,7 +155,11 @@ function checkedFields(
       errors.name && `name: ${errors.name}`,
       errors.birthDate && `birth_date: ${errors.birthDate}`,
       errors.deathDate && `death_date: ${errors.deathDate}`,
-      ...errors.stats.map((e, i) => e && `stats item ${i + 1}: ${e}`),
+      ...errors.stats.flatMap((e, i) =>
+        (["left", "right"] as const).map(
+          (side) => e[side] && `stats item ${i + 1} ${side}: ${e[side]}`,
+        ),
+      ),
     ].filter(Boolean);
     throw new Error(
       `Not saved. Fix these fields and try again:\n${lines.join("\n")}`,
@@ -169,9 +188,7 @@ function sheet(
     "Stats (left value / right value):",
     ...fields.stats.map((value, i) => {
       const names = statNames[i] ?? { left: "?", right: "?" };
-      return value === null
-        ? `${i + 1}. ${names.left} / ${names.right}: not set`
-        : `${i + 1}. ${names.left} ${value} / ${names.right} ${100 - value}`;
+      return `${i + 1}. ${names.left} ${value.left ?? "not set"} / ${names.right} ${value.right ?? "not set"}`;
     }),
     "Description:",
     fields.description || "(none)",

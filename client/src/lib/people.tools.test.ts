@@ -28,7 +28,10 @@ const karl = character("Karl Weber", {
   deathDate: "1961-08-03",
   deathCity: "Moscow",
   deathCountry: "USSR",
-  stats: [40, null, 0, 100, null, null, null, 75],
+  stats: [40, null, 0, 100, null, null, null, 75].map((left) => ({
+    left,
+    right: null,
+  })),
   description: "A printer.\nKnows everyone.",
 });
 const anon = character("Anon");
@@ -137,14 +140,14 @@ describe("people_read", () => {
           "Death country: USSR",
           "Age: 35",
           "Stats (left value / right value):",
-          "1. Order 40 / Chaos 60",
-          "2. Rehabilitative / Punitive: not set",
-          "3. Progressive 0 / Conservative 100",
-          "4. Globalist 100 / Isolationist 0",
-          "5. Communist / Capitalist: not set",
-          "6. Regulationist / Laissez Faire: not set",
-          "7. Environmentalist / Industrialist: not set",
-          "8. Revolutionary 75 / Reformist 25",
+          "1. Order 40 / Chaos not set",
+          "2. Rehabilitative not set / Punitive not set",
+          "3. Progressive 0 / Conservative not set",
+          "4. Globalist 100 / Isolationist not set",
+          "5. Communist not set / Capitalist not set",
+          "6. Regulationist not set / Laissez Faire not set",
+          "7. Environmentalist not set / Industrialist not set",
+          "8. Revolutionary 75 / Reformist not set",
           "Description:",
           "A printer.",
           "Knows everyone.",
@@ -216,7 +219,10 @@ describe("people_create", () => {
         birth_date: "21 Jan 1904",
         birth_city: " Leeds ",
         death_date: "March 3, 1950",
-        stats: [10, null, null, null, null, null, null, 0],
+        stats: [10, null, null, null, null, null, null, 0].map((left) => ({
+          left,
+          right: -22,
+        })),
         description: "Quiet.",
       }),
     ).toEqual(ok("Created Ann Lee (person-1)."));
@@ -229,7 +235,10 @@ describe("people_create", () => {
       deathDate: "1950-03-03",
       deathCity: "",
       deathCountry: "",
-      stats: [10, null, null, null, null, null, null, 0],
+      stats: [10, null, null, null, null, null, null, 0].map((left) => ({
+        left,
+        right: -22,
+      })),
       description: "Quiet.",
       photo: null,
     });
@@ -252,7 +261,10 @@ describe("people_create", () => {
         name: " ",
         birth_date: "yesterday",
         death_date: "31 April 1950",
-        stats: [101, 4.5, -1, null, null, null, null, 100],
+        stats: [101, 4.5, -1, null, null, null, null, 100].map((left) => ({
+          left,
+          right: null,
+        })),
       }),
     ).toEqual(
       error(
@@ -261,9 +273,7 @@ describe("people_create", () => {
           "name: Enter a name.",
           "birth_date: Use day, month and year.",
           "death_date: Not a real date.",
-          "stats item 1: Use a whole number from 0 to 100.",
-          "stats item 2: Use a whole number from 0 to 100.",
-          "stats item 3: Use a whole number from 0 to 100.",
+          "stats item 2 left: Use a whole number within the safe integer range.",
         ].join("\n"),
       ),
     );
@@ -300,7 +310,9 @@ describe("people_create", () => {
       [1, 2, 3, 4, 5, 6, 7],
     ]) {
       expect(await call("people_create", { name: "Ann", stats })).toEqual(
-        error("stats must be a list of 8 items, each a number or null."),
+        error(
+          "stats must be a list of 8 pairs, each with left and right numbers or null.",
+        ),
       );
     }
   });

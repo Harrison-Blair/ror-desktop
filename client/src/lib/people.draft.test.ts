@@ -2,6 +2,9 @@ import { describe, expect, it } from "vitest";
 import { characterDraftToFields, characterToDraft } from "@/lib/people";
 import type { Character } from "@/lib/peopleApi";
 
+const pairs = <T>(values: T[], right: T) =>
+  values.map((left) => ({ left, right }));
+
 const GAME = "1962-02-10";
 const person: Character = {
   id: "rosa",
@@ -13,7 +16,7 @@ const person: Character = {
   deathDate: "1961-08-03",
   deathCity: "London",
   deathCountry: "UK",
-  stats: [0, 100, null, 45, null, 7, 50, null],
+  stats: pairs([0, 100, null, 45, null, 7, 50, null], null),
   description: "  A printer.\nKnows everyone.  ",
 };
 
@@ -45,11 +48,11 @@ describe("character draft adapter", () => {
       deathDate: "",
       deathCity: "",
       deathCountry: "",
-      stats: ["", "", "", "", "", "", "", ""],
+      stats: pairs(["", "", "", "", "", "", "", ""], ""),
       description: "",
     });
-    draft.stats[0] = "50";
-    expect(characterToDraft().stats[0]).toBe("");
+    draft.stats[0].left = "50";
+    expect(characterToDraft().stats[0].left).toBe("");
     expect(
       characterDraftToFields({ ...characterToDraft(), name: "Ada" }, GAME),
     ).toEqual({
@@ -61,7 +64,7 @@ describe("character draft adapter", () => {
         deathDate: null,
         deathCity: "",
         deathCountry: "",
-        stats: [null, null, null, null, null, null, null, null],
+        stats: pairs([null, null, null, null, null, null, null, null], null),
         description: "",
       },
     });
@@ -71,13 +74,15 @@ describe("character draft adapter", () => {
     const draft = characterToDraft(person);
     expect(draft.birthDate).toBe("14 June 1930");
     expect(draft.deathDate).toBe("3 August 1961");
-    expect(draft.stats).toEqual(["0", "100", "", "45", "", "7", "50", ""]);
+    expect(draft.stats).toEqual(
+      pairs(["0", "100", "", "45", "", "7", "50", ""], ""),
+    );
     expect(draft).not.toHaveProperty("id");
     expect(draft).not.toHaveProperty("photo");
     const { id: _id, photo: _photo, ...fields } = person;
     expect(characterDraftToFields(draft, GAME)).toEqual({ fields });
-    draft.stats[0] = "20";
-    expect(person.stats[0]).toBe(0);
+    draft.stats[0].left = "20";
+    expect(person.stats[0].left).toBe(0);
   });
 
   it("normalizes names, places, dates and stats while preserving description", () => {
@@ -92,7 +97,7 @@ describe("character draft adapter", () => {
           deathDate: "  ",
           deathCity: " London ",
           deathCountry: " UK ",
-          stats: [" 0 ", "100", " ", "045", "", "7", "50", " "],
+          stats: pairs([" 0 ", "100", " ", "045", "", "7", "50", " "], ""),
         },
         GAME,
       ),
@@ -105,7 +110,7 @@ describe("character draft adapter", () => {
         deathDate: null,
         deathCity: "London",
         deathCountry: "UK",
-        stats: [0, 100, null, 45, null, 7, 50, null],
+        stats: pairs([0, 100, null, 45, null, 7, 50, null], null),
         description: "  A printer.\nKnows everyone.  ",
       },
     });
@@ -118,7 +123,7 @@ describe("character draft adapter", () => {
         name: "  ",
         birthDate: "31 April 1904",
         deathDate: "11 February 1962",
-        stats: ["-1", "101", "4.5", "1e2", "no", "", "50"],
+        stats: pairs(["-1", "101", "4.5", "1e2", "no", "", "50"], ""),
       },
       GAME,
     );
@@ -127,15 +132,18 @@ describe("character draft adapter", () => {
         name: "Enter a name.",
         birthDate: "Not a real date.",
         deathDate: "Death date is after the game date.",
-        stats: [
-          "Use a whole number from 0 to 100.",
-          "Use a whole number from 0 to 100.",
-          "Use a whole number from 0 to 100.",
-          "Use a whole number from 0 to 100.",
-          "Use a whole number from 0 to 100.",
+        stats: pairs(
+          [
+            undefined,
+            undefined,
+            "Use a whole number within the safe integer range.",
+            "Use a whole number within the safe integer range.",
+            "Use a whole number within the safe integer range.",
+            undefined,
+            undefined,
+          ],
           undefined,
-          undefined,
-        ],
+        ),
       },
     });
     expect(result).not.toHaveProperty("fields");

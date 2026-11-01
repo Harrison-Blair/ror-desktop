@@ -23,15 +23,3 @@ export function BackLink({ onClick }: { onClick: () => void }) {
     </button>
   );
 }
-
-// The split bar of a stat pair: the left value from the left, the rest to
-// the right. A pair with no value shows "not set".
-export function StatBar({ value }: { value: number | null }) {
-  if (value === null) return <span className={styles.unset}>not set</span>;
-  return (
-    <span className={styles.bar}>
-      <span className={styles.fill} style={{ width: `${value}%` }} />
-      <span className={styles.rest} />
-    </span>
-  );
-}

@@ -15,8 +15,15 @@ use tauri_plugin_dialog::DialogExt;
 
 pub const STAT_COUNT: usize = 8;
 
-/// The left values of the eight stat pairs. Each right value is 100 − left.
-pub type Stats = [Option<u8>; STAT_COUNT];
+/// Independent values for each named stat pair.
+#[derive(Clone, Copy, Debug, Default, PartialEq, Serialize, Deserialize)]
+pub struct StatPair {
+    #[serde(deserialize_with = "present")]
+    pub left: Option<i64>,
+    #[serde(deserialize_with = "present")]
+    pub right: Option<i64>,
+}
+pub type Stats = [StatPair; STAT_COUNT];
 
 /// Reads an optional value whose key must be there: null is none, and a
 /// missing key is an error. Serde reads a missing `Option` key as none unless
@@ -213,8 +220,49 @@ fn valid_world(world: &World) -> std::result::Result<(), String> {
     Ok(())
 }
 
+// Callers hold UPDATE because loading may migrate the file.
 fn read_characters(paths: &Paths) -> Result<Vec<Character>> {
-    Ok(read(&paths.characters(), valid_characters)?.characters)
+    // Convert only the exact legacy shape before the normal strict validation.
+    let file = paths.characters();
+    let text = match fs::read_to_string(&file) {
+        Ok(text) => text,
+        Err(e) if e.kind() == io::ErrorKind::NotFound => return Ok(Vec::new()),
+        Err(e) => return Err(format!("Couldn't read {}: {e}.", file.display())),
+    };
+    let invalid = |e: String| {
+        format!(
+            "{} is damaged and was left as it is ({e}). Fix or move the file to go on.",
+            file.display()
+        )
+    };
+    let mut value: serde_json::Value =
+        serde_json::from_str(&text).map_err(|e| invalid(e.to_string()))?;
+    if !value.is_object() {
+        return Err(invalid("not a JSON object".into()));
+    }
+    let mut migrated = false;
+    if let Some(characters) = value.get_mut("characters").and_then(|v| v.as_array_mut()) {
+        for character in characters {
+            if let Some(stats) = character.get_mut("stats") {
+                if let Ok(legacy) =
+                    serde_json::from_value::<[Option<u8>; STAT_COUNT]>(stats.clone())
+                {
+                    if legacy.iter().flatten().all(|v| *v <= 100) {
+                        *stats = serde_json::to_value([StatPair::default(); STAT_COUNT]).unwrap();
+                        migrated = true;
+                    }
+                }
+            }
+        }
+    }
+    let parsed: CharactersFile =
+        serde_json::from_value(value.clone()).map_err(|e| invalid(e.to_string()))?;
+    valid_characters(&parsed).map_err(invalid)?;
+    if migrated {
+        // Keep unknown fields too; only the legacy stats are changed.
+        write(&file, &value, "the migrated characters")?;
+    }
+    Ok(parsed.characters)
 }
 
 fn write_characters(paths: &Paths, characters: Vec<Character>) -> Result<()> {
@@ -277,8 +325,13 @@ fn valid_fields(f: &CharacterFields) -> std::result::Result<(), String> {
             return Err("Death date is before the birth date.".to_string());
         }
     }
-    if f.stats.iter().flatten().any(|&v| v > 100) {
-        return Err("Use a whole number from 0 to 100.".to_string());
+    if f.stats.iter().any(|p| {
+        [p.left, p.right]
+            .into_iter()
+            .flatten()
+            .any(|v| !(-9007199254740991..=9007199254740991).contains(&v))
+    }) {
+        return Err("Use a whole number within the safe integer range.".to_string());
     }
     Ok(())
 }
@@ -347,6 +400,7 @@ fn saved_me_id(paths: &Paths) -> Result<Option<String>> {
 }
 
 pub fn list(paths: &Paths) -> Result<People> {
+    let _guard = lock();
     let characters = read_characters(paths)?;
     let me_id = saved_me_id(paths)?.filter(|id| characters.iter().any(|c| &c.id == id));
     Ok(People { characters, me_id })
@@ -512,6 +566,7 @@ pub fn set_photo(paths: &Paths, id: &str, source: &Path) -> Result<Character> {
 
 /// The bytes of the character's photo.
 pub fn read_photo(paths: &Paths, id: &str) -> Result<Vec<u8>> {
+    let _guard = lock();
     let name = read_characters(paths)?
         .into_iter()
         .find(|c| c.id == id)
@@ -693,9 +748,12 @@ mod tests {
     #[test]
     fn a_created_character_is_saved_and_loaded_back() {
         let (_temp, paths) = setup();
-        let mut stats = [None; STAT_COUNT];
-        stats[0] = Some(62);
-        stats[7] = Some(0);
+        let mut stats = [StatPair::default(); STAT_COUNT];
+        stats[0] = StatPair {
+            left: Some(-62),
+            right: Some(140),
+        };
+        stats[7].right = Some(0);
         let fields = CharacterFields {
             name: "  Jun Nakamura ".into(),
             birth_date: Some("1925-11-09".into()),
@@ -722,12 +780,86 @@ mod tests {
                 "deathDate": "1961-08-03",
                 "deathCity": "Tokyo",
                 "deathCountry": "Japan",
-                "stats": [62, null, null, null, null, null, null, 0],
+                "stats": [{"left": -62, "right": 140}, {"left": null, "right": null}, {"left": null, "right": null}, {"left": null, "right": null}, {"left": null, "right": null}, {"left": null, "right": null}, {"left": null, "right": null}, {"left": null, "right": 0}],
                 "description": "Reported on the Anpo protests.",
                 "photo": null
             }]})
         );
         assert!(!paths.data.join("characters.json.tmp").exists());
+    }
+
+    #[test]
+    fn legacy_stats_are_cleared_without_losing_character_data() {
+        let (_temp, paths) = setup();
+        fs::create_dir_all(&paths.data).unwrap();
+        let mut old = a_good_character();
+        old["stats"] = json!([50, null, 0, 100, null, null, null, 7]);
+        old["extra"] = json!({"kept": true});
+        let original = json!({"characters": [old.clone()], "other": "kept"});
+        fs::write(paths.characters(), original.to_string()).unwrap();
+        let person = list(&paths).unwrap().characters.remove(0);
+        assert_eq!(person.fields.stats, [StatPair::default(); STAT_COUNT]);
+        let mut expected = original;
+        expected["characters"][0]["stats"] =
+            serde_json::to_value([StatPair::default(); STAT_COUNT]).unwrap();
+        assert_eq!(saved_json(&paths.characters()), expected);
+        let saved = fs::read(paths.characters()).unwrap();
+        assert_eq!(list(&paths).unwrap().characters, vec![person]);
+        assert_eq!(fs::read(paths.characters()).unwrap(), saved);
+    }
+
+    #[test]
+    fn photo_read_migrates_legacy_records_without_changing_current_records() {
+        let (_temp, paths) = setup();
+        fs::create_dir_all(paths.photos()).unwrap();
+        fs::write(paths.photos().join("a.png"), b"photo").unwrap();
+        let mut legacy = a_good_character();
+        legacy["stats"] = json!([50, null, 0, 100, null, null, null, 7]);
+        let mut current = a_good_character();
+        current["id"] = json!("b");
+        current["photo"] = json!(null);
+        let original = json!({"characters": [legacy, current.clone()]});
+        fs::write(paths.characters(), original.to_string()).unwrap();
+        assert_eq!(read_photo(&paths, "a").unwrap(), b"photo");
+        let saved = saved_json(&paths.characters());
+        assert_eq!(
+            saved["characters"][0]["stats"],
+            serde_json::to_value([StatPair::default(); STAT_COUNT]).unwrap()
+        );
+        assert_eq!(saved["characters"][1], current);
+    }
+
+    #[test]
+    fn failed_legacy_migration_preserves_the_original_and_can_retry() {
+        let (_temp, paths) = setup();
+        fs::create_dir_all(&paths.data).unwrap();
+        let mut old = a_good_character();
+        old["stats"] = json!([50, null, 0, 100, null, null, null, 7]);
+        let original = json!({"characters": [old]}).to_string();
+        fs::write(paths.characters(), &original).unwrap();
+        let temp = paths.data.join("characters.json.tmp");
+        fs::create_dir(&temp).unwrap();
+        assert!(list(&paths).unwrap_err().contains("Couldn't save"));
+        assert_eq!(fs::read_to_string(paths.characters()).unwrap(), original);
+        fs::remove_dir(temp).unwrap();
+        assert_eq!(
+            list(&paths).unwrap().characters[0].fields.stats,
+            [StatPair::default(); STAT_COUNT]
+        );
+        assert_ne!(fs::read_to_string(paths.characters()).unwrap(), original);
+    }
+
+    #[test]
+    fn invalid_legacy_file_is_not_migrated() {
+        let (_temp, paths) = setup();
+        fs::create_dir_all(&paths.data).unwrap();
+        let mut old = a_good_character();
+        old["stats"] = json!([50, null, 0, 100, null, null, null, 7]);
+        old["name"] = json!("");
+        let original = json!({"characters": [old]}).to_string();
+        fs::write(paths.characters(), &original).unwrap();
+        assert!(list(&paths).is_err());
+        assert_eq!(fs::read_to_string(paths.characters()).unwrap(), original);
     }
 
     #[test]
@@ -755,8 +887,6 @@ mod tests {
             death_date: death.map(String::from),
             ..named("Ada")
         };
-        let mut stats = [None; STAT_COUNT];
-        stats[3] = Some(101);
         let cases = [
             (named("   "), "Enter a name."),
             (date(Some("1904-02-30"), None), "Not a real date."),
@@ -767,13 +897,6 @@ mod tests {
             (
                 date(Some("1930-06-14"), Some("1930-06-13")),
                 "Death date is before the birth date.",
-            ),
-            (
-                CharacterFields {
-                    stats,
-                    ..named("Ada")
-                },
-                "Use a whole number from 0 to 100.",
             ),
         ];
         for (fields, error) in cases {
@@ -859,7 +982,7 @@ mod tests {
         json!({
             "id": "a", "name": "Ada", "birthDate": "1904-01-21", "birthCity": "",
             "birthCountry": "", "deathDate": null, "deathCity": "", "deathCountry": "",
-            "stats": [50, null, null, null, null, null, null, 0], "description": "",
+            "stats": [{"left": 50, "right": -2}, {"left": null, "right": null}, {"left": null, "right": null}, {"left": null, "right": null}, {"left": null, "right": null}, {"left": null, "right": null}, {"left": null, "right": null}, {"left": null, "right": 0}], "description": "",
             "photo": "a.png"
         })
     }

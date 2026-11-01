@@ -2,7 +2,6 @@ import { UserRound } from "lucide-react";
 import { useEffect, useId, useRef, useState } from "react";
 import styles from "@/components/menus/PeopleMenu/PeopleMenu.module.css";
 import { PersonPhoto } from "@/components/menus/PeopleMenu/PersonPhoto";
-import { StatBar } from "@/components/menus/PeopleMenu/parts";
 import { useToast } from "@/components/Toast/Toast";
 import { errorMessage } from "@/lib/errorMessage";
 import {
@@ -98,10 +97,10 @@ export function PersonForm({
         ? { ...d, [field]: formatBoxDate(parsed.date) }
         : d;
     });
-  const setStat = (i: number, value: string) =>
+  const setStat = (i: number, side: "left" | "right", value: string) =>
     setDraft((d) => ({
       ...d,
-      stats: d.stats.map((s, j) => (j === i ? value : s)),
+      stats: d.stats.map((s, j) => (j === i ? { ...s, [side]: value } : s)),
     }));
   const pickPhoto = async () => {
     try {
@@ -245,58 +244,43 @@ export function PersonForm({
           <h2 id={`${id}-stats`} className={styles.h3}>
             Stats
           </h2>
-          <div
-            className={`${styles.pair} ${styles.editRow} ${styles.statHeaders}`}
-            aria-hidden="true"
-          >
-            <span>Name</span>
-            <span>Value</span>
-            <span />
-            <span>Value</span>
-            <span>Name</span>
-          </div>
-          {statNames.map((name, i) => {
-            const raw = draft.stats[i];
-            const error = errors.stats[i];
-            const value =
-              /^\d+$/.test(raw.trim()) && Number(raw) <= 100
-                ? Number(raw)
-                : null;
-            const n = i + 1;
-            return (
-              // The pairs are fixed in number and order.
-              // biome-ignore lint/suspicious/noArrayIndexKey: see above
-              <div key={i} className={styles.pairEdit}>
-                <div className={`${styles.pair} ${styles.editRow}`}>
-                  <span>{name.left}</span>
-                  <input
-                    className={`${styles.input} ${styles.mono} ${error ? styles.invalid : ""}`}
-                    type="text"
-                    inputMode="numeric"
-                    value={raw}
-                    aria-label={`Stat ${n} value`}
-                    aria-invalid={!!error}
-                    aria-describedby={error ? `${id}-stat-${i}` : undefined}
-                    onChange={(e) => setStat(i, e.target.value)}
-                    disabled={busy}
-                  />
-                  <StatBar value={value} />
-                  <span className={styles.mono}>
-                    {value === null ? "" : 100 - value}
-                  </span>
-                  <span className={styles.right}>{name.right}</span>
-                </div>
-                {error && (
-                  <span
-                    id={`${id}-stat-${i}`}
-                    className={`${styles.fieldError} ${styles.statError}`}
-                  >
-                    {error}
-                  </span>
-                )}
+          {statNames.map((name, i) => (
+            // The pairs are fixed in number and order.
+            // biome-ignore lint/suspicious/noArrayIndexKey: see above
+            <div key={i} className={styles.pairEdit}>
+              <div className={`${styles.pair} ${styles.editRow}`}>
+                {(["left", "right"] as const).map((side) => {
+                  const error = errors.stats[i]?.[side];
+                  return (
+                    <label key={side} className={styles.field}>
+                      <span className={styles.statName}>{name[side]}</span>
+                      <input
+                        className={`${styles.input} ${styles.mono} ${error ? styles.invalid : ""}`}
+                        type="text"
+                        inputMode="text"
+                        value={draft.stats[i][side]}
+                        aria-label={`Stat ${i + 1} ${side} value`}
+                        aria-invalid={!!error}
+                        aria-describedby={
+                          error ? `${id}-stat-${i}-${side}` : undefined
+                        }
+                        onChange={(e) => setStat(i, side, e.target.value)}
+                        disabled={busy}
+                      />
+                      {error && (
+                        <span
+                          id={`${id}-stat-${i}-${side}`}
+                          className={styles.fieldError}
+                        >
+                          {error}
+                        </span>
+                      )}
+                    </label>
+                  );
+                })}
               </div>
-            );
-          })}
+            </div>
+          ))}
         </section>
       </div>
       <section className={styles.section}>

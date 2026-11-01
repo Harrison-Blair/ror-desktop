@@ -10,7 +10,7 @@ import {
 import type { Character, StatName } from "@/lib/peopleApi";
 import styles from "./PeopleMenu.module.css";
 import { PersonPhoto } from "./PersonPhoto";
-import { BackLink, MineStar, StatBar } from "./parts";
+import { BackLink, MineStar } from "./parts";
 
 export type PersonSheetProps = {
   person: Character;
@@ -116,26 +116,20 @@ export function PersonSheet({
           <h2 id="sheet-stats" className={styles.h3}>
             Stats
           </h2>
-          {statNames.map((name, i) => {
-            const value = person.stats[i] ?? null;
-            return (
-              // The pairs are fixed in number and order.
-              // biome-ignore lint/suspicious/noArrayIndexKey: see above
-              <div key={i} className={styles.pair}>
-                <span className={styles.statName}>{name.left}</span>
-                <span className={`${styles.statValue} ${styles.mono}`}>
-                  {value ?? ""}
-                </span>
-                <StatBar value={value} />
-                <span className={styles.mono}>
-                  {value === null ? "" : 100 - value}
-                </span>
-                <span className={`${styles.statName} ${styles.right}`}>
-                  {name.right}
-                </span>
-              </div>
-            );
-          })}
+          {statNames.map((name, i) => (
+            // The pairs are fixed in number and order.
+            // biome-ignore lint/suspicious/noArrayIndexKey: see above
+            <div key={i} className={styles.pair}>
+              {(["left", "right"] as const).map((side) => (
+                <div key={side} className={styles.sheetStat}>
+                  <span className={styles.statName}>{name[side]}</span>
+                  <span className={styles.mono}>
+                    {person.stats[i]?.[side] ?? ""}
+                  </span>
+                </div>
+              ))}
+            </div>
+          ))}
         </section>
       </div>
       <section className={styles.section} aria-labelledby="sheet-description">

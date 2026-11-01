@@ -230,22 +230,18 @@ describe("place lines", () => {
 });
 
 describe("validateForm", () => {
+  const pairs = (values: string[]) =>
+    values.map((left) => ({ left, right: "" }));
   const blank: CharacterForm = {
     name: "Ada",
     birthDate: "",
     deathDate: "",
-    stats: ["", "", "", "", "", "", "", ""],
+    stats: pairs(["", "", "", "", "", "", "", ""]),
   };
-  const noStatErrors = [
-    undefined,
-    undefined,
-    undefined,
-    undefined,
-    undefined,
-    undefined,
-    undefined,
-    undefined,
-  ];
+  const noStatErrors = Array.from({ length: 8 }, () => ({
+    left: undefined,
+    right: undefined,
+  }));
 
   it("accepts a name alone", () => {
     const errors = validateForm(blank, GAME);
@@ -311,7 +307,10 @@ describe("validateForm", () => {
 
   it("accepts whole numbers from 0 to 100 and empty stats", () => {
     const errors = validateForm(
-      { ...blank, stats: ["0", "100", " 45 ", "", "7", "99", "50", "100"] },
+      {
+        ...blank,
+        stats: pairs(["0", "100", " 45 ", "", "-7", "999", "50", "+100"]),
+      },
       GAME,
     );
     expect(errors.stats).toEqual(noStatErrors);
@@ -319,20 +318,18 @@ describe("validateForm", () => {
 
   it("refuses other stat values", () => {
     const errors = validateForm(
-      { ...blank, stats: ["101", "-1", "4.5", "abc", "1e2", "", "50", "1.0"] },
+      {
+        ...blank,
+        stats: pairs(["101", "-1", "4.5", "abc", "1e2", "", "50", "1.0"]),
+      },
       GAME,
     );
-    const bad = "Use a whole number from 0 to 100.";
-    expect(errors.stats).toEqual([
-      bad,
-      bad,
-      bad,
-      bad,
-      bad,
-      undefined,
-      undefined,
-      bad,
-    ]);
+    const bad = "Use a whole number within the safe integer range.";
+    expect(errors.stats).toEqual(
+      [undefined, undefined, bad, bad, bad, undefined, undefined, bad].map(
+        (left) => ({ left, right: undefined }),
+      ),
+    );
     expect(hasErrors(errors)).toBe(true);
   });
 });

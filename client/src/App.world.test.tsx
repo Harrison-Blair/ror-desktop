@@ -26,7 +26,10 @@ const otto = () =>
     birthDate: "1904-01-21",
     birthCity: "Dortmund",
     birthCountry: "Germany",
-    stats: [58, null, null, 40, null, null, null, null],
+    stats: [58, null, null, 40, null, null, null, null].map((left) => ({
+      left,
+      right: null,
+    })),
     description: "Owns three mills in the Ruhr.",
   });
 const rosa = () =>
@@ -339,7 +342,7 @@ describe("World Overview", () => {
     expect(main().getByText("Order")).toBeVisible();
     await user.click(main().getByRole("button", { name: "Edit" }));
     expect(main().queryByLabelText("Stat 1 left name")).not.toBeInTheDocument();
-    expect(main().getByLabelText("Stat 1 value")).toHaveValue("58");
+    expect(main().getByLabelText("Stat 1 left value")).toHaveValue("58");
   });
 
   it.each([
@@ -554,10 +557,10 @@ describe("Add and edit form", () => {
     const user = await openWorld();
     await user.click(main().getAllByRole("button", { name: "Add person" })[0]);
 
-    const headers = main()
-      .getByRole("region", { name: "Stats" })
-      .querySelector(`.${styles.statHeaders}`);
-    expect(headers?.textContent).toBe("NameValueValueName");
+    expect(main().getByLabelText("Stat 1 left value")).toBeInTheDocument();
+    expect(main().getByLabelText("Stat 1 right value")).toBeInTheDocument();
+    expect(main().getByText("Scientific")).toBeInTheDocument();
+    expect(main().getByText("Religious")).toBeInTheDocument();
   });
 
   // Check 4
@@ -624,22 +627,31 @@ describe("Add and edit form", () => {
   });
 
   // Check 8
-  it("checks stat values and shows the right value", async () => {
+  it("validates each side and saves independent values", async () => {
     const user = await openWorld();
-
-    await addPerson(user, { Name: "Ada", "Stat 1 value": "101" });
-    const value = main().getByLabelText("Stat 1 value");
-    expect(value).toHaveAccessibleDescription(
-      "Use a whole number from 0 to 100.",
+    await addPerson(user, {
+      Name: "Ada",
+      "Stat 1 left value": "4.5",
+      "Stat 1 right value": "-42",
+    });
+    const left = main().getByLabelText("Stat 1 left value");
+    const right = main().getByLabelText("Stat 1 right value");
+    expect(left).toHaveAccessibleDescription(
+      "Use a whole number within the safe integer range.",
     );
+    expect(right).toHaveValue("-42");
     expect(api.createPerson).not.toHaveBeenCalled();
-
-    await user.clear(value);
-    await user.type(value, "30");
-    expect(value).not.toHaveAccessibleDescription();
-    // biome-ignore lint/style/noNonNullAssertion: the row holds the box
-    const row = within(value.parentElement!);
-    expect(row.getByText("70")).toBeInTheDocument();
+    await user.clear(left);
+    await user.type(left, "150");
+    await user.click(main().getByRole("button", { name: "Save" }));
+    expect(
+      await main().findByRole("heading", { name: "Ada" }),
+    ).toBeInTheDocument();
+    expect(api.createPerson).toHaveBeenCalledWith(
+      expect.objectContaining({
+        stats: expect.arrayContaining([{ left: 150, right: -42 }]),
+      }),
+    );
   });
 
   // Check 9
@@ -654,7 +666,7 @@ describe("Add and edit form", () => {
       "Birth date": "21 January 1904",
       "Birthplace city": "Dortmund",
       "Birthplace country": "Germany",
-      "Stat 1 value": "58",
+      "Stat 1 left value": "58",
     });
 
     expect(
@@ -668,7 +680,10 @@ describe("Add and edit form", () => {
       deathDate: null,
       deathCity: "",
       deathCountry: "",
-      stats: [58, null, null, null, null, null, null, null],
+      stats: [58, null, null, null, null, null, null, null].map((left) => ({
+        left,
+        right: null,
+      })),
       description: "",
     });
     expect(main().getByText("January 21, 1904")).toBeInTheDocument();
@@ -712,7 +727,7 @@ describe("Add and edit form", () => {
 
     await user.click(card("Otto Brandt"));
     await user.click(main().getByRole("button", { name: "Edit" }));
-    await user.clear(main().getByLabelText("Stat 4 value"));
+    await user.clear(main().getByLabelText("Stat 4 left value"));
     await user.type(main().getByLabelText("Description"), " And a newspaper.");
     await user.click(main().getByRole("button", { name: "Save" }));
 
@@ -723,7 +738,10 @@ describe("Add and edit form", () => {
       ...otto(),
       id: undefined,
       photo: undefined,
-      stats: [58, null, null, null, null, null, null, null],
+      stats: [58, null, null, null, null, null, null, null].map((left) => ({
+        left,
+        right: null,
+      })),
       description: "Owns three mills in the Ruhr. And a newspaper.",
     });
     expect(
@@ -955,22 +973,22 @@ describe("Cards and table", () => {
 });
 
 describe("Sheet", () => {
-  it("shows the stat pairs with their shared names, and 'not set'", async () => {
-    store.characters = [otto()];
+  it("shows independent values and leaves blank sides empty", async () => {
+    const person = otto();
+    person.stats[0].right = -25;
+    store.characters = [person];
     const user = await openWorld();
-
     await user.click(card("Otto Brandt"));
     const stats = within(main().getByRole("region", { name: "Stats" }));
     expect(stats.getByText("Scientific").parentElement).toHaveTextContent(
-      "Scientific5842Religious",
+      "Scientific58",
     );
-    expect(stats.getByText("Rehabilitative").parentElement).toHaveTextContent(
-      "Rehabilitativenot setPunitive",
+    expect(stats.getByText("Religious").parentElement).toHaveTextContent(
+      "Religious-25",
     );
-    expect(stats.getByText("Revolutionary").parentElement).toHaveTextContent(
-      "Revolutionarynot setReformist",
+    expect(stats.getByText("Punitive").parentElement).toHaveTextContent(
+      "Punitive",
     );
-    expect(stats.getAllByText("not set")).toHaveLength(6);
   });
 
   it("shows a saved photo, read as bytes", async () => {
@@ -1532,7 +1550,7 @@ describe("Leaving while something is saved", () => {
 
     expect(main().getByLabelText("Description")).toBeDisabled();
     expect(main().getByLabelText("Name")).toBeDisabled();
-    expect(main().getByLabelText("Stat 1 value")).toBeDisabled();
+    expect(main().getByLabelText("Stat 1 left value")).toBeDisabled();
     expect(main().getByRole("button", { name: "Save" })).toBeDisabled();
     expect(main().getByRole("button", { name: "Cancel" })).toBeDisabled();
     expect(main().getByRole("button", { name: "Add photo" })).toBeDisabled();

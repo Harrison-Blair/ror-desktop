@@ -3,9 +3,8 @@ import { invoke } from "@tauri-apps/api/core";
 // Dates are "YYYY-MM-DD" or null. An empty place is unknown.
 export const STAT_COUNT = 8;
 
-// The left value of each of the eight stat pairs, 0 to 100, or null when the
-// pair is not set. The right value is 100 − left.
-export type Stats = (number | null)[];
+// Each side is independent and can be blank.
+export type Stats = { left: number | null; right: number | null }[];
 
 // Everything about a character that the edit form sets.
 export type CharacterFields = {
@@ -37,7 +36,7 @@ export type World = { gameDate: string; statNames: StatName[] };
 export const listPeople = () => invoke<People>("people_list");
 
 // The name is trimmed. Rejects with a message for an empty name, a date that
-// doesn't exist, a death date before the birth date or a stat above 100.
+// doesn't exist or a death date before the birth date.
 export const createPerson = (fields: CharacterFields) =>
   invoke<Character>("people_create", { fields });
 
