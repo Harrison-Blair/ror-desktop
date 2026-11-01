@@ -1,6 +1,8 @@
 import { syntaxTree } from "@codemirror/language";
 import {
+  EditorSelection,
   type EditorState,
+  Prec,
   type Range,
   StateEffect,
   StateField,
@@ -10,6 +12,7 @@ import {
   Decoration,
   type DecorationSet,
   EditorView,
+  keymap,
   ViewPlugin,
   WidgetType,
 } from "@codemirror/view";
@@ -154,9 +157,14 @@ export class TableWidget extends WidgetType {
     return JSON.stringify(other) === JSON.stringify(this);
   }
 
+  // The table sits in a padded block, since CodeMirror measures a widget
+  // without its margins.
   toDOM() {
+    const block = document.createElement("div");
+    block.className = styles.tableBlock;
     const table = document.createElement("table");
     table.className = styles.table;
+    block.append(table);
     const row = (values: string[], tag: "th" | "td") => {
       const tr = document.createElement("tr");
       for (const value of values) {
@@ -169,7 +177,7 @@ export class TableWidget extends WidgetType {
     table.createTHead().append(row(this.head, "th"));
     const body = table.createTBody();
     for (const values of this.rows) body.append(row(values, "td"));
-    return table;
+    return block;
   }
 
   // Lets a click on the table place the cursor there, which shows its text.
@@ -294,11 +302,19 @@ export function livePreviewDecorations(state: EditorState): DecorationSet {
         markLines(from, to, MARK_CLASSES[name]);
         return;
       }
+      // A heading keeps its size on the cursor's line, so the lines below it
+      // don't move.
+      if (name in HEADING_CLASSES) {
+        decorations.push(
+          Decoration.line({ class: HEADING_CLASSES[name] }).range(
+            doc.lineAt(from).from,
+          ),
+        );
+        return;
+      }
       if (isActive(from, to)) return;
       const parent = node.node.parent?.name ?? "";
-      if (name in HEADING_CLASSES) {
-        eachLine(from, to, HEADING_CLASSES[name]);
-      } else if (name === "HeaderMark" && parent.startsWith("ATXHeading")) {
+      if (name === "HeaderMark" && parent.startsWith("ATXHeading")) {
         if (from === doc.lineAt(from).from) {
           hideMarker(from, to);
         } else {
@@ -362,6 +378,62 @@ const livePreviewField = StateField.define<DecorationSet>({
   provide: (field) => EditorView.decorations.from(field),
 });
 
+// Where vertical motion from `head` to `landed` stops instead: the nearest
+// line of a drawn table between them, at the column of `head`. Null when no
+// drawn table is between them.
+export function tableStop(state: EditorState, head: number, landed: number) {
+  const { doc } = state;
+  const forward = landed > head;
+  let line: number | null = null;
+  state
+    .field(livePreviewField)
+    .between(Math.min(head, landed), Math.max(head, landed), (from, to, d) => {
+      if (!(d.spec.widget instanceof TableWidget)) return;
+      if (forward && from > head && from <= landed) {
+        line ??= from;
+      } else if (!forward && to < head && to >= landed) {
+        line = to;
+      }
+    });
+  if (line === null) return null;
+  const { from, length } = doc.lineAt(line);
+  return from + Math.min(head - doc.lineAt(head).from, length);
+}
+
+// ArrowUp and ArrowDown, with Shift when `extend` is true. CodeMirror's
+// vertical motion jumps over a drawn table, so a move that passes one stops
+// on its nearest line, which then shows its Markdown. Other moves are left
+// to the default keymap.
+const moveVertically =
+  (forward: boolean, extend: boolean) => (view: EditorView) => {
+    const { state } = view;
+    let stopped = false;
+    const ranges = state.selection.ranges.map((range) => {
+      if (!extend && !range.empty) {
+        return EditorSelection.cursor(forward ? range.to : range.from);
+      }
+      const moved = view.moveVertically(range, forward);
+      const stop = tableStop(state, range.head, moved.head);
+      if (stop !== null) stopped = true;
+      const head = stop ?? moved.head;
+      return extend
+        ? EditorSelection.range(range.anchor, head, moved.goalColumn)
+        : EditorSelection.cursor(
+            head,
+            moved.assoc,
+            undefined,
+            moved.goalColumn,
+          );
+    });
+    if (!stopped) return false;
+    view.dispatch({
+      selection: EditorSelection.create(ranges, state.selection.mainIndex),
+      scrollIntoView: true,
+      userEvent: "select",
+    });
+    return true;
+  };
+
 // The target of the link that `element` draws, or null when it has none.
 function linkAt(view: EditorView, element: Element) {
   const tree = syntaxTree(view.state);
@@ -411,6 +483,20 @@ export const livePreview = (onOpenLink?: (href: string) => void) => [
     setFocused.of(focusing),
   ),
   onOpenLink ? modifierHeld : [],
+  Prec.high(
+    keymap.of([
+      {
+        key: "ArrowUp",
+        run: moveVertically(false, false),
+        shift: moveVertically(false, true),
+      },
+      {
+        key: "ArrowDown",
+        run: moveVertically(true, false),
+        shift: moveVertically(true, true),
+      },
+    ]),
+  ),
   EditorView.domEventHandlers({
     mousedown: (event, view) => {
       if (!onOpenLink || event.button !== 0) return false;

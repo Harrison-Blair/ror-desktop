@@ -110,8 +110,13 @@
   border-top: 1px solid var(--line-control);
 }
 
+/* Padding, since CodeMirror measures a widget without its margins. A margin
+   here moves the cursor to the wrong line on ArrowUp and ArrowDown. */
+.tableBlock {
+  padding: var(--space-2) 0;
+}
+
 .table {
-  margin: var(--space-2) 0;
   border-collapse: collapse;
 }
 
