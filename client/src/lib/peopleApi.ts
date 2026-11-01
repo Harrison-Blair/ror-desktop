@@ -1,9 +1,9 @@
 import { invoke } from "@tauri-apps/api/core";
 
 // Dates are "YYYY-MM-DD" or null. An empty place is unknown.
-export const STAT_COUNT = 7;
+export const STAT_COUNT = 8;
 
-// The left value of each of the seven stat pairs, 0 to 100, or null when the
+// The left value of each of the eight stat pairs, 0 to 100, or null when the
 // pair is not set. The right value is 100 − left.
 export type Stats = (number | null)[];
 

@@ -26,7 +26,7 @@ const otto = () =>
     birthDate: "1904-01-21",
     birthCity: "Dortmund",
     birthCountry: "Germany",
-    stats: [58, null, null, 40, null, null, null],
+    stats: [58, null, null, 40, null, null, null, null],
     description: "Owns three mills in the Ruhr.",
   });
 const rosa = () =>
@@ -108,7 +108,7 @@ describe("World Overview", () => {
     return user;
   };
 
-  it("starts on Overview, followed by People in the rail, with seven label pairs", async () => {
+  it("starts on Overview, followed by People in the rail, with eight label rows", async () => {
     await openOverview();
     expect(
       railPanel()
@@ -119,8 +119,31 @@ describe("World Overview", () => {
       railPanel().getByRole("button", { name: "Overview", pressed: true }),
     ).toBeVisible();
     expect(main().getByLabelText("Game date")).toHaveValue("10 February 1962");
-    expect(main().getAllByRole("textbox")).toHaveLength(15);
-    expect(main().getByLabelText("Stat 7 right name")).toHaveValue("[Stat 7B]");
+    expect(main().getAllByRole("textbox")).toHaveLength(17);
+    const pairs = [
+      ["Scientific", "Religious"],
+      ["Rehabilitative", "Punitive"],
+      ["Progressive", "Conservative"],
+      ["Globalist", "Isolationist"],
+      ["Communist", "Capitalist"],
+      ["Regulationist", "Laissez Faire"],
+      ["Environmentalist", "Industrialist"],
+      ["Revolutionary", "Reformist"],
+    ];
+    pairs.forEach(([left, right], i) => {
+      // One row per pair: the number, then the left and right names.
+      const row = within(
+        main().getByText(`Stat ${i + 1}`, { exact: true })
+          .parentElement as HTMLElement,
+      );
+      expect(
+        row
+          .getAllByRole("textbox")
+          .map((box) => box.getAttribute("aria-label")),
+      ).toEqual([`Stat ${i + 1} left name`, `Stat ${i + 1} right name`]);
+      expect(row.getByLabelText(`Stat ${i + 1} left name`)).toHaveValue(left);
+      expect(row.getByLabelText(`Stat ${i + 1} right name`)).toHaveValue(right);
+    });
   });
 
   it("refreshes pristine Overview fields on return without prompting or saving stale World values", async () => {
@@ -174,7 +197,7 @@ describe("World Overview", () => {
       finish(refreshed);
     });
     expect(main().getByLabelText("Stat 1 left name")).toHaveValue(
-      "[Stat 1A] changed",
+      "Scientific changed",
     );
     expect(main().getByLabelText("Game date")).toHaveValue("10 February 1962");
     await user.click(screen.getByRole("button", { name: "Notes" }));
@@ -207,21 +230,21 @@ describe("World Overview", () => {
     });
     expect(main().getByLabelText("Game date")).toHaveValue("12 March 1963");
     expect(main().getByLabelText("Stat 1 left name")).toHaveValue("Order");
-    await user.clear(main().getByLabelText("Stat 7 right name"));
-    await user.type(main().getByLabelText("Stat 7 right name"), "Chaos");
+    await user.clear(main().getByLabelText("Stat 8 right name"));
+    await user.type(main().getByLabelText("Stat 8 right name"), "Chaos");
     await user.click(main().getByRole("button", { name: "Save" }));
     expect(api.updateWorld).toHaveBeenCalledTimes(2);
     expect(api.updateWorld).toHaveBeenLastCalledWith({
       gameDate: "1963-03-12",
       statNames: [
-        { left: "Order", right: "[Stat 1B]" },
-        ...stale.statNames.slice(1, 6),
-        { left: "[Stat 7A]", right: "Chaos" },
+        { left: "Order", right: "Religious" },
+        ...stale.statNames.slice(1, 7),
+        { left: "Revolutionary", right: "Chaos" },
       ],
     });
     expect(store.world.gameDate).toBe("1963-03-12");
     expect(store.world.statNames[0].left).toBe("Order");
-    expect(store.world.statNames[6].right).toBe("Chaos");
+    expect(store.world.statNames[7].right).toBe("Chaos");
     await user.click(screen.getByRole("button", { name: "Notes" }));
     expect(screen.queryByRole("alertdialog")).not.toBeInTheDocument();
   });
@@ -307,7 +330,7 @@ describe("World Overview", () => {
       ],
     });
     expect(date).toHaveValue("11 February 1963");
-    expect(main().getByLabelText("Stat 1 right name")).toHaveValue("[Stat 1B]");
+    expect(main().getByLabelText("Stat 1 right name")).toHaveValue("Religious");
     await user.click(
       railPanel().getByRole("button", { name: "People of interest" }),
     );
@@ -336,15 +359,15 @@ describe("World Overview", () => {
     api.updateWorld.mockRejectedValueOnce("Disk full.");
     await user.clear(main().getByLabelText("Game date"));
     await user.type(main().getByLabelText("Game date"), "11 February 1962");
-    await user.clear(main().getByLabelText("Stat 7 right name"));
-    await user.type(main().getByLabelText("Stat 7 right name"), "Chaos");
+    await user.clear(main().getByLabelText("Stat 8 right name"));
+    await user.type(main().getByLabelText("Stat 8 right name"), "Chaos");
     await user.click(main().getByRole("button", { name: "Save" }));
     expect(await findAlert()).toHaveTextContent("Disk full.");
     expect(store.world.gameDate).toBe("1962-02-10");
-    expect(main().getByLabelText("Stat 7 right name")).toHaveValue("Chaos");
+    expect(main().getByLabelText("Stat 8 right name")).toHaveValue("Chaos");
     await user.click(main().getByRole("button", { name: "Save" }));
     expect(store.world.gameDate).toBe("1962-02-11");
-    expect(store.world.statNames[6].right).toBe("Chaos");
+    expect(store.world.statNames[7].right).toBe("Chaos");
   });
 
   it.each(["People of interest", "Notes", "Settings"])(
@@ -363,7 +386,7 @@ describe("World Overview", () => {
         }),
       );
       expect(main().getByLabelText("Stat 1 left name")).toHaveValue(
-        "[Stat 1A] changed",
+        "Scientific changed",
       );
       await user.click(target());
       await user.click(
@@ -379,7 +402,7 @@ describe("World Overview", () => {
         await user.click(screen.getByRole("button", { name: "World" }));
       }
       expect(await main().findByLabelText("Stat 1 left name")).toHaveValue(
-        "[Stat 1A]",
+        "Scientific",
       );
       expect(api.updateWorld).not.toHaveBeenCalled();
     },
@@ -645,7 +668,7 @@ describe("Add and edit form", () => {
       deathDate: null,
       deathCity: "",
       deathCountry: "",
-      stats: [58, null, null, null, null, null, null],
+      stats: [58, null, null, null, null, null, null, null],
       description: "",
     });
     expect(main().getByText("January 21, 1904")).toBeInTheDocument();
@@ -700,7 +723,7 @@ describe("Add and edit form", () => {
       ...otto(),
       id: undefined,
       photo: undefined,
-      stats: [58, null, null, null, null, null, null],
+      stats: [58, null, null, null, null, null, null, null],
       description: "Owns three mills in the Ruhr. And a newspaper.",
     });
     expect(
@@ -938,13 +961,16 @@ describe("Sheet", () => {
 
     await user.click(card("Otto Brandt"));
     const stats = within(main().getByRole("region", { name: "Stats" }));
-    expect(stats.getByText("[Stat 1A]").parentElement).toHaveTextContent(
-      "[Stat 1A]5842[Stat 1B]",
+    expect(stats.getByText("Scientific").parentElement).toHaveTextContent(
+      "Scientific5842Religious",
     );
-    expect(stats.getByText("[Stat 2A]").parentElement).toHaveTextContent(
-      "[Stat 2A]not set[Stat 2B]",
+    expect(stats.getByText("Rehabilitative").parentElement).toHaveTextContent(
+      "Rehabilitativenot setPunitive",
     );
-    expect(stats.getAllByText(/^\[Stat \dA\]$/)).toHaveLength(7);
+    expect(stats.getByText("Revolutionary").parentElement).toHaveTextContent(
+      "Revolutionarynot setReformist",
+    );
+    expect(stats.getAllByText("not set")).toHaveLength(6);
   });
 
   it("shows a saved photo, read as bytes", async () => {

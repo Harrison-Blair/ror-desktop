@@ -9,7 +9,7 @@ beforeEach(() => vi.clearAllMocks());
 it("sends the complete World in one command, preserving blank labels for the backend", async () => {
   const world: World = {
     gameDate: "1962-02-11",
-    statNames: Array.from({ length: 7 }, () => ({ left: "", right: "Order" })),
+    statNames: Array.from({ length: 8 }, () => ({ left: "", right: "Order" })),
   };
   const saved: World = {
     ...world,

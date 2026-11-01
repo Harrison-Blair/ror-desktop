@@ -225,7 +225,7 @@ export const birthplace = (
   person: Pick<Character, "birthCity" | "birthCountry">,
 ) => place(person.birthCity, person.birthCountry);
 
-// The edit form as typed. `stats` holds the seven left values as text.
+// The edit form as typed. `stats` holds the eight left values as text.
 export type CharacterForm = {
   name: string;
   birthDate: string;

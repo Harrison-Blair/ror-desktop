@@ -11,10 +11,16 @@ import type {
 // (src-tauri/src/world.rs), with their refusals and messages. Use it with
 //   vi.mock("@/lib/peopleApi", async () => (await import("@/test/fakePeople")).mockModule());
 
-const DEFAULT_NAMES: StatName[] = Array.from({ length: 7 }, (_, i) => ({
-  left: `[Stat ${i + 1}A]`,
-  right: `[Stat ${i + 1}B]`,
-}));
+const DEFAULT_NAMES: StatName[] = [
+  ["Scientific", "Religious"],
+  ["Rehabilitative", "Punitive"],
+  ["Progressive", "Conservative"],
+  ["Globalist", "Isolationist"],
+  ["Communist", "Capitalist"],
+  ["Regulationist", "Laissez Faire"],
+  ["Environmentalist", "Industrialist"],
+  ["Revolutionary", "Reformist"],
+].map(([left, right]) => ({ left, right }));
 
 type Store = {
   characters: Character[];
@@ -58,7 +64,7 @@ export const character = (
   deathDate: null,
   deathCity: "",
   deathCountry: "",
-  stats: Array(7).fill(null),
+  stats: Array(8).fill(null),
   description: "",
   photo: null,
   ...extra,

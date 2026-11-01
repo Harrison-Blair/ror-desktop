@@ -143,37 +143,31 @@ function OverviewForm({
         <h2 id={`${id}-labels`} className={styles.h3}>
           Stat labels
         </h2>
-        <div className={styles.form}>
-          {draft.statNames.map((names, i) => (
-            // The seven pairs have a fixed order.
-            // biome-ignore lint/suspicious/noArrayIndexKey: fixed stat pairs
-            <div key={i} className={styles.field}>
-              {(["left", "right"] as const).map((side) => (
-                <label key={side} className={styles.field}>
-                  <span className={styles.fieldLabel}>
-                    Stat {i + 1} {side} name
-                  </span>
-                  <input
-                    type="text"
-                    className={styles.input}
-                    value={names[side]}
-                    disabled={busy}
-                    onChange={(e) =>
-                      setDraft((current) => ({
-                        ...current,
-                        statNames: current.statNames.map((pair, index) =>
-                          index === i
-                            ? { ...pair, [side]: e.target.value }
-                            : pair,
-                        ),
-                      }))
-                    }
-                  />
-                </label>
-              ))}
-            </div>
-          ))}
-        </div>
+        {draft.statNames.map((names, i) => (
+          // The eight pairs have a fixed order.
+          // biome-ignore lint/suspicious/noArrayIndexKey: fixed stat pairs
+          <div key={i} className={styles.labelRow}>
+            <span className={styles.fieldLabel}>Stat {i + 1}</span>
+            {(["left", "right"] as const).map((side) => (
+              <input
+                key={side}
+                type="text"
+                className={styles.input}
+                aria-label={`Stat ${i + 1} ${side} name`}
+                value={names[side]}
+                disabled={busy}
+                onChange={(e) =>
+                  setDraft((current) => ({
+                    ...current,
+                    statNames: current.statNames.map((pair, index) =>
+                      index === i ? { ...pair, [side]: e.target.value } : pair,
+                    ),
+                  }))
+                }
+              />
+            ))}
+          </div>
+        ))}
       </section>
     </div>
   );

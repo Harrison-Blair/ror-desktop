@@ -234,9 +234,10 @@ describe("validateForm", () => {
     name: "Ada",
     birthDate: "",
     deathDate: "",
-    stats: ["", "", "", "", "", "", ""],
+    stats: ["", "", "", "", "", "", "", ""],
   };
   const noStatErrors = [
+    undefined,
     undefined,
     undefined,
     undefined,
@@ -310,7 +311,7 @@ describe("validateForm", () => {
 
   it("accepts whole numbers from 0 to 100 and empty stats", () => {
     const errors = validateForm(
-      { ...blank, stats: ["0", "100", " 45 ", "", "7", "99", "50"] },
+      { ...blank, stats: ["0", "100", " 45 ", "", "7", "99", "50", "100"] },
       GAME,
     );
     expect(errors.stats).toEqual(noStatErrors);
@@ -318,7 +319,7 @@ describe("validateForm", () => {
 
   it("refuses other stat values", () => {
     const errors = validateForm(
-      { ...blank, stats: ["101", "-1", "4.5", "abc", "1e2", "", "50"] },
+      { ...blank, stats: ["101", "-1", "4.5", "abc", "1e2", "", "50", "1.0"] },
       GAME,
     );
     const bad = "Use a whole number from 0 to 100.";
@@ -330,6 +331,7 @@ describe("validateForm", () => {
       bad,
       undefined,
       undefined,
+      bad,
     ]);
     expect(hasErrors(errors)).toBe(true);
   });

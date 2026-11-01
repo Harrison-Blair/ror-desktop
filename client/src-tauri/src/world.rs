@@ -13,9 +13,9 @@ use tauri::ipc::Response;
 use tauri::{AppHandle, Manager, WebviewWindow};
 use tauri_plugin_dialog::DialogExt;
 
-pub const STAT_COUNT: usize = 7;
+pub const STAT_COUNT: usize = 8;
 
-/// The left values of the seven stat pairs. Each right value is 100 − left.
+/// The left values of the eight stat pairs. Each right value is 100 − left.
 pub type Stats = [Option<u8>; STAT_COUNT];
 
 /// Reads an optional value whose key must be there: null is none, and a
@@ -78,9 +78,19 @@ impl Default for World {
     fn default() -> Self {
         World {
             game_date: "1962-02-10".to_string(),
-            stat_names: std::array::from_fn(|i| StatName {
-                left: format!("[Stat {}A]", i + 1),
-                right: format!("[Stat {}B]", i + 1),
+            stat_names: [
+                ("Scientific", "Religious"),
+                ("Rehabilitative", "Punitive"),
+                ("Progressive", "Conservative"),
+                ("Globalist", "Isolationist"),
+                ("Communist", "Capitalist"),
+                ("Regulationist", "Laissez Faire"),
+                ("Environmentalist", "Industrialist"),
+                ("Revolutionary", "Reformist"),
+            ]
+            .map(|(left, right)| StatName {
+                left: left.into(),
+                right: right.into(),
             }),
         }
     }
@@ -666,15 +676,15 @@ mod tests {
         assert_eq!(
             world.stat_names[0],
             StatName {
-                left: "[Stat 1A]".into(),
-                right: "[Stat 1B]".into()
+                left: "Scientific".into(),
+                right: "Religious".into()
             }
         );
         assert_eq!(
-            world.stat_names[6],
+            world.stat_names[7],
             StatName {
-                left: "[Stat 7A]".into(),
-                right: "[Stat 7B]".into()
+                left: "Revolutionary".into(),
+                right: "Reformist".into()
             }
         );
         assert!(!paths.data.exists());
@@ -685,7 +695,7 @@ mod tests {
         let (_temp, paths) = setup();
         let mut stats = [None; STAT_COUNT];
         stats[0] = Some(62);
-        stats[6] = Some(0);
+        stats[7] = Some(0);
         let fields = CharacterFields {
             name: "  Jun Nakamura ".into(),
             birth_date: Some("1925-11-09".into()),
@@ -712,7 +722,7 @@ mod tests {
                 "deathDate": "1961-08-03",
                 "deathCity": "Tokyo",
                 "deathCountry": "Japan",
-                "stats": [62, null, null, null, null, null, 0],
+                "stats": [62, null, null, null, null, null, null, 0],
                 "description": "Reported on the Anpo protests.",
                 "photo": null
             }]})
@@ -849,7 +859,7 @@ mod tests {
         json!({
             "id": "a", "name": "Ada", "birthDate": "1904-01-21", "birthCity": "",
             "birthCountry": "", "deathDate": null, "deathCity": "", "deathCountry": "",
-            "stats": [50, null, null, null, null, null, 0], "description": "",
+            "stats": [50, null, null, null, null, null, null, 0], "description": "",
             "photo": "a.png"
         })
     }
@@ -872,10 +882,16 @@ mod tests {
             ("birthDate", json!("21 January 1904")),
             ("deathDate", json!("1904-02-30")),
             ("deathDate", json!("1903-01-01")),
-            ("stats", json!([101, null, null, null, null, null, null])),
-            ("stats", json!([-1, null, null, null, null, null, null])),
-            ("stats", json!([1, 2, 3, 4, 5, 6])),
-            ("stats", json!([1, 2, 3, 4, 5, 6, 7, 8])),
+            (
+                "stats",
+                json!([101, null, null, null, null, null, null, null]),
+            ),
+            (
+                "stats",
+                json!([-1, null, null, null, null, null, null, null]),
+            ),
+            ("stats", json!([1, 2, 3, 4, 5, 6, 7])),
+            ("stats", json!([1, 2, 3, 4, 5, 6, 7, 8, 9])),
             ("photo", json!("../keep.png")),
             ("id", json!("")),
             ("id", json!("../a")),
@@ -944,6 +960,7 @@ mod tests {
         let names = World::default().stat_names;
         let mut empty_name = json!(names);
         empty_name[2]["right"] = json!(" ");
+        let nine_names = [&names[..], &names[..1]].concat();
         let texts = [
             "{ not json".to_string(),
             "[]".to_string(),
@@ -953,7 +970,8 @@ mod tests {
             json!({ "gameDate": 3, "statNames": names }).to_string(),
             json!({ "gameDate": "1962-99-10", "statNames": names }).to_string(),
             json!({ "gameDate": "10 February 1962", "statNames": names }).to_string(),
-            json!({ "gameDate": "1962-02-10", "statNames": names[..6] }).to_string(),
+            json!({ "gameDate": "1962-02-10", "statNames": names[..7] }).to_string(),
+            json!({ "gameDate": "1962-02-10", "statNames": nine_names }).to_string(),
             json!({ "gameDate": "1962-02-10", "statNames": empty_name }).to_string(),
         ];
         for text in texts {
@@ -1155,7 +1173,7 @@ mod tests {
             left: " Loyal ".into(),
             right: "Ambitious".into(),
         };
-        names[6].right = "Rich".into();
+        names[7].right = "Rich".into();
         let world = update_world(
             &paths,
             World {
@@ -1173,11 +1191,11 @@ mod tests {
         );
         assert_eq!(
             saved["statNames"][1],
-            json!({ "left": "[Stat 2A]", "right": "[Stat 2B]" })
+            json!({ "left": "Rehabilitative", "right": "Punitive" })
         );
         assert_eq!(
-            saved["statNames"][6],
-            json!({ "left": "[Stat 7A]", "right": "Rich" })
+            saved["statNames"][7],
+            json!({ "left": "Revolutionary", "right": "Rich" })
         );
     }
 

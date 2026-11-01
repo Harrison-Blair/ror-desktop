@@ -751,3 +751,12 @@ tbody .tr {
 .statError {
   padding-left: 130px;
 }
+
+/* World › Overview: one row per stat pair, the number and its two names. */
+.labelRow {
+  display: grid;
+  grid-template-columns: 56px minmax(0, 1fr) minmax(0, 1fr);
+  gap: var(--space-3);
+  align-items: center;
+  max-width: 720px;
+}

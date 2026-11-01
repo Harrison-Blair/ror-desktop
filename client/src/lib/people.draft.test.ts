@@ -13,7 +13,7 @@ const person: Character = {
   deathDate: "1961-08-03",
   deathCity: "London",
   deathCountry: "UK",
-  stats: [0, 100, null, 45, null, 7, 50],
+  stats: [0, 100, null, 45, null, 7, 50, null],
   description: "  A printer.\nKnows everyone.  ",
 };
 
@@ -35,7 +35,7 @@ describe("character draft adapter", () => {
     },
   );
 
-  it("creates independent blank drafts with seven empty stats", () => {
+  it("creates independent blank drafts with eight empty stats", () => {
     const draft = characterToDraft();
     expect(draft).toEqual({
       name: "",
@@ -45,7 +45,7 @@ describe("character draft adapter", () => {
       deathDate: "",
       deathCity: "",
       deathCountry: "",
-      stats: ["", "", "", "", "", "", ""],
+      stats: ["", "", "", "", "", "", "", ""],
       description: "",
     });
     draft.stats[0] = "50";
@@ -61,7 +61,7 @@ describe("character draft adapter", () => {
         deathDate: null,
         deathCity: "",
         deathCountry: "",
-        stats: [null, null, null, null, null, null, null],
+        stats: [null, null, null, null, null, null, null, null],
         description: "",
       },
     });
@@ -71,7 +71,7 @@ describe("character draft adapter", () => {
     const draft = characterToDraft(person);
     expect(draft.birthDate).toBe("14 June 1930");
     expect(draft.deathDate).toBe("3 August 1961");
-    expect(draft.stats).toEqual(["0", "100", "", "45", "", "7", "50"]);
+    expect(draft.stats).toEqual(["0", "100", "", "45", "", "7", "50", ""]);
     expect(draft).not.toHaveProperty("id");
     expect(draft).not.toHaveProperty("photo");
     const { id: _id, photo: _photo, ...fields } = person;
@@ -92,7 +92,7 @@ describe("character draft adapter", () => {
           deathDate: "  ",
           deathCity: " London ",
           deathCountry: " UK ",
-          stats: [" 0 ", "100", " ", "045", "", "7", "50"],
+          stats: [" 0 ", "100", " ", "045", "", "7", "50", " "],
         },
         GAME,
       ),
@@ -105,7 +105,7 @@ describe("character draft adapter", () => {
         deathDate: null,
         deathCity: "London",
         deathCountry: "UK",
-        stats: [0, 100, null, 45, null, 7, 50],
+        stats: [0, 100, null, 45, null, 7, 50, null],
         description: "  A printer.\nKnows everyone.  ",
       },
     });
