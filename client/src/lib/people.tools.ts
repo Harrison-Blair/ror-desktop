@@ -112,7 +112,10 @@ function applyInput(
   const next = { ...draft };
   for (const [name, key] of Object.entries(INPUT_OF)) {
     if (input[name] === undefined) continue;
-    next[key as Exclude<keyof CharacterDraft, "stats">] = text(input, name);
+    next[key as Exclude<keyof CharacterDraft, "stats" | "resume">] = text(
+      input,
+      name,
+    );
   }
   if (input.stats !== undefined) {
     const stats = input.stats;

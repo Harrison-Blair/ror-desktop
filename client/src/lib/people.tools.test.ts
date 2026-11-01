@@ -241,6 +241,9 @@ describe("people_create", () => {
       })),
       description: "Quiet.",
       photo: null,
+      birthState: "",
+      deathState: "",
+      resume: [],
     });
     expect(app.peopleChanged).toHaveBeenCalledTimes(1);
   });

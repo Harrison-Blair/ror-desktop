@@ -25,7 +25,7 @@ type Draft = CharacterDraft & {
   photo: string | null;
 };
 
-type TextField = Exclude<keyof CharacterDraft, "stats">;
+type TextField = Exclude<keyof CharacterDraft, "stats" | "resume">;
 
 const toDraft = (person?: Character): Draft => ({
   ...characterToDraft(person),

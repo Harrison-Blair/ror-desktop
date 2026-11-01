@@ -7,7 +7,11 @@ import {
   canDelete,
   cardDateLine,
   compareAge,
+  compareOccupation,
+  currentJobs,
   formatBoxDate,
+  formatJobBoxDate,
+  formatJobShortDate,
   formatLongDate,
   formatShortDate,
   gameDateError,
@@ -15,11 +19,20 @@ import {
   initials,
   isDead,
   isPlayer,
+  type JobDraft,
+  jobToDraft,
+  occupationLine,
   parseDate,
+  parseJobDate,
+  periodEnd,
+  periodStart,
   placeLine,
+  resumeDateText,
   sheetDateLine,
+  sortResume,
   validateForm,
 } from "@/lib/people";
+import type { Job } from "@/lib/peopleApi";
 
 const GAME = "1962-02-10";
 
@@ -200,7 +213,17 @@ describe("place lines", () => {
     deathDate: string | null = null,
     deathCity = "",
     deathCountry = "",
-  ) => ({ birthCity, birthCountry, deathDate, deathCity, deathCountry });
+    birthState = "",
+    deathState = "",
+  ) => ({
+    birthCity,
+    birthState,
+    birthCountry,
+    deathDate,
+    deathCity,
+    deathState,
+    deathCountry,
+  });
 
   it.each([
     [p("Dortmund", "Germany"), "Dortmund, Germany"],
@@ -217,6 +240,22 @@ describe("place lines", () => {
     [p("", "", "1961-08-03"), ""],
     [p("Osaka", "Japan", null, "Tokyo", "Japan"), "Osaka, Japan"],
     [p(" Osaka ", "  "), "Osaka"],
+    [p("Austin", "USA", null, "", "", "Texas"), "Austin, Texas, USA"],
+    [p("", "USA", null, "", "", " Texas "), "Texas, USA"],
+    [
+      p(
+        "Austin",
+        "USA",
+        "1961-08-03",
+        "Paris",
+        "France",
+        "Texas",
+        "Île-de-France",
+      ),
+      "Austin, Texas, USA – Paris, Île-de-France, France",
+    ],
+    [p("", "", "1961-08-03", "", "", "", "Bavaria"), "Bavaria"],
+    [p("", "", null, "", "", "", "Bavaria"), ""],
   ])("writes %j as %j", (person, line) => {
     expect(placeLine(person)).toBe(line);
   });
@@ -226,6 +265,9 @@ describe("place lines", () => {
       "Brno, Czechoslovakia",
     );
     expect(birthplace(p("", "Czechoslovakia"))).toBe("Czechoslovakia");
+    expect(
+      birthplace(p("Brno", "Czechoslovakia", null, "", "", "Moravia")),
+    ).toBe("Brno, Moravia, Czechoslovakia");
   });
 });
 
@@ -250,6 +292,7 @@ describe("validateForm", () => {
       birthDate: undefined,
       deathDate: undefined,
       stats: noStatErrors,
+      resume: [],
     });
     expect(hasErrors(errors)).toBe(false);
   });
@@ -354,5 +397,392 @@ describe("initials", () => {
     expect(initials("Jean Paul Sartre")).toBe("JP");
     expect(initials("Ada")).toBe("A");
     expect(initials("")).toBe("");
+  });
+});
+
+describe("parseJobDate", () => {
+  it.each([
+    ["1950", "1950"],
+    [" 1950 ", "1950"],
+    ["March 1950", "1950-03"],
+    ["Mar 1950", "1950-03"],
+    ["mar. 1950", "1950-03"],
+    ["Sept, 1950", "1950-09"],
+    ["1950-03", "1950-03"],
+    ["1950-3", "1950-03"],
+    ["3 March 1950", "1950-03-03"],
+    ["March 3, 1950", "1950-03-03"],
+    ["1950-03-03", "1950-03-03"],
+    ["3/3/1950", "1950-03-03"],
+  ])("reads %j", (text, date) => {
+    expect(parseJobDate(text)).toEqual({ date });
+  });
+
+  it.each(["", "50", "19501", "Foo 1950", "Ma 1950", "1950/03", "next year"])(
+    "refuses the form of %j",
+    (text) => {
+      expect(parseJobDate(text)).toEqual({
+        error: "Use a year, a month and year, or a full date.",
+      });
+    },
+  );
+
+  it.each(["1950-13", "1950-00", "30 February 1950", "1900-02-29"])(
+    "refuses %j as not real",
+    (text) => {
+      expect(parseJobDate(text)).toEqual({ error: "Not a real date." });
+    },
+  );
+
+  it("leaves birth and death dates needing a full date", () => {
+    expect(parseDate("1950")).toEqual({ error: "Use day, month and year." });
+    expect(parseDate("March 1950")).toEqual({
+      error: "Use day, month and year.",
+    });
+  });
+});
+
+describe("job date periods and formats", () => {
+  it("counts a partial date from the first to the last day of its period", () => {
+    expect(periodStart("1950")).toBe("1950-01-01");
+    expect(periodEnd("1950")).toBe("1950-12-31");
+    expect(periodStart("1950-02")).toBe("1950-02-01");
+    expect(periodEnd("1950-02")).toBe("1950-02-28");
+    expect(periodEnd("1960-02")).toBe("1960-02-29");
+    expect(periodEnd("1950-04")).toBe("1950-04-30");
+    expect(periodStart("1950-02-14")).toBe("1950-02-14");
+    expect(periodEnd("1950-02-14")).toBe("1950-02-14");
+  });
+
+  it("writes the box and the short forms", () => {
+    expect(formatJobBoxDate("1950")).toBe("1950");
+    expect(formatJobBoxDate("1950-03")).toBe("March 1950");
+    expect(formatJobBoxDate("1950-03-03")).toBe("3 March 1950");
+    expect(formatJobShortDate("1950")).toBe("1950");
+    expect(formatJobShortDate("1950-03")).toBe("Mar 1950");
+    expect(formatJobShortDate("1950-03-03")).toBe("Mar 3, 1950");
+  });
+
+  it.each(["1950", "1950-03", "1950-03-03"])(
+    "reads its own box form of %s back",
+    (date) => {
+      expect(parseJobDate(formatJobBoxDate(date))).toEqual({ date });
+    },
+  );
+});
+
+const job = (
+  name: string,
+  startDate: string,
+  endDate: string | null = null,
+  employer = "",
+): Job => ({
+  id: name,
+  job: name,
+  employer,
+  startDate,
+  endDate,
+  description: "",
+});
+
+describe("resume order and current jobs", () => {
+  it("puts the newest start first, a partial start at its first day", () => {
+    const resume = [
+      job("a", "1950-06-15"),
+      job("b", "1950"),
+      job("c", "1951-01"),
+      job("d", "1950-06"),
+      job("e", "1950-01-01"),
+    ];
+    expect(sortResume(resume).map((j) => j.job)).toEqual([
+      "c",
+      "a",
+      "d",
+      "b",
+      "e",
+    ]);
+    expect(resume.map((j) => j.job)).toEqual(["a", "b", "c", "d", "e"]);
+  });
+
+  it("finds the jobs whose period holds the game date", () => {
+    const person = {
+      deathDate: null,
+      resume: [
+        job("ended", "1940", "1950"),
+        job("open", "1955"),
+        job("this month", "1962-01", "1962-02"),
+        job("ends on the day", "1960", "1962-02-10"),
+        job("ended the day before", "1960", "1962-02-09"),
+        job("starts tomorrow", "1962-02-11"),
+      ],
+    };
+    expect(currentJobs(person, GAME).map((j) => j.job)).toEqual([
+      "this month",
+      "ends on the day",
+      "open",
+    ]);
+  });
+
+  it("uses the death date for the dead", () => {
+    const person = {
+      deathDate: "1961-08-03",
+      resume: [
+        job("before", "1950", "1961-07"),
+        job("open", "1955"),
+        job("held at death", "1960", "1961-12"),
+      ],
+    };
+    expect(currentJobs(person, GAME).map((j) => j.job)).toEqual([
+      "held at death",
+      "open",
+    ]);
+  });
+});
+
+describe("occupationLine", () => {
+  const at = (...resume: Job[]) =>
+    occupationLine({ deathDate: null, resume }, GAME);
+
+  it("writes one current job with its employer", () => {
+    expect(at(job("Reporter", "1950", null, "Asahi"))).toBe("Reporter, Asahi");
+    expect(at(job("Reporter", "1950"))).toBe("Reporter");
+  });
+
+  it("writes only the names of two or more current jobs, newest first", () => {
+    expect(
+      at(
+        job("Reporter", "1950", null, "Asahi"),
+        job("Poet", "1955", null, "Self"),
+      ),
+    ).toBe("Poet · Reporter");
+  });
+
+  it("is empty with no current job", () => {
+    expect(at()).toBe("");
+    expect(at(job("Reporter", "1950", "1955"))).toBe("");
+  });
+});
+
+describe("resumeDateText", () => {
+  it("writes the start and the end", () => {
+    expect(resumeDateText(job("a", "1950", "1955"), null)).toBe("1950 – 1955");
+    expect(resumeDateText(job("a", "1950-03", "1955-03-03"), null)).toBe(
+      "Mar 1950 – Mar 3, 1955",
+    );
+  });
+
+  it("writes present for an open job of the living", () => {
+    expect(resumeDateText(job("a", "1950-03"), null)).toBe(
+      "Mar 1950 – present",
+    );
+  });
+
+  it("ends an open job of the dead at the death date, as exact as the start", () => {
+    const death = "1961-08-03";
+    expect(resumeDateText(job("a", "1931"), death)).toBe("1931 – 1961");
+    expect(resumeDateText(job("a", "1931-03"), death)).toBe(
+      "Mar 1931 – Aug 1961",
+    );
+    expect(resumeDateText(job("a", "1931-03-02"), death)).toBe(
+      "Mar 2, 1931 – Aug 3, 1961",
+    );
+    expect(resumeDateText(job("a", "1931", "1940"), death)).toBe("1931 – 1940");
+  });
+});
+
+describe("compareOccupation", () => {
+  const people = [
+    { name: "none 1", deathDate: null, resume: [] },
+    { name: "typist", deathDate: null, resume: [job("Typist", "1950")] },
+    { name: "clerk", deathDate: null, resume: [job("Clerk", "1950")] },
+    { name: "none 2", deathDate: null, resume: [job("Old", "1940", "1941")] },
+    { name: "mayor", deathDate: null, resume: [job("Mayor", "1950")] },
+  ];
+  const sorted = (direction: "asc" | "desc") =>
+    [...people]
+      .sort((a, b) => compareOccupation(a, b, GAME, direction))
+      .map((p) => p.name);
+
+  it("sorts A to Z with no occupation last", () => {
+    expect(sorted("asc")).toEqual([
+      "clerk",
+      "mayor",
+      "typist",
+      "none 1",
+      "none 2",
+    ]);
+  });
+
+  it("sorts Z to A with no occupation still last", () => {
+    expect(sorted("desc")).toEqual([
+      "typist",
+      "mayor",
+      "clerk",
+      "none 1",
+      "none 2",
+    ]);
+  });
+});
+
+describe("validateForm resume rows", () => {
+  const row = (extra: Partial<JobDraft> = {}): JobDraft => ({
+    ...jobToDraft(),
+    job: "Clerk",
+    startDate: "1950",
+    ...extra,
+  });
+  const form = (resume: JobDraft[], birthDate = "", deathDate = "") => ({
+    name: "Ada",
+    birthDate,
+    deathDate,
+    stats: Array.from({ length: 8 }, () => ({ left: "", right: "" })),
+    resume,
+  });
+  const rowErrors = (r: JobDraft, birth = "", death = "") =>
+    validateForm(form([r], birth, death), GAME).resume?.[0];
+
+  it("accepts a good row", () => {
+    const errors = validateForm(form([row()]), GAME);
+    expect(errors.resume).toEqual([
+      { job: undefined, startDate: undefined, endDate: undefined },
+    ]);
+    expect(hasErrors(errors)).toBe(false);
+  });
+
+  it("asks for a job and a start date", () => {
+    const errors = validateForm(
+      form([row({ job: " ", startDate: " " })]),
+      GAME,
+    );
+    expect(errors.resume?.[0]).toEqual({
+      job: "Enter a job.",
+      startDate: "Enter a start date.",
+      endDate: undefined,
+    });
+    expect(hasErrors(errors)).toBe(true);
+  });
+
+  it("reports date forms and dates that don't exist", () => {
+    expect(rowErrors(row({ startDate: "soon", endDate: "1950-13" }))).toEqual({
+      job: undefined,
+      startDate: "Use a year, a month and year, or a full date.",
+      endDate: "Not a real date.",
+    });
+  });
+
+  it("refuses an end before the start, counting whole periods", () => {
+    expect(
+      rowErrors(row({ startDate: "June 1950", endDate: "31 May 1950" }))
+        ?.endDate,
+    ).toBe("End date is before the start date.");
+    expect(
+      rowErrors(row({ startDate: "June 1950", endDate: "1950" }))?.endDate,
+    ).toBeUndefined();
+    expect(
+      rowErrors(row({ startDate: "1950", endDate: "1 January 1950" }))?.endDate,
+    ).toBeUndefined();
+  });
+
+  it("refuses a start after the game date", () => {
+    expect(rowErrors(row({ startDate: "11 February 1962" }))?.startDate).toBe(
+      "Start date is after the game date.",
+    );
+    expect(rowErrors(row({ startDate: "1962" }))?.startDate).toBeUndefined();
+    expect(rowErrors(row({ startDate: "March 1962" }))?.startDate).toBe(
+      "Start date is after the game date.",
+    );
+  });
+
+  it("refuses a start before the birth date and shows it on the birth date", () => {
+    const errors = validateForm(
+      form(
+        [row({ job: " Clerk ", startDate: "February 1950" })],
+        "2 March 1950",
+      ),
+      GAME,
+    );
+    expect(errors.resume?.[0].startDate).toBe(
+      "Start date is before the birth date.",
+    );
+    expect(errors.birthDate).toBe(
+      "Birth date is after the start of a job (Clerk, February 1950).",
+    );
+    for (const startDate of ["1949", "1 March 1950"]) {
+      expect(
+        validateForm(form([row({ startDate })], "2 March 1950"), GAME)
+          .resume?.[0].startDate,
+      ).toBe("Start date is before the birth date.");
+    }
+  });
+
+  it.each(["1950", "March 1950", "2 March 1950"])(
+    "lets a start of %j touch the birth date of 2 March 1950",
+    (startDate) => {
+      const errors = validateForm(
+        form([row({ startDate })], "2 March 1950"),
+        GAME,
+      );
+      expect(errors.resume?.[0].startDate).toBeUndefined();
+      expect(errors.birthDate).toBeUndefined();
+    },
+  );
+
+  it("refuses an end after the death date and shows it on the death date", () => {
+    const errors = validateForm(
+      form([row({ endDate: "September 1961" })], "", "3 August 1961"),
+      GAME,
+    );
+    expect(errors.resume?.[0].endDate).toBe(
+      "End date is after the death date.",
+    );
+    expect(errors.deathDate).toBe(
+      "Death date is before the end of a job (Clerk, September 1961).",
+    );
+    for (const endDate of ["1962", "4 August 1961"]) {
+      expect(
+        validateForm(form([row({ endDate })], "", "3 August 1961"), GAME)
+          .resume?.[0].endDate,
+      ).toBe("End date is after the death date.");
+    }
+  });
+
+  it.each(["1961", "August 1961", "3/8/1961"])(
+    "lets an end of %j touch the death date of 3 August 1961",
+    (endDate) => {
+      const errors = validateForm(
+        form([row({ endDate })], "", "3 August 1961"),
+        GAME,
+      );
+      expect(errors.resume?.[0].endDate).toBeUndefined();
+      expect(errors.deathDate).toBeUndefined();
+    },
+  );
+
+  it("lets an open job of the dead end at the death date", () => {
+    const errors = validateForm(form([row()], "", "3 August 1961"), GAME);
+    expect(errors.deathDate).toBeUndefined();
+    expect(hasErrors(errors)).toBe(false);
+  });
+
+  it("keeps the person's own date errors first", () => {
+    const errors = validateForm(
+      form(
+        [row({ startDate: "1920", endDate: "1965" })],
+        "soon",
+        "1 March 1962",
+      ),
+      GAME,
+    );
+    expect(errors.birthDate).toBe("Use day, month and year.");
+    expect(errors.deathDate).toBe("Death date is after the game date.");
+  });
+
+  it("gives errors per row", () => {
+    const errors = validateForm(form([row(), row({ job: "" }), row()]), GAME);
+    expect(errors.resume?.map((e) => e.job)).toEqual([
+      undefined,
+      "Enter a job.",
+      undefined,
+    ]);
   });
 });

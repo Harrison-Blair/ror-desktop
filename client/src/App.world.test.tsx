@@ -685,6 +685,9 @@ describe("Add and edit form", () => {
         right: null,
       })),
       description: "",
+      birthState: "",
+      deathState: "",
+      resume: [],
     });
     expect(main().getByText("January 21, 1904")).toBeInTheDocument();
     expect(main().getByText("Dortmund, Germany")).toBeInTheDocument();

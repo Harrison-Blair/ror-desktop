@@ -34,6 +34,27 @@ fn present<'de, D: Deserializer<'de>, T: Deserialize<'de>>(
     Option::deserialize(d)
 }
 
+/// One job in a character's resume. Dates are `YYYY`, `YYYY-MM` or
+/// `YYYY-MM-DD`. A partial start counts from the first day of its period,
+/// and a partial end to the last day of its period. Against the birth and
+/// death dates a partial date conflicts only when its whole period is
+/// outside the life.
+#[derive(Clone, Debug, Default, PartialEq, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct Job {
+    /// A uuid v4. A job sent with an empty or missing id gets a new one when
+    /// it is saved.
+    #[serde(default)]
+    pub id: String,
+    pub job: String,
+    pub employer: String,
+    pub start_date: String,
+    /// None while the job goes on.
+    #[serde(deserialize_with = "present")]
+    pub end_date: Option<String>,
+    pub description: String,
+}
+
 /// Everything about a character that the edit form sets. Dates are
 /// `YYYY-MM-DD`. An empty place is unknown.
 #[derive(Clone, Debug, Default, PartialEq, Serialize, Deserialize)]
@@ -43,13 +64,20 @@ pub struct CharacterFields {
     #[serde(deserialize_with = "present")]
     pub birth_date: Option<String>,
     pub birth_city: String,
+    // Files saved before states and resumes existed lack these keys.
+    #[serde(default)]
+    pub birth_state: String,
     pub birth_country: String,
     #[serde(deserialize_with = "present")]
     pub death_date: Option<String>,
     pub death_city: String,
+    #[serde(default)]
+    pub death_state: String,
     pub death_country: String,
     pub stats: Stats,
     pub description: String,
+    #[serde(default)]
+    pub resume: Vec<Job>,
 }
 
 #[derive(Clone, Debug, PartialEq, Serialize, Deserialize)]
@@ -284,6 +312,7 @@ fn is_leap(year: u32) -> bool {
 /// Whether `text` is a date that exists, written `YYYY-MM-DD`.
 pub fn is_iso_date(text: &str) -> bool {
     let b = text.as_bytes();
+    // Bytes 4 and 7 are ASCII, so every slice below is on a char boundary.
     if b.len() != 10 || b[4] != b'-' || b[7] != b'-' {
         return false;
     }
@@ -305,6 +334,63 @@ pub fn is_iso_date(text: &str) -> bool {
         _ => return false,
     };
     (1..=days).contains(&d)
+}
+
+/// The first and last day, `YYYY-MM-DD`, of a job date's period: a year, a
+/// month or a day. None when it is not `YYYY`, `YYYY-MM` or a real
+/// `YYYY-MM-DD`.
+pub fn job_period(text: &str) -> Option<(String, String)> {
+    // Only ASCII text can be sliced by byte below.
+    if !text.is_ascii() {
+        return None;
+    }
+    let digits = |s: &str| !s.is_empty() && s.bytes().all(|c| c.is_ascii_digit());
+    match text.len() {
+        4 if digits(text) => Some((format!("{text}-01-01"), format!("{text}-12-31"))),
+        7 if digits(&text[0..4]) && text.as_bytes()[4] == b'-' && digits(&text[5..7]) => {
+            // The last day of the month is the day before the next first.
+            (28..=31)
+                .rev()
+                .map(|d| format!("{text}-{d:02}"))
+                .find(|d| is_iso_date(d))
+                .map(|last| (format!("{text}-01"), last))
+        }
+        10 if is_iso_date(text) => Some((text.to_string(), text.to_string())),
+        _ => None,
+    }
+}
+
+/// The rules for one job against the character's own dates. A partial date
+/// conflicts with the birth or death date only when its whole period is
+/// outside the life.
+fn valid_job(job: &Job, f: &CharacterFields) -> std::result::Result<(), String> {
+    if job.job.trim().is_empty() {
+        return Err("Enter a job.".to_string());
+    }
+    if job.start_date.trim().is_empty() {
+        return Err("Enter a start date.".to_string());
+    }
+    let not_real = || "Not a real date.".to_string();
+    let (start, start_last) = job_period(&job.start_date).ok_or_else(not_real)?;
+    let end = match &job.end_date {
+        Some(end) => Some(job_period(end).ok_or_else(not_real)?),
+        None => None,
+    };
+    if end.as_ref().is_some_and(|(_, last)| last < &start) {
+        return Err("End date is before the start date.".to_string());
+    }
+    if f.birth_date
+        .as_ref()
+        .is_some_and(|birth| &start_last < birth)
+    {
+        return Err("Start date is before the birth date.".to_string());
+    }
+    if let (Some((end_first, _)), Some(death)) = (&end, &f.death_date) {
+        if end_first > death {
+            return Err("End date is after the death date.".to_string());
+        }
+    }
+    Ok(())
 }
 
 /// The rules for a character's fields, on input and in the saved file.
@@ -333,17 +419,27 @@ fn valid_fields(f: &CharacterFields) -> std::result::Result<(), String> {
     }) {
         return Err("Use a whole number within the safe integer range.".to_string());
     }
+    let mut ids = std::collections::HashSet::new();
+    for job in &f.resume {
+        if job.id.is_empty() || !ids.insert(job.id.as_str()) {
+            return Err("A job id is empty or repeated.".to_string());
+        }
+        valid_job(job, f)?;
+    }
     Ok(())
 }
 
-/// Tidies and checks the fields: the name and places are trimmed, an empty
-/// date is none.
+/// Tidies and checks the fields: the name, places and job texts other than
+/// the description are trimmed, an empty date is none, and a job without an
+/// id gets a new one.
 fn checked(mut f: CharacterFields) -> Result<CharacterFields> {
     for place in [
         &mut f.name,
         &mut f.birth_city,
+        &mut f.birth_state,
         &mut f.birth_country,
         &mut f.death_city,
+        &mut f.death_state,
         &mut f.death_country,
     ] {
         *place = place.trim().to_string();
@@ -353,11 +449,26 @@ fn checked(mut f: CharacterFields) -> Result<CharacterFields> {
             *date = None;
         }
     }
+    for job in &mut f.resume {
+        for text in [&mut job.job, &mut job.employer, &mut job.start_date] {
+            *text = text.trim().to_string();
+        }
+        job.end_date = job
+            .end_date
+            .take()
+            .map(|d| d.trim().to_string())
+            .filter(|d| !d.is_empty());
+        if job.id.is_empty() {
+            job.id = uuid::Uuid::new_v4().to_string();
+        }
+    }
     valid_fields(&f)?;
     Ok(f)
 }
 
-fn valid_death_date(fields: &CharacterFields, world: &World) -> Result<()> {
+/// The rules that depend on the game date: no death and no job start after
+/// it.
+fn valid_for_world(fields: &CharacterFields, world: &World) -> Result<()> {
     if fields
         .death_date
         .as_ref()
@@ -365,7 +476,19 @@ fn valid_death_date(fields: &CharacterFields, world: &World) -> Result<()> {
     {
         return Err("Death date is after the game date.".to_string());
     }
+    if fields
+        .resume
+        .iter()
+        .any(|job| starts_after(job, &world.game_date))
+    {
+        return Err("Start date is after the game date.".to_string());
+    }
     Ok(())
+}
+
+/// Whether the first day of the job's start is after `date`.
+fn starts_after(job: &Job, date: &str) -> bool {
+    job_period(&job.start_date).is_some_and(|(start, _)| start.as_str() > date)
 }
 
 /// A plain file name, never a path.
@@ -409,7 +532,7 @@ pub fn list(paths: &Paths) -> Result<People> {
 pub fn create(paths: &Paths, fields: CharacterFields) -> Result<Character> {
     let fields = checked(fields)?;
     let _guard = lock();
-    valid_death_date(&fields, &get_world(paths)?)?;
+    valid_for_world(&fields, &get_world(paths)?)?;
     let mut characters = read_characters(paths)?;
     let character = Character {
         id: uuid::Uuid::new_v4().to_string(),
@@ -425,7 +548,7 @@ pub fn create(paths: &Paths, fields: CharacterFields) -> Result<Character> {
 pub fn update(paths: &Paths, id: &str, fields: CharacterFields) -> Result<Character> {
     let fields = checked(fields)?;
     let _guard = lock();
-    valid_death_date(&fields, &get_world(paths)?)?;
+    valid_for_world(&fields, &get_world(paths)?)?;
     let mut characters = read_characters(paths)?;
     let character = characters
         .iter_mut()
@@ -612,6 +735,17 @@ pub fn update_world(paths: &Paths, mut world: World) -> Result<World> {
                 character.fields.name
             ));
         }
+        let fields = &character.fields;
+        if let Some(job) = fields
+            .resume
+            .iter()
+            .find(|job| starts_after(job, &world.game_date))
+        {
+            return Err(format!(
+                "Game date is before the start of {}'s job as {}.",
+                fields.name, job.job
+            ));
+        }
     }
     write(&paths.world(), &world, "the world")?;
     Ok(world)
@@ -758,16 +892,28 @@ mod tests {
             name: "  Jun Nakamura ".into(),
             birth_date: Some("1925-11-09".into()),
             birth_city: " Osaka".into(),
+            birth_state: " Osaka Prefecture ".into(),
             birth_country: "Japan".into(),
             death_date: Some("1961-08-03".into()),
             death_city: "Tokyo".into(),
+            death_state: "Tokyo ".into(),
             death_country: "Japan".into(),
             stats,
             description: "Reported on the Anpo protests.".into(),
+            resume: vec![Job {
+                id: String::new(),
+                job: " Reporter ".into(),
+                employer: " Asahi Shimbun".into(),
+                start_date: " 1950-04 ".into(),
+                end_date: Some(" ".into()),
+                description: "  Politics desk.\n".into(),
+            }],
         };
         let jun = create(&paths, fields).unwrap();
         assert_eq!(jun.fields.name, "Jun Nakamura");
         assert_eq!(jun.fields.birth_city, "Osaka");
+        let job_id = &jun.fields.resume[0].id;
+        assert!(uuid::Uuid::parse_str(job_id).is_ok(), "{job_id}");
         assert_eq!(list(&paths).unwrap().characters, vec![jun.clone()]);
         assert_eq!(
             saved_json(&paths.data.join("characters.json")),
@@ -776,12 +922,22 @@ mod tests {
                 "name": "Jun Nakamura",
                 "birthDate": "1925-11-09",
                 "birthCity": "Osaka",
+                "birthState": "Osaka Prefecture",
                 "birthCountry": "Japan",
                 "deathDate": "1961-08-03",
                 "deathCity": "Tokyo",
+                "deathState": "Tokyo",
                 "deathCountry": "Japan",
                 "stats": [{"left": -62, "right": 140}, {"left": null, "right": null}, {"left": null, "right": null}, {"left": null, "right": null}, {"left": null, "right": null}, {"left": null, "right": null}, {"left": null, "right": null}, {"left": null, "right": 0}],
                 "description": "Reported on the Anpo protests.",
+                "resume": [{
+                    "id": job_id,
+                    "job": "Reporter",
+                    "employer": "Asahi Shimbun",
+                    "startDate": "1950-04",
+                    "endDate": null,
+                    "description": "  Politics desk.\n"
+                }],
                 "photo": null
             }]})
         );
@@ -983,9 +1139,20 @@ mod tests {
             "id": "a", "name": "Ada", "birthDate": "1904-01-21", "birthCity": "",
             "birthCountry": "", "deathDate": null, "deathCity": "", "deathCountry": "",
             "stats": [{"left": 50, "right": -2}, {"left": null, "right": null}, {"left": null, "right": null}, {"left": null, "right": null}, {"left": null, "right": null}, {"left": null, "right": null}, {"left": null, "right": null}, {"left": null, "right": 0}], "description": "",
-            "photo": "a.png"
+            "photo": "a.png", "birthState": "", "deathState": "",
+            "resume": [a_good_job()]
         })
     }
+
+    fn a_good_job() -> serde_json::Value {
+        json!({
+            "id": "j1", "job": "Clerk", "employer": "", "startDate": "1925",
+            "endDate": "1930-06", "description": ""
+        })
+    }
+
+    // Keys that files saved before resumes existed lack.
+    const NEWER_KEYS: [&str; 3] = ["birthState", "deathState", "resume"];
 
     // Every way a characters.json can be damaged: not JSON, the wrong shape,
     // a missing field, or a value the app never saves.
@@ -999,7 +1166,9 @@ mod tests {
         ]
         .map(String::from)
         .to_vec();
-        let changes: [(&str, serde_json::Value); 13] = [
+        let changes: [(&str, serde_json::Value); 15] = [
+            ("birthDate", json!("1é4-01-21")),
+            ("deathDate", json!("19é0-01-2")),
             ("name", json!("  ")),
             ("birthDate", json!("1904-99-21")),
             ("birthDate", json!("21 January 1904")),
@@ -1025,12 +1194,46 @@ mod tests {
             c[key] = value;
             texts.push(json!({ "characters": [c] }).to_string());
         }
-        // Every key must be there, including the ones that may be null.
+        // Every key must be there, including the ones that may be null, but
+        // for the newer keys.
         for key in a_good_character().as_object().unwrap().keys() {
+            if NEWER_KEYS.contains(&key.as_str()) {
+                continue;
+            }
             let mut c = a_good_character();
             c.as_object_mut().unwrap().remove(key);
             texts.push(json!({ "characters": [c] }).to_string());
         }
+        // A job keeps the same rules, and needs every key.
+        // Text that is not ASCII must not be sliced inside a character.
+        let job_changes: [(&str, serde_json::Value); 13] = [
+            ("startDate", json!("123é12")),
+            ("endDate", json!("123é12")),
+            ("startDate", json!("1é4-01-21")),
+            ("endDate", json!("19é0")),
+            ("id", json!("")),
+            ("job", json!(" ")),
+            ("startDate", json!("")),
+            ("startDate", json!("1925-13")),
+            ("startDate", json!("March 1925")),
+            ("endDate", json!("1930-02-30")),
+            ("endDate", json!("1924")),
+            ("startDate", json!("1903-12")),
+            ("description", serde_json::Value::Null),
+        ];
+        for (key, value) in job_changes {
+            let mut c = a_good_character();
+            c["resume"][0][key] = value;
+            texts.push(json!({ "characters": [c] }).to_string());
+        }
+        for key in a_good_job().as_object().unwrap().keys() {
+            let mut c = a_good_character();
+            c["resume"][0].as_object_mut().unwrap().remove(key);
+            texts.push(json!({ "characters": [c] }).to_string());
+        }
+        let mut twice = a_good_character();
+        twice["resume"] = json!([a_good_job(), a_good_job()]);
+        texts.push(json!({ "characters": [twice] }).to_string());
         texts.push(json!({ "characters": [a_good_character(), a_good_character()] }).to_string());
         texts
     }
@@ -1050,6 +1253,23 @@ mod tests {
         assert_eq!(characters[0].fields.death_date, None);
         assert_eq!(characters[1].fields.birth_date, None);
         assert_eq!(characters[1].photo, None);
+    }
+
+    #[test]
+    fn a_file_saved_before_resumes_loads_with_empty_states_and_resume() {
+        let (_temp, paths) = setup();
+        fs::create_dir_all(&paths.data).unwrap();
+        let mut old = a_good_character();
+        for key in NEWER_KEYS {
+            old.as_object_mut().unwrap().remove(key);
+        }
+        let text = json!({ "characters": [old] }).to_string();
+        fs::write(paths.characters(), &text).unwrap();
+        let fields = &list(&paths).unwrap().characters[0].fields;
+        assert_eq!(fields.birth_state, "");
+        assert_eq!(fields.death_state, "");
+        assert_eq!(fields.resume, vec![]);
+        assert_eq!(fs::read_to_string(paths.characters()).unwrap(), text);
     }
 
     #[test]
@@ -1093,6 +1313,7 @@ mod tests {
             json!({ "gameDate": 3, "statNames": names }).to_string(),
             json!({ "gameDate": "1962-99-10", "statNames": names }).to_string(),
             json!({ "gameDate": "10 February 1962", "statNames": names }).to_string(),
+            json!({ "gameDate": "1é6-02-10", "statNames": names }).to_string(),
             json!({ "gameDate": "1962-02-10", "statNames": names[..7] }).to_string(),
             json!({ "gameDate": "1962-02-10", "statNames": nine_names }).to_string(),
             json!({ "gameDate": "1962-02-10", "statNames": empty_name }).to_string(),
@@ -1527,5 +1748,229 @@ mod tests {
             "{error}"
         );
         assert_eq!(read_photo(&paths, &ada.id).unwrap(), b"gif");
+    }
+
+    fn job(name: &str, start: &str, end: Option<&str>) -> Job {
+        Job {
+            job: name.into(),
+            start_date: start.into(),
+            end_date: end.map(String::from),
+            ..Default::default()
+        }
+    }
+
+    fn with_jobs(birth: Option<&str>, death: Option<&str>, jobs: Vec<Job>) -> CharacterFields {
+        CharacterFields {
+            birth_date: birth.map(String::from),
+            death_date: death.map(String::from),
+            resume: jobs,
+            ..named("Ada")
+        }
+    }
+
+    #[test]
+    fn bad_jobs_are_refused_and_nothing_is_saved() {
+        let (_temp, paths) = setup();
+        let one = |j: Job| with_jobs(None, None, vec![j]);
+        let cases = [
+            (one(job("  ", "1950", None)), "Enter a job."),
+            (one(job("Clerk", " ", None)), "Enter a start date."),
+            (one(job("Clerk", "1950-02-30", None)), "Not a real date."),
+            (one(job("Clerk", "1950-13", None)), "Not a real date."),
+            (one(job("Clerk", "1950-3", None)), "Not a real date."),
+            (one(job("Clerk", "March 1950", None)), "Not a real date."),
+            (one(job("Clerk", "1950", Some("195"))), "Not a real date."),
+            (
+                one(job("Clerk", "1950-06", Some("1950-05-31"))),
+                "End date is before the start date.",
+            ),
+            (
+                with_jobs(Some("1950-05-01"), None, vec![job("Clerk", "1949", None)]),
+                "Start date is before the birth date.",
+            ),
+            (
+                with_jobs(
+                    Some("1950-05-01"),
+                    None,
+                    vec![job("Clerk", "1950-04", None)],
+                ),
+                "Start date is before the birth date.",
+            ),
+            (
+                with_jobs(
+                    Some("1950-05-01"),
+                    None,
+                    vec![job("Clerk", "1950-04-30", None)],
+                ),
+                "Start date is before the birth date.",
+            ),
+            (
+                with_jobs(
+                    None,
+                    Some("1961-08-03"),
+                    vec![job("Clerk", "1950", Some("1961-09"))],
+                ),
+                "End date is after the death date.",
+            ),
+            (
+                with_jobs(
+                    None,
+                    Some("1961-08-03"),
+                    vec![job("Clerk", "1950", Some("1962"))],
+                ),
+                "End date is after the death date.",
+            ),
+            (
+                with_jobs(
+                    None,
+                    Some("1961-08-03"),
+                    vec![job("Clerk", "1950", Some("1961-08-04"))],
+                ),
+                "End date is after the death date.",
+            ),
+            (
+                with_jobs(
+                    None,
+                    None,
+                    vec![
+                        Job {
+                            id: "same".into(),
+                            ..job("Clerk", "1950", None)
+                        },
+                        Job {
+                            id: "same".into(),
+                            ..job("Typist", "1951", None)
+                        },
+                    ],
+                ),
+                "A job id is empty or repeated.",
+            ),
+        ];
+        for (fields, error) in cases {
+            assert_eq!(create(&paths, fields.clone()), Err(error.to_string()));
+        }
+        assert!(!paths.characters().exists());
+    }
+
+    #[test]
+    fn partial_job_dates_cover_their_whole_period() {
+        let (_temp, paths) = setup();
+        let good = [
+            with_jobs(None, None, vec![job("Clerk", "1950", Some("1950"))]),
+            with_jobs(None, None, vec![job("Clerk", "1950-12", Some("1950"))]),
+            with_jobs(None, None, vec![job("Clerk", "1950", Some("1950-01-01"))]),
+            with_jobs(
+                None,
+                None,
+                vec![job("Clerk", "1960-02", Some("1960-02-29"))],
+            ),
+            with_jobs(Some("1950-01-01"), None, vec![job("Clerk", "1950", None)]),
+            with_jobs(
+                Some("1950-05-01"),
+                None,
+                vec![job("Clerk", "1950-05", None)],
+            ),
+            with_jobs(
+                None,
+                Some("1961-08-31"),
+                vec![job("Clerk", "1950", Some("1961-08"))],
+            ),
+            // A partial date conflicts only when its whole period is outside
+            // the life.
+            with_jobs(Some("1904-01-21"), None, vec![job("Clerk", "1904", None)]),
+            with_jobs(
+                Some("1904-01-21"),
+                None,
+                vec![job("Clerk", "1904-01", None)],
+            ),
+            with_jobs(
+                None,
+                Some("1961-08-03"),
+                vec![job("Clerk", "1950", Some("1961"))],
+            ),
+            with_jobs(
+                None,
+                Some("1961-08-03"),
+                vec![job("Clerk", "1950", Some("1961-08"))],
+            ),
+            // An open job on a dead character ends at the death.
+            with_jobs(None, Some("1961-08-03"), vec![job("Clerk", "1950", None)]),
+            with_jobs(None, None, vec![job("Clerk", "1962-02-10", None)]),
+        ];
+        for fields in good {
+            assert!(create(&paths, fields.clone()).is_ok(), "{fields:?}");
+        }
+        let leap = with_jobs(None, None, vec![job("Clerk", "1950", Some("1900-02-29"))]);
+        assert_eq!(create(&paths, leap), Err("Not a real date.".into()));
+    }
+
+    #[test]
+    fn saved_job_ids_are_kept_and_new_jobs_get_ids() {
+        let (_temp, paths) = setup();
+        let ada = create(
+            &paths,
+            with_jobs(None, None, vec![job("Clerk", "1950", None)]),
+        )
+        .unwrap();
+        let kept = ada.fields.resume[0].clone();
+        let mut fields = ada.fields.clone();
+        fields.resume.push(job("Typist", "1955", None));
+        let updated = update(&paths, &ada.id, fields).unwrap();
+        assert_eq!(updated.fields.resume[0], kept);
+        let new_id = &updated.fields.resume[1].id;
+        assert!(uuid::Uuid::parse_str(new_id).is_ok(), "{new_id}");
+        assert_ne!(new_id, &kept.id);
+        assert_eq!(list(&paths).unwrap().characters, vec![updated]);
+    }
+
+    #[test]
+    fn jobs_cannot_start_after_the_saved_game_date() {
+        let (_temp, paths) = setup();
+        let late = |start: &str| with_jobs(None, None, vec![job("Clerk", start, None)]);
+        for start in ["1962-02-11", "1962-03", "1963"] {
+            assert_eq!(
+                create(&paths, late(start)),
+                Err("Start date is after the game date.".into())
+            );
+        }
+        assert!(!paths.characters().exists());
+        let ada = create(&paths, late("1962")).unwrap();
+        let before = fs::read(paths.characters()).unwrap();
+        assert_eq!(
+            update(&paths, &ada.id, late("1962-02-11")),
+            Err("Start date is after the game date.".into())
+        );
+        assert_eq!(fs::read(paths.characters()).unwrap(), before);
+    }
+
+    #[test]
+    fn a_world_update_cannot_move_before_any_job_start() {
+        let (_temp, paths) = setup();
+        update_world(&paths, World::default()).unwrap();
+        create(
+            &paths,
+            with_jobs(None, None, vec![job("Clerk", "1950", None)]),
+        )
+        .unwrap();
+        create(
+            &paths,
+            CharacterFields {
+                name: "Bo".into(),
+                ..with_jobs(None, None, vec![job("Typist", "1961-03", Some("1961-04"))])
+            },
+        )
+        .unwrap();
+        let before = fs::read(paths.world()).unwrap();
+        let mut proposed = World {
+            game_date: "1961-02-28".into(),
+            ..Default::default()
+        };
+        assert_eq!(
+            update_world(&paths, proposed.clone()),
+            Err("Game date is before the start of Bo's job as Typist.".into())
+        );
+        assert_eq!(fs::read(paths.world()).unwrap(), before);
+        proposed.game_date = "1961-03-01".into();
+        assert_eq!(update_world(&paths, proposed.clone()).unwrap(), proposed);
     }
 }
