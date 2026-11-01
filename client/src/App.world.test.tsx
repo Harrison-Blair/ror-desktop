@@ -226,6 +226,44 @@ describe("World Overview", () => {
     expect(screen.queryByRole("alertdialog")).not.toBeInTheDocument();
   });
 
+  it("publishes refreshed People after an Overview save while rejecting the stale World", async () => {
+    const user = await openOverview();
+    await user.click(screen.getByRole("button", { name: "Notes" }));
+    const stale = structuredClone(store.world);
+    let finishWorld!: (world: typeof stale) => void;
+    let finishPeople!: (
+      people: Awaited<ReturnType<typeof api.listPeople>>,
+    ) => void;
+    api.getWorld.mockImplementationOnce(
+      () =>
+        new Promise((resolve) => {
+          finishWorld = resolve;
+        }),
+    );
+    api.listPeople.mockImplementationOnce(
+      () =>
+        new Promise((resolve) => {
+          finishPeople = resolve;
+        }),
+    );
+    await user.click(screen.getByRole("button", { name: "World" }));
+    await user.clear(main().getByLabelText("Game date"));
+    await user.type(main().getByLabelText("Game date"), "12 March 1963");
+    await user.click(main().getByRole("button", { name: "Save" }));
+    await act(async () => {
+      finishPeople({ characters: [otto()], meId: null });
+      finishWorld(stale);
+    });
+    expect(main().getByLabelText("Game date")).toHaveValue("12 March 1963");
+    await user.click(
+      railPanel().getByRole("button", { name: "People of interest" }),
+    );
+    expect(card("Otto Brandt")).toBeVisible();
+    await user.click(railPanel().getByRole("button", { name: "Overview" }));
+    expect(main().getByLabelText("Game date")).toHaveValue("12 March 1963");
+    expect(screen.queryByRole("alertdialog")).not.toBeInTheDocument();
+  });
+
   it.each(["0001", "0849", "0999"])(
     "preserves early year %s through Overview blur and save",
     async (year) => {

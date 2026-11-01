@@ -23,23 +23,31 @@ export function usePeople(): PeopleData {
     Pick<PeopleData, "people" | "peopleError" | "world" | "worldError">
   >({});
   const [photoVersion, setPhotoVersion] = useState(0);
-  const loadId = useRef(0);
+  const peopleLoadId = useRef(0);
+  const worldLoadId = useRef(0);
 
   const reload = useCallback(async () => {
-    const id = ++loadId.current;
+    const peopleId = ++peopleLoadId.current;
+    const worldId = ++worldLoadId.current;
     const [people, world] = await Promise.allSettled([
       listPeople(),
       getWorld(),
     ]);
-    if (id !== loadId.current) return;
-    setState({
-      people: people.status === "fulfilled" ? people.value : undefined,
-      peopleError:
-        people.status === "rejected" ? errorMessage(people.reason) : undefined,
-      world: world.status === "fulfilled" ? world.value : undefined,
-      worldError:
-        world.status === "rejected" ? errorMessage(world.reason) : undefined,
-    });
+    setState((prev) => ({
+      ...prev,
+      ...(peopleId === peopleLoadId.current && {
+        people: people.status === "fulfilled" ? people.value : undefined,
+        peopleError:
+          people.status === "rejected"
+            ? errorMessage(people.reason)
+            : undefined,
+      }),
+      ...(worldId === worldLoadId.current && {
+        world: world.status === "fulfilled" ? world.value : undefined,
+        worldError:
+          world.status === "rejected" ? errorMessage(world.reason) : undefined,
+      }),
+    }));
   }, []);
 
   useEffect(() => {
@@ -48,7 +56,7 @@ export function usePeople(): PeopleData {
 
   const setWorld = useCallback((world: World) => {
     // A reload started before this save must not replace the saved World.
-    ++loadId.current;
+    ++worldLoadId.current;
     setState((prev) => ({ ...prev, world, worldError: undefined }));
   }, []);
   const photoChanged = useCallback(() => setPhotoVersion((v) => v + 1), []);
