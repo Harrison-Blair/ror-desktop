@@ -193,6 +193,48 @@ describe("Notes character sheet", () => {
   });
 });
 
+describe("Leaving your character's form in Notes", () => {
+  it("with changes asks first: Cancel keeps it, Discard drops it", async () => {
+    store.characters = [rosa()];
+    store.meId = "rosa-alvarez";
+    render(<App />);
+    const user = userEvent.setup();
+    await user.click(
+      await screen.findByRole("button", {
+        name: /Rosa Alvarez.*Your character/,
+      }),
+    );
+    await user.click(main().getByRole("button", { name: "Edit" }));
+    await user.type(main().getByLabelText("Name"), " Diaz");
+
+    await user.click(screen.getByRole("button", { name: "World" }));
+    await user.click(
+      within(
+        screen.getByRole("alertdialog", { name: "Discard changes?" }),
+      ).getByRole("button", { name: "Cancel" }),
+    );
+    expect(main().getByLabelText("Name")).toHaveValue("Rosa Alvarez Diaz");
+    expect(
+      screen.getByRole("button", { name: "Notes", pressed: true }),
+    ).toBeInTheDocument();
+
+    await user.click(screen.getByRole("button", { name: "World" }));
+    await user.click(
+      within(
+        screen.getByRole("alertdialog", { name: "Discard changes?" }),
+      ).getByRole("button", { name: "Discard" }),
+    );
+    expect(
+      await main().findByRole("heading", { name: "People of interest" }),
+    ).toBeInTheDocument();
+
+    await user.click(screen.getByRole("button", { name: "Notes" }));
+    expect(main().queryByLabelText("Name")).toBeNull();
+    expect(main().queryByRole("heading", { name: /^Rosa Alvarez/ })).toBeNull();
+    expect(store.characters[0].name).toBe("Rosa Alvarez");
+  });
+});
+
 describe("Add and edit form", () => {
   it("labels the stat name and value columns", async () => {
     const user = await openWorld();

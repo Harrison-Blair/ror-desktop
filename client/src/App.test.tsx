@@ -443,6 +443,27 @@ describe("App frame", () => {
       ).not.toBeInTheDocument();
     });
 
+    it("does not open World after a slow save when another rail button was clicked meanwhile", async () => {
+      notesList = [{ kind: "file", name: "Ada.md", path: "Ada.md" }];
+      const user = await editAda();
+      let finish = () => {};
+      slowWrite = new Promise((resolve) => {
+        finish = resolve;
+      });
+
+      await user.click(screen.getByRole("button", { name: "World" }));
+      await user.click(screen.getByRole("button", { name: "Notes" }));
+      await act(async () => finish());
+      await waitFor(() => expect(disk).toEqual({ "Ada.md": "Hello!" }));
+
+      expect(
+        screen.getByRole("button", { name: "Notes", pressed: true }),
+      ).toBeInTheDocument();
+      expect(
+        screen.queryByRole("heading", { name: "People of interest" }),
+      ).not.toBeInTheDocument();
+    });
+
     it("keeps an edit made just before a rename", async () => {
       notesList = [{ kind: "file", name: "Ada.md", path: "Ada.md" }];
       const user = await editAda();
