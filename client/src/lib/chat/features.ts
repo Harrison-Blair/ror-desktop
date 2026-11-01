@@ -57,7 +57,7 @@ export const features: ChatFeature[] = [
   {
     name: "World",
     summary:
-      "World holds People of interest: the characters of the campaign, with dates, places, stats and a description. The people tools list, read, open, create, edit and delete them.",
+      "World holds People of interest: the characters of the campaign, with dates, places (city, state and country), stats, a resume of jobs and a description. The people tools list, read, open, create, edit and delete them; the job tools add, edit and remove resume jobs.",
     tools: peopleTools,
   },
 ];
