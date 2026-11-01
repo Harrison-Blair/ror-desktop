@@ -364,6 +364,7 @@ export function PeopleList({
         )}
       </div>
       {body}
+      {people.length === 0 && <div className={styles.empty}>{addButton}</div>}
     </>
   );
 }

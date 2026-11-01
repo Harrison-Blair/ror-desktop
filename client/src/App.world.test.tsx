@@ -118,7 +118,7 @@ describe("World tab", () => {
   });
 
   // Check 1
-  it("starts empty with an Add person button", async () => {
+  it("starts empty with top and lower Add person buttons", async () => {
     await openWorld();
 
     expect(
@@ -127,9 +127,9 @@ describe("World tab", () => {
         pressed: true,
       }),
     ).toBeInTheDocument();
-    expect(
-      main().getByRole("button", { name: "Add person" }),
-    ).toBeInTheDocument();
+    expect(main().getAllByRole("button", { name: "Add person" })).toHaveLength(
+      2,
+    );
     expect(
       main().queryByText(
         "No people yet. Add person creates a character that no player plays.",
@@ -143,9 +143,9 @@ describe("World tab", () => {
     await openWorld();
 
     expect(card("Rosa Alvarez")).toBeInTheDocument();
-    expect(
-      main().getByRole("button", { name: "Add person" }),
-    ).toBeInTheDocument();
+    expect(main().getAllByRole("button", { name: "Add person" })).toHaveLength(
+      1,
+    );
     expect(
       main().queryByText(
         "No other people yet. Add person creates a character that no player plays.",
@@ -157,7 +157,7 @@ describe("World tab", () => {
 describe("Add and edit form", () => {
   it("labels the stat name and value columns", async () => {
     const user = await openWorld();
-    await user.click(main().getByRole("button", { name: "Add person" }));
+    await user.click(main().getAllByRole("button", { name: "Add person" })[0]);
 
     const headers = main()
       .getByRole("region", { name: "Stats" })
