@@ -1,4 +1,8 @@
-import type { Character } from "@/lib/peopleApi";
+import {
+  type Character,
+  type CharacterFields,
+  STAT_COUNT,
+} from "@/lib/peopleApi";
 
 // Rules for People of interest. Dates are "YYYY-MM-DD" strings throughout, so
 // no time zone can shift them.
@@ -94,10 +98,10 @@ export const parseDate = (
   return { date: toIso(parts) };
 };
 
-// For the date box: "21 January 1904".
+// For the date box: "21 January 1904". Keep four year digits for parseDate.
 export const formatBoxDate = (iso: string) => {
   const { year, month, day } = fromIso(iso);
-  return `${day} ${MONTHS[month - 1]} ${year}`;
+  return `${day} ${MONTHS[month - 1]} ${pad(year, 4)}`;
 };
 
 // For the sheet: "January 21, 1904".
@@ -229,6 +233,29 @@ export type CharacterForm = {
   stats: string[];
 };
 
+// Shared editable fields. Photo selection and world stat names belong to the UI.
+export type CharacterDraft = Omit<
+  CharacterFields,
+  "birthDate" | "deathDate" | "stats"
+> &
+  CharacterForm;
+
+// Starts a new draft, or copies stored fields into the date boxes' display form.
+export const characterToDraft = (fields?: CharacterFields): CharacterDraft => ({
+  name: fields?.name ?? "",
+  birthDate: fields?.birthDate ? formatBoxDate(fields.birthDate) : "",
+  birthCity: fields?.birthCity ?? "",
+  birthCountry: fields?.birthCountry ?? "",
+  deathDate: fields?.deathDate ? formatBoxDate(fields.deathDate) : "",
+  deathCity: fields?.deathCity ?? "",
+  deathCountry: fields?.deathCountry ?? "",
+  stats: Array.from({ length: STAT_COUNT }, (_, i) => {
+    const value = fields?.stats[i];
+    return value === null || value === undefined ? "" : String(value);
+  }),
+  description: fields?.description ?? "",
+});
+
 export type FormErrors = {
   name?: string;
   birthDate?: string;
@@ -284,3 +311,33 @@ export const hasErrors = (errors: FormErrors) =>
 // The error for the typed game date, or undefined when it is a real date.
 export const gameDateError = (text: string) =>
   text.trim() ? dateError(text) : "Enter a game date.";
+
+// Invalid drafts never produce fields that a caller could accidentally save.
+export type CharacterDraftResult =
+  | { fields: CharacterFields }
+  | { errors: FormErrors };
+
+export const characterDraftToFields = (
+  draft: CharacterDraft,
+  gameDate: string,
+): CharacterDraftResult => {
+  const errors = validateForm(draft, gameDate);
+  if (hasErrors(errors)) return { errors };
+  const dateOf = (text: string) => {
+    const parsed = parseDate(text);
+    return "date" in parsed ? parsed.date : null;
+  };
+  return {
+    fields: {
+      name: draft.name.trim(),
+      birthDate: dateOf(draft.birthDate),
+      birthCity: draft.birthCity.trim(),
+      birthCountry: draft.birthCountry.trim(),
+      deathDate: dateOf(draft.deathDate),
+      deathCity: draft.deathCity.trim(),
+      deathCountry: draft.deathCountry.trim(),
+      stats: draft.stats.map((s) => (s.trim() ? Number(s) : null)),
+      description: draft.description,
+    },
+  };
+};

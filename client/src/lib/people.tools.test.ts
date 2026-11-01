@@ -301,6 +301,30 @@ describe("people_create", () => {
 });
 
 describe("people_edit", () => {
+  it("edits only the description while preserving stored early-year dates", async () => {
+    const early = character("Historian", {
+      birthDate: "0849-01-01",
+      deathDate: "0910-12-31",
+      description: "Original.",
+    });
+    store.characters.push(early);
+    expect(
+      await call("people_edit", { id: early.id, description: "Updated." }),
+    ).toEqual(ok(`Edited Historian (${early.id}).`));
+    expect(store.characters.at(-1)).toEqual({
+      ...early,
+      description: "Updated.",
+    });
+    expect(api.updatePerson).toHaveBeenCalledWith(
+      early.id,
+      expect.objectContaining({
+        birthDate: "0849-01-01",
+        deathDate: "0910-12-31",
+        description: "Updated.",
+      }),
+    );
+  });
+
   it("changes only the given fields", async () => {
     expect(
       await call("people_edit", {

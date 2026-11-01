@@ -6,14 +6,14 @@ import type { Tool, ToolPreview } from "@/lib/chat/registry";
 import { lineDiff } from "@/lib/diff";
 import {
   ageOf,
+  type CharacterDraft,
   canDelete,
-  hasErrors,
+  characterDraftToFields,
+  characterToDraft,
   isDead,
   isPlayer,
-  parseDate,
   placeLine,
   sheetDateLine,
-  validateForm,
 } from "@/lib/people";
 import {
   type Character,
@@ -100,27 +100,16 @@ async function findPerson(id: string) {
   return { person, meId: people.meId };
 }
 
-// The edit form as typed, made from stored fields: the form's rules check it.
-type Draft = Omit<CharacterFields, "birthDate" | "deathDate" | "stats"> & {
-  birthDate: string;
-  deathDate: string;
-  stats: string[];
-};
-
-const toDraft = (fields: CharacterFields): Draft => ({
-  ...fields,
-  birthDate: fields.birthDate ?? "",
-  deathDate: fields.deathDate ?? "",
-  stats: fields.stats.map((s) => (s === null ? "" : String(s))),
-});
-
 // Puts the input's fields onto the draft. Types are checked here; values by
 // the form's rules after.
-function applyInput(draft: Draft, input: Record<string, unknown>): Draft {
+function applyInput(
+  draft: CharacterDraft,
+  input: Record<string, unknown>,
+): CharacterDraft {
   const next = { ...draft };
   for (const [name, key] of Object.entries(INPUT_OF)) {
     if (input[name] === undefined) continue;
-    next[key as Exclude<keyof Draft, "stats">] = text(input, name);
+    next[key as Exclude<keyof CharacterDraft, "stats">] = text(input, name);
   }
   if (input.stats !== undefined) {
     const stats = input.stats;
@@ -138,16 +127,15 @@ function applyInput(draft: Draft, input: Record<string, unknown>): Draft {
   return next;
 }
 
-const dateOf = (typed: string) => {
-  const parsed = parseDate(typed);
-  return typed.trim() && "date" in parsed ? parsed.date : null;
-};
-
 // The fields to save, or the form's errors as one message the agent can act
 // on.
-function checkedFields(draft: Draft, gameDate: string): CharacterFields {
-  const errors = validateForm(draft, gameDate);
-  if (hasErrors(errors)) {
+function checkedFields(
+  draft: CharacterDraft,
+  gameDate: string,
+): CharacterFields {
+  const result = characterDraftToFields(draft, gameDate);
+  if ("errors" in result) {
+    const { errors } = result;
     const lines = [
       errors.name && `name: ${errors.name}`,
       errors.birthDate && `birth_date: ${errors.birthDate}`,
@@ -158,30 +146,8 @@ function checkedFields(draft: Draft, gameDate: string): CharacterFields {
       `Not saved. Fix these fields and try again:\n${lines.join("\n")}`,
     );
   }
-  return {
-    name: draft.name.trim(),
-    birthDate: dateOf(draft.birthDate),
-    birthCity: draft.birthCity.trim(),
-    birthCountry: draft.birthCountry.trim(),
-    deathDate: dateOf(draft.deathDate),
-    deathCity: draft.deathCity.trim(),
-    deathCountry: draft.deathCountry.trim(),
-    stats: draft.stats.map((s) => (s.trim() ? Number(s) : null)),
-    description: draft.description,
-  };
+  return result.fields;
 }
-
-const EMPTY: CharacterFields = {
-  name: "",
-  birthDate: null,
-  birthCity: "",
-  birthCountry: "",
-  deathDate: null,
-  deathCity: "",
-  deathCountry: "",
-  stats: Array(STAT_COUNT).fill(null),
-  description: "",
-};
 
 // The full sheet as text, for people_read and the approval card.
 function sheet(
@@ -211,9 +177,6 @@ function sheet(
     fields.description || "(none)",
   ].join("\n");
 }
-
-const fieldsOf = ({ id, photo, ...fields }: Character): CharacterFields =>
-  fields;
 
 // Refuses a change when the person changed while the card waited.
 function checkApproved(seen: Character, approved: ToolPreview | undefined) {
@@ -325,7 +288,7 @@ export const peopleOpen: Tool = {
 
 async function newFields(input: Record<string, unknown>) {
   const { gameDate, statNames } = await getWorld();
-  const fields = checkedFields(applyInput(toDraft(EMPTY), input), gameDate);
+  const fields = checkedFields(applyInput(characterToDraft(), input), gameDate);
   return { fields, statNames, gameDate };
 }
 
@@ -355,7 +318,7 @@ async function editedFields(input: Record<string, unknown>) {
   const id = text(input, "id");
   const [{ person }, world] = await Promise.all([findPerson(id), getWorld()]);
   const after = checkedFields(
-    applyInput(toDraft(fieldsOf(person)), input),
+    applyInput(characterToDraft(person), input),
     world.gameDate,
   );
   return { person, after, world };
