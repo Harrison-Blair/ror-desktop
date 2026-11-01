@@ -126,6 +126,8 @@ export type NotesMenuProps = {
   saveOpenNote?: () => Promise<boolean>;
   // This device's character, shown above the tree, or undefined for none.
   me?: Character;
+  // The game date, for the character's occupation.
+  gameDate?: string;
   photoVersion?: number;
   onOpenMe?: () => void;
 };
@@ -143,6 +145,7 @@ export function NotesMenu({
   beforeChooseFolder = async () => true,
   saveOpenNote = async () => true,
   me,
+  gameDate,
   photoVersion = 0,
   onOpenMe = () => {},
 }: NotesMenuProps) {
@@ -267,6 +270,7 @@ export function NotesMenu({
       {me && (
         <CharacterButton
           me={me}
+          gameDate={gameDate}
           photoVersion={photoVersion}
           onOpen={onOpenMe}
         />

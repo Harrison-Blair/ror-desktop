@@ -80,6 +80,15 @@
   background: var(--error-wash);
 }
 
+.danger:disabled {
+  cursor: not-allowed;
+  opacity: 0.35;
+}
+
+.danger:disabled:hover {
+  background: transparent;
+}
+
 .link {
   padding: 0;
   color: var(--ink);
@@ -313,7 +322,7 @@
 
 .tr {
   display: grid;
-  grid-template-columns: minmax(0, 2.4fr) minmax(0, 1.6fr) 56px;
+  grid-template-columns: minmax(0, 2fr) minmax(0, 1.8fr) minmax(0, 1.4fr) 56px;
   column-gap: var(--space-3);
   align-items: center;
   min-height: 48px;
@@ -467,6 +476,16 @@ tbody .tr {
   background: var(--raised);
 }
 
+.back:disabled {
+  cursor: not-allowed;
+  opacity: 0.35;
+}
+
+.back:disabled:hover {
+  color: var(--ink-muted);
+  background: none;
+}
+
 .actions {
   display: flex;
   gap: var(--space-2);
@@ -489,6 +508,79 @@ tbody .tr {
 
 .starButton:hover svg {
   fill: currentColor;
+}
+
+.starButton:disabled {
+  cursor: not-allowed;
+  opacity: 0.35;
+}
+
+.starButton:disabled:hover svg {
+  fill: none;
+}
+
+/* Pencil and Remove job: the star's 32px box, no border, muted ink. */
+.iconButton {
+  display: inline-grid;
+  flex: none;
+  place-items: center;
+  width: 32px;
+  height: 32px;
+  padding: 0;
+  color: var(--ink-muted);
+  background: transparent;
+  border: 0;
+  border-radius: var(--radius-1);
+  cursor: pointer;
+}
+
+.iconButton:hover {
+  color: var(--ink);
+  background: var(--raised);
+}
+
+.iconButton:disabled {
+  cursor: not-allowed;
+  opacity: 0.35;
+}
+
+.iconButton:disabled:hover {
+  color: var(--ink-muted);
+  background: transparent;
+}
+
+/* A section's heading row: heading left, pencil or Cancel and Save right. */
+.sectionHead {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: var(--space-3);
+  min-width: 0;
+}
+
+.sectionButtons {
+  display: flex;
+  flex: none;
+  align-items: center;
+  gap: var(--space-2);
+}
+
+/* The open section gets a quiet frame, so it reads as being edited. */
+.open {
+  margin: -12px;
+  padding: 12px;
+  border: 1px solid var(--line-control);
+  border-radius: var(--radius-1);
+}
+
+.section.open {
+  padding-top: 12px;
+}
+
+.openTop {
+  display: flex;
+  flex-direction: column;
+  gap: 20px;
 }
 
 .editing {
@@ -522,6 +614,10 @@ tbody .tr {
 .sheetLine {
   margin: var(--space-2) 0 0;
   color: var(--ink-muted);
+}
+
+.wrap {
+  overflow-wrap: anywhere;
 }
 
 .sheetLine + .sheetLine {
@@ -625,6 +721,109 @@ tbody .tr {
   display: grid;
   grid-template-columns: repeat(3, minmax(0, 1fr));
   gap: 14px var(--space-4);
+}
+
+/* Date, city, state and country in each row. */
+.form.places {
+  grid-template-columns: repeat(4, minmax(0, 1fr));
+}
+
+/* Resume */
+.jobs {
+  display: flex;
+  flex-direction: column;
+  gap: 18px;
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+
+.job {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) auto;
+  gap: var(--space-1) var(--space-4);
+  align-items: baseline;
+}
+
+/* Wraps, so a long job or employer stays readable. */
+.jobHead {
+  min-width: 0;
+  overflow-wrap: anywhere;
+}
+
+.jobTitle {
+  font-weight: 600;
+}
+
+.jobEmployer {
+  color: var(--ink-muted);
+}
+
+.jobDates {
+  color: var(--ink-muted);
+  font: 400 13px / 18px var(--font-mono);
+  text-align: right;
+  white-space: nowrap;
+}
+
+.jobDescription {
+  grid-column: 1 / -1;
+  max-width: 720px;
+  margin: 0;
+  color: var(--ink-muted);
+  line-height: 22px;
+  white-space: pre-line;
+}
+
+.noJobs {
+  margin: 0;
+  color: var(--ink-muted);
+}
+
+/* Resume editor: one framed row per job. */
+.jobsEdit {
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+}
+
+.addJob {
+  align-self: flex-start;
+}
+
+.jobRow {
+  display: grid;
+  grid-template-columns:
+    minmax(0, 1.3fr) minmax(0, 1.3fr) minmax(0, 1fr) minmax(0, 1fr)
+    32px;
+  gap: 12px 14px;
+  align-items: start;
+  min-inline-size: 0;
+  margin: 0;
+  padding: 12px;
+  background: var(--raised);
+  border: 1px solid var(--line);
+  border-radius: var(--radius-1);
+}
+
+.jobRow.newJob {
+  border-color: var(--ink-muted);
+}
+
+.jobWide {
+  grid-column: 1 / 5;
+}
+
+.jobText {
+  min-height: 56px;
+}
+
+.removeJob {
+  margin-top: 20px;
+}
+
+.removeJob:hover {
+  color: var(--error);
 }
 
 .wide {
