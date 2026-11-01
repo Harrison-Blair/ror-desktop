@@ -1196,8 +1196,10 @@ mod tests {
             .unwrap();
         }
         let before = fs::read(paths.world()).unwrap();
-        let mut proposed = World::default();
-        proposed.game_date = "1962-02-09".into();
+        let mut proposed = World {
+            game_date: "1962-02-09".into(),
+            ..Default::default()
+        };
         proposed.stat_names[0].left = "Changed".into();
         assert_eq!(
             update_world(&paths, proposed.clone()),
@@ -1215,8 +1217,10 @@ mod tests {
         let (_temp, paths) = setup();
         update_world(&paths, World::default()).unwrap();
         let before = fs::read(paths.world()).unwrap();
-        let mut proposed = World::default();
-        proposed.game_date = "1963-01-01".into();
+        let mut proposed = World {
+            game_date: "1963-01-01".into(),
+            ..Default::default()
+        };
         proposed.stat_names[0].left = "Changed".into();
         block(&paths.data.join("world.json.tmp"));
         assert!(update_world(&paths, proposed)
