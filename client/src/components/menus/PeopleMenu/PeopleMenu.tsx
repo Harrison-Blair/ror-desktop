@@ -6,6 +6,10 @@ import {
   useState,
 } from "react";
 import { ConfirmDialog } from "@/components/ConfirmDialog/ConfirmDialog";
+import {
+  type Pending,
+  PersonForm,
+} from "@/components/forms/PersonForm/PersonForm";
 import { useToast } from "@/components/Toast/Toast";
 import { errorMessage } from "@/lib/errorMessage";
 import {
@@ -21,7 +25,6 @@ import {
 } from "@/lib/peopleApi";
 import { type ListPrefs, PeopleList } from "./PeopleList";
 import styles from "./PeopleMenu.module.css";
-import { type Pending, PersonForm } from "./PersonForm";
 import { PersonSheet } from "./PersonSheet";
 import type { PeopleData } from "./usePeople";
 
@@ -39,6 +42,8 @@ export type PeopleMenuProps = {
   // The list settings live with the caller, so they outlast this menu.
   prefs: ListPrefs;
   setPrefs: Dispatch<SetStateAction<ListPrefs>>;
+  // Notes uses the sheet and form without People navigation controls.
+  embedded?: boolean;
   onFormDirty?: (dirty: boolean) => void;
 };
 
@@ -48,6 +53,7 @@ export function PeopleMenu({
   setView,
   prefs,
   setPrefs,
+  embedded = false,
   onFormDirty,
 }: PeopleMenuProps) {
   const notify = useToast();
@@ -249,9 +255,17 @@ export function PeopleMenu({
         gameDate={world.gameDate}
         statNames={world.statNames}
         photoVersion={photoVersion}
-        onBack={toList}
-        onClaim={() => setDialog({ kind: "claim", id: person.id })}
-        onUnclaim={() => setDialog({ kind: "unclaim", id: person.id })}
+        onBack={embedded ? undefined : toList}
+        onClaim={
+          embedded
+            ? undefined
+            : () => setDialog({ kind: "claim", id: person.id })
+        }
+        onUnclaim={
+          embedded
+            ? undefined
+            : () => setDialog({ kind: "unclaim", id: person.id })
+        }
         onEdit={() => setView({ screen: "edit", id: person.id })}
         onDelete={() => setDialog({ kind: "delete", id: person.id })}
       />

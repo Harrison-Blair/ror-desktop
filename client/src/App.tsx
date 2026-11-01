@@ -107,12 +107,17 @@ function Shell() {
   // Shared by World and the Notes character button.
   const people = usePeople();
   const reloadPeople = people.reload;
-  // Kept here so the Notes character button can open a sheet.
+  // Kept here so World keeps its view when another tab is open.
   const [peopleView, setPeopleView] = useState<PeopleView>({ screen: "list" });
+  // The Notes character button has its own sheet and edit flow.
+  const [notesPeopleView, setNotesPeopleView] = useState<PeopleView>({
+    screen: "list",
+  });
   // Kept here so the list looks the same after a visit to another tab.
   const [peoplePrefs, setPeoplePrefs] = useState<ListPrefs>(DEFAULT_PREFS);
   // True while the Add or Edit person form has unsaved changes.
   const peopleFormDirty = useRef(false);
+  const notesPeopleFormDirty = useRef(false);
   // Answers the open "Discard changes?" question.
   const [discardAnswer, setDiscardAnswer] = useState<
     ((discard: boolean) => void) | null
@@ -128,13 +133,16 @@ function Shell() {
       notesFolder: () => notesFolder ?? null,
       openNote: () => openNote,
       flushOpenNote: () => editorMenu.current?.flush() ?? Promise.resolve(true),
-      showNote: (path) => {
+      showNote: async (path) => {
+        if (!(await leaveNotesPeopleForm())) return false;
+        setNotesPeopleView({ screen: "list" });
         setNotesSelected(path);
         setOpenNote(path);
         // Shows the note in the tree too.
         const parts = path.split("/").slice(0, -1);
         const folders = parts.map((_, i) => parts.slice(0, i + 1).join("/"));
         setNotesExpanded((prev) => new Set([...prev, ...folders]));
+        return true;
       },
       pathChanged: (from, to) => {
         const moved = (path: string) =>
@@ -159,7 +167,7 @@ function Shell() {
       // From the Notes tab or another person's form too, so the form asks
       // first.
       showPerson: async (id) =>
-        (await leavePeopleForm()) && showTab("world", { screen: "sheet", id }),
+        (await leavePersonForms()) && showTab("world", { screen: "sheet", id }),
       peopleChanged: () => reloadPeople(),
     },
   });
@@ -191,6 +199,7 @@ function Shell() {
   const pickNotesFolder = useCallback((path: string) => {
     pickedNotesFolder.current = true;
     setNotesFolder(path);
+    setNotesPeopleView({ screen: "list" });
   }, []);
 
   useEffect(() => {
@@ -241,7 +250,7 @@ function Shell() {
         // Settings replaces the editor, so the open note's edit is saved
         // first. A failed save keeps the editor and its text.
         if (!(await (editorMenu.current?.flush() ?? true))) return;
-        if (!(await leavePeopleForm())) return;
+        if (!(await leavePersonForms())) return;
         if (click !== railClicks.current) return;
         setSettings("providers");
         setRailPanelOpen(true);
@@ -282,6 +291,41 @@ function Shell() {
     return true;
   };
 
+  // The Notes character form follows the same discard rule as World. After
+  // leaving, the next character-button click starts at its sheet again.
+  const leaveNotesPeopleForm = async () => {
+    const form =
+      settings === null &&
+      activeId === "notes" &&
+      notesPeopleView.screen === "edit";
+    if (!form) return true;
+    if (notesPeopleFormDirty.current) {
+      const discard = await new Promise<boolean>((resolve) =>
+        setDiscardAnswer(() => resolve),
+      );
+      setDiscardAnswer(null);
+      if (!discard) return false;
+      notesPeopleFormDirty.current = false;
+    }
+    setNotesPeopleView({ screen: "list" });
+    return true;
+  };
+
+  const leavePersonForms = async () =>
+    (await leavePeopleForm()) && (await leaveNotesPeopleForm());
+
+  const openNotesPerson = async (id: string) => {
+    if (!(await (editorMenu.current?.flush() ?? true))) return;
+    if (!(await leaveNotesPeopleForm())) return;
+    setNotesPeopleView({ screen: "sheet", id });
+  };
+
+  const openNotesFile = async (path: string) => {
+    if (!(await leaveNotesPeopleForm())) return;
+    setNotesPeopleView({ screen: "list" });
+    setOpenNote(path);
+  };
+
   // Shows a tab. World replaces the editor, so the open note's edit is saved
   // first; a failed save keeps the editor and its text. Resolves false when
   // the tab wasn't shown.
@@ -290,7 +334,7 @@ function Shell() {
     if (id === "world" && !(await (editorMenu.current?.flush() ?? true))) {
       return false;
     }
-    if (id !== "world" && !(await leavePeopleForm())) return false;
+    if (!(await leavePersonForms())) return false;
     if (click !== railClicks.current) return false;
     // The files may have been fixed or changed since the last load.
     if (id === "world") reloadPeople();
@@ -352,7 +396,11 @@ function Shell() {
             <NotesMenuActions
               folder={notesFolder}
               onChooseFolder={() => notesMenu.current?.chooseFolder()}
-              onCreate={(kind) => notesMenu.current?.startCreate(kind)}
+              onCreate={async (kind) => {
+                if (kind === "file" && !(await leaveNotesPeopleForm())) return;
+                if (kind === "file") setNotesPeopleView({ screen: "list" });
+                notesMenu.current?.startCreate(kind);
+              }}
             />
           )
         }
@@ -370,15 +418,15 @@ function Shell() {
             setSelected={setNotesSelected}
             openNote={openNote}
             setOpenNote={setOpenNote}
+            onOpenNote={openNotesFile}
+            beforeChooseFolder={leaveNotesPeopleForm}
             // A pending edit is saved to the open note's old path first.
             saveOpenNote={() =>
               editorMenu.current?.flush() ?? Promise.resolve(true)
             }
             me={me}
             photoVersion={people.photoVersion}
-            onOpenMe={() =>
-              me && showTab("world", { screen: "sheet", id: me.id })
-            }
+            onOpenMe={() => me && openNotesPerson(me.id)}
           />
         )}
         {settings === null && activeId === "world" && (
@@ -404,12 +452,26 @@ function Shell() {
               peopleFormDirty.current = dirty;
             }}
           />
+        ) : notesPeopleView.screen === "sheet" ||
+          notesPeopleView.screen === "edit" ? (
+          <PeopleMenu
+            data={people}
+            view={notesPeopleView}
+            setView={setNotesPeopleView}
+            prefs={peoplePrefs}
+            setPrefs={setPeoplePrefs}
+            embedded
+            onFormDirty={(dirty) => {
+              notesPeopleFormDirty.current = dirty;
+            }}
+          />
         ) : (
           <EditorMenu
             ref={editorMenu}
             path={openNote}
             onOpenNote={(path) => {
               setNotesSelected(path);
+              setNotesPeopleView({ screen: "list" });
               setOpenNote(path);
             }}
           />

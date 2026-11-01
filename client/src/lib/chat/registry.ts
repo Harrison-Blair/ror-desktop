@@ -26,8 +26,9 @@ export type AppBridge = {
   // Saves the open note's pending edit. Resolves false when it couldn't be
   // saved, which then stays in the editor.
   flushOpenNote: () => Promise<boolean>;
-  // Opens a note in the editor.
-  showNote: (path: string) => void;
+  // Opens a note in the editor. Resolves false when a pending person edit
+  // stays open.
+  showNote: (path: string) => Promise<boolean>;
   // An item was renamed or moved to `to`, or deleted when `to` is null.
   pathChanged: (from: string, to: string | null) => void;
   // Adds a roll to the Dice history.

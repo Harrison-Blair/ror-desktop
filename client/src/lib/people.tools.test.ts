@@ -43,7 +43,7 @@ beforeEach(() => {
     notesFolder: () => "/notes",
     openNote: () => null,
     flushOpenNote: vi.fn(async () => true),
-    showNote: vi.fn(),
+    showNote: vi.fn(async () => true),
     pathChanged: vi.fn(),
     addRoll: vi.fn(),
     showPerson: vi.fn(async () => true),

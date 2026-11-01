@@ -63,7 +63,7 @@ beforeEach(() => {
     notesFolder: () => "/notes",
     openNote: () => null,
     flushOpenNote: vi.fn(async () => true),
-    showNote: vi.fn(),
+    showNote: vi.fn(async () => true),
     pathChanged: vi.fn(),
     addRoll: vi.fn(),
     showPerson: vi.fn(async () => true),
@@ -521,5 +521,14 @@ describe("the other notes tools", () => {
 
     expect((await call("notes_open", { path: "Gone.md" })).isError).toBe(true);
     expect(app.showNote).toHaveBeenCalledTimes(1);
+  });
+
+  it("notes_open reports when a pending person edit stays open", async () => {
+    app.showNote = vi.fn(async () => false);
+
+    expect(await call("notes_open", { path: "Ogres.md" })).toEqual({
+      content: 'Couldn\'t open "Ogres.md" because the person edit was kept.',
+      isError: true,
+    });
   });
 });

@@ -18,9 +18,9 @@ export type PersonSheetProps = {
   gameDate: string;
   statNames: StatName[];
   photoVersion: number;
-  onBack: () => void;
-  onClaim: () => void;
-  onUnclaim: () => void;
+  onBack?: () => void;
+  onClaim?: () => void;
+  onUnclaim?: () => void;
   onEdit: () => void;
   onDelete: () => void;
 };
@@ -43,9 +43,9 @@ export function PersonSheet({
   return (
     <div className={styles.sheet}>
       <div className={styles.sheetBar}>
-        <BackLink onClick={onBack} />
+        {onBack && <BackLink onClick={onBack} />}
         <div className={styles.actions}>
-          {canClaim(person, meId) && (
+          {onClaim && canClaim(person, meId) && (
             <button
               type="button"
               className={styles.starButton}
@@ -56,7 +56,7 @@ export function PersonSheet({
               <Star size={20} strokeWidth={1.75} aria-hidden />
             </button>
           )}
-          {isPlayer(person, meId) && (
+          {onUnclaim && isPlayer(person, meId) && (
             <button
               type="button"
               className={styles.starButton}

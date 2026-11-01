@@ -3,7 +3,7 @@ import { PersonPhoto } from "@/components/menus/PeopleMenu/PersonPhoto";
 import type { Character } from "@/lib/peopleApi";
 import styles from "./NotesMenu.module.css";
 
-// Above the notes tree: your character, linking to its sheet in World.
+// Above the notes tree: your character, opening its sheet in the main panel.
 export function CharacterButton({
   me,
   photoVersion,
@@ -17,7 +17,7 @@ export function CharacterButton({
     <button
       type="button"
       className={styles.me}
-      title="Open your sheet in World › People of interest"
+      title="Open your sheet"
       onClick={onOpen}
     >
       <PersonPhoto

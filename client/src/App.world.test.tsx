@@ -154,6 +154,45 @@ describe("World tab", () => {
   });
 });
 
+describe("Notes character sheet", () => {
+  it("opens and edits your character without leaving Notes", async () => {
+    store.characters = [rosa()];
+    store.meId = "rosa-alvarez";
+    render(<App />);
+    const user = userEvent.setup();
+
+    await user.click(
+      await screen.findByRole("button", {
+        name: /Rosa Alvarez.*Your character/,
+      }),
+    );
+
+    expect(
+      screen.getByRole("button", { name: "Notes", pressed: true }),
+    ).toBeInTheDocument();
+    expect(
+      main().getByRole("heading", { name: /^Rosa Alvarez/ }),
+    ).toBeInTheDocument();
+    expect(
+      main().queryByRole("button", { name: "People of interest" }),
+    ).toBeNull();
+    expect(
+      main().queryByRole("button", { name: "Not my character" }),
+    ).toBeNull();
+
+    await user.click(main().getByRole("button", { name: "Edit" }));
+    await user.type(main().getByLabelText("Name"), " Diaz");
+    await user.click(main().getByRole("button", { name: "Save" }));
+
+    expect(
+      await main().findByRole("heading", { name: /^Rosa Alvarez Diaz/ }),
+    ).toBeInTheDocument();
+    expect(
+      screen.getByRole("button", { name: "Notes", pressed: true }),
+    ).toBeInTheDocument();
+  });
+});
+
 describe("Add and edit form", () => {
   it("labels the stat name and value columns", async () => {
     const user = await openWorld();
@@ -860,7 +899,7 @@ describe("Sheet", () => {
 
 describe("Notes character button", () => {
   // Check 15
-  it("names your character and opens their sheet in World", async () => {
+  it("names your character and opens their sheet in Notes", async () => {
     store.characters = [otto(), rosa()];
     store.meId = "rosa-alvarez";
     render(<App />);
@@ -880,8 +919,11 @@ describe("Notes character button", () => {
       }),
     ).toBeInTheDocument();
     expect(
-      screen.getByRole("button", { name: "World", pressed: true }),
+      screen.getByRole("button", { name: "Notes", pressed: true }),
     ).toBeInTheDocument();
+    expect(
+      main().queryByRole("button", { name: "People of interest" }),
+    ).toBeNull();
   });
 
   it("does not show without a character", async () => {

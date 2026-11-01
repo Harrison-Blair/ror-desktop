@@ -117,6 +117,10 @@ export type NotesMenuProps = {
   // selected row, so selecting a folder leaves the current note open.
   openNote: string | null;
   setOpenNote: Dispatch<SetStateAction<string | null>>;
+  // Opens a file in the main panel. It can keep a pending person edit open.
+  onOpenNote?: (path: string) => void;
+  // Runs before changing the notes root. Resolving false keeps it unchanged.
+  beforeChooseFolder?: () => Promise<boolean>;
   // Saves the open note before a rename, move or folder switch. Resolving
   // false means it couldn't be saved, which cancels the change.
   saveOpenNote?: () => Promise<boolean>;
@@ -135,6 +139,8 @@ export function NotesMenu({
   setSelected,
   openNote,
   setOpenNote,
+  onOpenNote = setOpenNote,
+  beforeChooseFolder = async () => true,
   saveOpenNote = async () => true,
   me,
   photoVersion = 0,
@@ -188,6 +194,7 @@ export function NotesMenu({
         picking.current = true;
         let path: string | null;
         try {
+          if (!(await beforeChooseFolder())) return;
           await saveFirst("the notes folder wasn't changed");
           path = await chooseNotesFolder();
         } catch (e) {
@@ -205,7 +212,16 @@ export function NotesMenu({
         load();
       },
     }),
-    [load, notify, saveFirst, setFolder, setExpanded, setOpenNote, setSelected],
+    [
+      beforeChooseFolder,
+      load,
+      notify,
+      saveFirst,
+      setFolder,
+      setExpanded,
+      setOpenNote,
+      setSelected,
+    ],
   );
 
   // Runs after the render so that the tree has already moved the selection
@@ -266,11 +282,11 @@ export function NotesMenu({
         selected={selected}
         setSelected={setSelected}
         onActivate={(entry) => {
-          if (entry.kind === "file") setOpenNote(entry.path);
+          if (entry.kind === "file") onOpenNote(entry.path);
         }}
         onCreate={(parent, kind, name) =>
           reloadAfterNameEdit(createEntry(parent, kind, name)).then((path) => {
-            if (kind === "file") setOpenNote(path);
+            if (kind === "file") onOpenNote(path);
             return path;
           })
         }

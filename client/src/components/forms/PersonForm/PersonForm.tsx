@@ -1,5 +1,8 @@
 import { UserRound } from "lucide-react";
 import { useEffect, useId, useRef, useState } from "react";
+import styles from "@/components/menus/PeopleMenu/PeopleMenu.module.css";
+import { PersonPhoto } from "@/components/menus/PeopleMenu/PersonPhoto";
+import { StatBar } from "@/components/menus/PeopleMenu/parts";
 import { useToast } from "@/components/Toast/Toast";
 import { errorMessage } from "@/lib/errorMessage";
 import {
@@ -16,9 +19,6 @@ import {
   STAT_COUNT,
   type StatName,
 } from "@/lib/peopleApi";
-import styles from "./PeopleMenu.module.css";
-import { PersonPhoto } from "./PersonPhoto";
-import { StatBar } from "./parts";
 
 type Draft = {
   name: string;
