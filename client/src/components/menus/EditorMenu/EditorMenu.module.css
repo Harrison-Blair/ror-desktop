@@ -10,12 +10,12 @@
   gap: var(--space-3);
 }
 
-.title {
+.noteTitle {
   margin: 0;
   min-width: 0;
   overflow: hidden;
   color: var(--ink);
-  font: 500 24px / 32px var(--font-sans);
+  font: 600 28px / 36px var(--font-sans);
   text-overflow: ellipsis;
   white-space: nowrap;
 }

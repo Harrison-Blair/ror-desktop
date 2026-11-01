@@ -120,7 +120,7 @@ export function EditorMenu({ ref, path, onOpenNote }: EditorMenuProps) {
   return (
     <div className={styles.menu}>
       <div className={styles.bar}>
-        <h1 className={styles.title}>{title}</h1>
+        <h1 className={styles.noteTitle}>{title}</h1>
         <button
           type="button"
           className={styles.toggle}
