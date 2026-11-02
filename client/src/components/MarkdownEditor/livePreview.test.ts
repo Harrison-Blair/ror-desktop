@@ -9,6 +9,7 @@ import {
   livePreviewDecorations,
   setFocused,
   TableWidget,
+  tableStop,
 } from "@/components/MarkdownEditor/livePreview";
 import styles from "@/components/MarkdownEditor/MarkdownEditor.module.css";
 
@@ -74,6 +75,11 @@ describe("live preview", () => {
   it("hides heading markers off the cursor's line and shows them on it", () => {
     expect(shown("# Title\n\n## Sub ##\n\nbody‸")).toBe("Title\n\nSub\n\nbody");
     expect(shown("# Ti‸tle\n\n## Sub\n\nbody")).toBe("# Title\n\nSub\n\nbody");
+  });
+
+  it("keeps a heading's size on the cursor's line", () => {
+    expect(lineClasses("# Ti‸tle\nbody")).toEqual([styles.h1, ""]);
+    expect(lineClasses("## Sub‸\nbody")).toEqual([styles.h2, ""]);
   });
 
   it("renders the cursor's line only while the editor has focus", () => {
@@ -212,7 +218,7 @@ describe("live preview", () => {
       ["Ben", ""],
     ]);
     const dom = grid.toDOM();
-    expect(dom.tagName).toBe("TABLE");
+    expect(dom.querySelector("table")).not.toBeNull();
     expect(dom.querySelectorAll("th")).toHaveLength(2);
     expect(dom.querySelectorAll("tbody tr")).toHaveLength(2);
     expect(shown(`${table}\n\n‸`)).toBe("[table]\n\n");
@@ -250,5 +256,42 @@ describe("live preview", () => {
     expect(view.state.doc.toString()).toBe(text);
     expect(view.contentDOM.querySelector("table")).not.toBeNull();
     view.destroy();
+  });
+});
+
+// Where vertical motion from `‸` to `^` stops, as "line:column", or null.
+// Both marks are removed from the text.
+function stopOf(marked: string) {
+  const landed = marked.replace("‸", "").indexOf("^");
+  const state = stateOf(marked.replace("^", ""));
+  const head = state.selection.main.head;
+  const stop = tableStop(state, head, landed);
+  if (stop === null) return null;
+  const line = state.doc.lineAt(stop);
+  return `${line.number}:${stop - line.from}`;
+}
+
+describe("vertical motion past a table", () => {
+  // In each text, lines 3 to 6 are the table.
+  it("stops on the table's first line when moving down over it", () => {
+    expect(stopOf(`be‸fore\n\n${table}\n\naf^ter`)).toBe("3:2");
+  });
+
+  it("stops on the table's last line when moving up over it", () => {
+    expect(stopOf(`be^fore\n\n${table}\n\naf‸ter`)).toBe("6:2");
+  });
+
+  it("does not stop when no table is between", () => {
+    expect(stopOf(`be‸fore\nne^xt\n\n${table}`)).toBe(null);
+  });
+
+  it("does not stop on a table that shows its Markdown", () => {
+    const onTable = table.replace("Ada", "A‸da");
+    expect(stopOf(`before\n\n${onTable}\n\naf^ter`)).toBe(null);
+  });
+
+  it("stops on a table inside a quote", () => {
+    const quoted = table.replace(/^/gm, "> ");
+    expect(stopOf(`be‸fore\n\n${quoted}\n\naf^ter`)).toBe("3:2");
   });
 });
