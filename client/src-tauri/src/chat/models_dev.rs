@@ -119,14 +119,24 @@ mod tests {
     use serde_json::json;
     use std::io::{BufRead, BufReader, Write};
     use std::net::TcpListener;
+    use std::sync::atomic::{AtomicUsize, Ordering};
+    use std::sync::Arc;
 
     // Answers every request with `status` and `body`.
     fn serve(status: u16, body: String) -> String {
+        serve_counted(status, body).0
+    }
+
+    // Like `serve`, and counts the requests it answers.
+    fn serve_counted(status: u16, body: String) -> (String, Arc<AtomicUsize>) {
         let listener = TcpListener::bind("127.0.0.1:0").unwrap();
         let url = format!("http://{}/api.json", listener.local_addr().unwrap());
+        let requests = Arc::new(AtomicUsize::new(0));
+        let counter = requests.clone();
         std::thread::spawn(move || {
             for stream in listener.incoming() {
                 let mut stream = stream.unwrap();
+                counter.fetch_add(1, Ordering::SeqCst);
                 let mut reader = BufReader::new(stream.try_clone().unwrap());
                 loop {
                     let mut line = String::new();
@@ -144,7 +154,7 @@ mod tests {
                 );
             }
         });
-        url
+        (url, requests)
     }
 
     // A slice of the real api.json, as fetched on 2026-11-02.
@@ -221,11 +231,13 @@ mod tests {
         let dir = tempfile::tempdir().unwrap();
         let cache = dir.path().join("models-dev.json");
         let client = reqwest::Client::new();
-        let good = serve(200, api().to_string());
+        let (good, requests) = serve_counted(200, api().to_string());
         let models = ModelsDev::new(&good, cache.clone());
         assert!(models.model(&client, "glm-5.3").await.is_some());
         // A later list in the cache is not read again in this run.
         std::fs::write(&cache, "{}").unwrap();
         assert!(models.model(&client, "glm-5.3").await.is_some());
+        assert!(models.model(&client, "qwen3.8-max").await.is_some());
+        assert_eq!(requests.load(Ordering::SeqCst), 1);
     }
 }

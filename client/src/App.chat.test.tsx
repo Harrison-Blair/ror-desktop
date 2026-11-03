@@ -908,6 +908,15 @@ describe("Chat panel", () => {
     await user.click(screen.getByRole("textbox", { name: "Message" }));
     await waitFor(() => expect(card()).toBeNull());
 
+    // Pinned from the keyboard, Esc closes it after focus moves on.
+    act(() => meter.focus());
+    await user.keyboard("{Enter}");
+    const message = screen.getByRole("textbox", { name: "Message" });
+    act(() => message.focus());
+    expect(card()).toHaveTextContent("Pinned");
+    await user.keyboard("{Escape}");
+    expect(card()).toBeNull();
+
     // Keyboard focus opens it too.
     act(() => meter.focus());
     expect(card()).not.toBeNull();

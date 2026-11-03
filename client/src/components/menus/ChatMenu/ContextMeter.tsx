@@ -70,8 +70,19 @@ export function ContextMeter({
     const closeOutside = (event: PointerEvent) => {
       if (!slot.current?.contains(event.target as Node)) setPinned(false);
     };
+    // Esc closes it wherever focus is, for example in the message box.
+    const closeOnEscape = (event: KeyboardEvent) => {
+      if (event.key === "Escape") {
+        setPinned(false);
+        setHovered(false);
+      }
+    };
     document.addEventListener("pointerdown", closeOutside);
-    return () => document.removeEventListener("pointerdown", closeOutside);
+    document.addEventListener("keydown", closeOnEscape);
+    return () => {
+      document.removeEventListener("pointerdown", closeOutside);
+      document.removeEventListener("keydown", closeOnEscape);
+    };
   }, [pinned]);
 
   const enter = () => {
