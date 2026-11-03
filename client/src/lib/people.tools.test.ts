@@ -352,7 +352,7 @@ describe("people_create", () => {
     expect(app.peopleChanged).not.toHaveBeenCalled();
   });
 
-  it("refuses a death date before the birth date or after the game date", async () => {
+  it("refuses a death date before the birth date", async () => {
     expect(
       await call("people_create", {
         name: "Ann",
@@ -364,15 +364,15 @@ describe("people_create", () => {
         "Not saved. Fix these fields and try again:\ndeath_date: Death date is before the birth date.",
       ),
     );
+    expect(api.createPerson).not.toHaveBeenCalled();
+  });
+
+  it("saves a death date after the game date", async () => {
     // The game date is 1962-02-10.
     expect(
       await call("people_create", { name: "Ann", death_date: "11 Feb 1962" }),
-    ).toEqual(
-      error(
-        "Not saved. Fix these fields and try again:\ndeath_date: Death date is after the game date.",
-      ),
-    );
-    expect(api.createPerson).not.toHaveBeenCalled();
+    ).toEqual(ok("Created Ann (person-1)."));
+    expect(store.characters.at(-1)?.deathDate).toBe("1962-02-11");
   });
 
   it("refuses stats that are not a list of eight", async () => {
@@ -532,6 +532,18 @@ describe("people_add_job", () => {
     expect(app.peopleChanged).toHaveBeenCalledTimes(1);
   });
 
+  it("saves a job that starts after the game date", async () => {
+    // The game date is 1962-02-10.
+    expect(
+      await call("people_add_job", {
+        id: "anon",
+        job: "Clerk",
+        start_date: "March 1962",
+      }),
+    ).toEqual(ok("Added the job job-1 to Anon (anon)."));
+    expect(store.characters[2].resume[0].startDate).toBe("1962-03");
+  });
+
   it("needs only the job and the start date; the job is then open", async () => {
     expect(
       await call("people_add_job", {
@@ -628,11 +640,7 @@ describe("people_edit_job", () => {
       }),
     ).toEqual(
       error(
-        [
-          NOT_SAVED,
-          "start_date: Start date is after the game date.",
-          "end_date: End date is before the start date.",
-        ].join("\n"),
+        [NOT_SAVED, "end_date: End date is before the start date."].join("\n"),
       ),
     );
     expect(api.updatePerson).not.toHaveBeenCalled();
@@ -678,8 +686,8 @@ describe("people_remove_job", () => {
   });
 
   it("names the other jobs' errors by their job id", async () => {
-    // The game date moved back before the editor job started.
-    store.world.gameDate = "1949-06-01";
+    // The saved editor job ends before it starts.
+    store.characters[1].resume[1].endDate = "1949";
     expect(
       await call("people_remove_job", {
         id: "karl-weber",
@@ -689,8 +697,7 @@ describe("people_remove_job", () => {
       error(
         [
           NOT_SAVED,
-          "death_date: Death date is after the game date.",
-          'job_id "job-editor" start_date: Start date is after the game date.',
+          'job_id "job-editor" end_date: End date is before the start date.',
         ].join("\n"),
       ),
     );

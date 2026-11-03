@@ -286,7 +286,7 @@ describe("validateForm", () => {
   }));
 
   it("accepts a name alone", () => {
-    const errors = validateForm(blank, GAME);
+    const errors = validateForm(blank);
     expect(errors).toEqual({
       name: undefined,
       birthDate: undefined,
@@ -298,75 +298,67 @@ describe("validateForm", () => {
   });
 
   it("asks for a name", () => {
-    const errors = validateForm({ ...blank, name: "   " }, GAME);
+    const errors = validateForm({ ...blank, name: "   " });
     expect(errors.name).toBe("Enter a name.");
     expect(hasErrors(errors)).toBe(true);
   });
 
   it("reports date errors on each date", () => {
-    const errors = validateForm(
-      { ...blank, birthDate: "soon", deathDate: "31 February 1904" },
-      GAME,
-    );
+    const errors = validateForm({
+      ...blank,
+      birthDate: "soon",
+      deathDate: "31 February 1904",
+    });
     expect(errors.birthDate).toBe("Use day, month and year.");
     expect(errors.deathDate).toBe("Not a real date.");
   });
 
-  it("refuses a death before the birth or after the game date", () => {
+  it("refuses a death before the birth", () => {
     expect(
-      validateForm(
-        { ...blank, birthDate: "14 June 1930", deathDate: "13 June 1930" },
-        GAME,
-      ).deathDate,
+      validateForm({
+        ...blank,
+        birthDate: "14 June 1930",
+        deathDate: "13 June 1930",
+      }).deathDate,
     ).toBe("Death date is before the birth date.");
-    expect(
-      validateForm({ ...blank, deathDate: "11 February 1962" }, GAME).deathDate,
-    ).toBe("Death date is after the game date.");
+  });
+
+  it("accepts a death after the game date", () => {
+    const errors = validateForm({
+      ...blank,
+      name: "Ada",
+      deathDate: "11 February 1962",
+    });
+    expect(errors.deathDate).toBeUndefined();
+    expect(hasErrors(errors)).toBe(false);
   });
 
   it("accepts a death on the birth date or the game date", () => {
     expect(
-      validateForm(
-        { ...blank, birthDate: "14 June 1930", deathDate: "14/6/1930" },
-        GAME,
-      ).deathDate,
+      validateForm({
+        ...blank,
+        birthDate: "14 June 1930",
+        deathDate: "14/6/1930",
+      }).deathDate,
     ).toBeUndefined();
     expect(
-      validateForm({ ...blank, deathDate: "10 February 1962" }, GAME).deathDate,
+      validateForm({ ...blank, deathDate: "10 February 1962" }).deathDate,
     ).toBeUndefined();
-  });
-
-  it("checks a death after the game date even when the birth date is bad", () => {
-    expect(
-      validateForm(
-        { ...blank, birthDate: "soon", deathDate: "1 March 1962" },
-        GAME,
-      ),
-    ).toMatchObject({
-      birthDate: "Use day, month and year.",
-      deathDate: "Death date is after the game date.",
-    });
   });
 
   it("accepts whole numbers from 0 to 100 and empty stats", () => {
-    const errors = validateForm(
-      {
-        ...blank,
-        stats: pairs(["0", "100", " 45 ", "", "-7", "999", "50", "+100"]),
-      },
-      GAME,
-    );
+    const errors = validateForm({
+      ...blank,
+      stats: pairs(["0", "100", " 45 ", "", "-7", "999", "50", "+100"]),
+    });
     expect(errors.stats).toEqual(noStatErrors);
   });
 
   it("refuses other stat values", () => {
-    const errors = validateForm(
-      {
-        ...blank,
-        stats: pairs(["101", "-1", "4.5", "abc", "1e2", "", "50", "1.0"]),
-      },
-      GAME,
-    );
+    const errors = validateForm({
+      ...blank,
+      stats: pairs(["101", "-1", "4.5", "abc", "1e2", "", "50", "1.0"]),
+    });
     const bad = "Use a whole number within the safe integer range.";
     expect(errors.stats).toEqual(
       [undefined, undefined, bad, bad, bad, undefined, undefined, bad].map(
@@ -639,10 +631,10 @@ describe("validateForm resume rows", () => {
     resume,
   });
   const rowErrors = (r: JobDraft, birth = "", death = "") =>
-    validateForm(form([r], birth, death), GAME).resume?.[0];
+    validateForm(form([r], birth, death)).resume?.[0];
 
   it("accepts a good row", () => {
-    const errors = validateForm(form([row()]), GAME);
+    const errors = validateForm(form([row()]));
     expect(errors.resume).toEqual([
       { job: undefined, startDate: undefined, endDate: undefined },
     ]);
@@ -650,10 +642,7 @@ describe("validateForm resume rows", () => {
   });
 
   it("asks for a job and a start date", () => {
-    const errors = validateForm(
-      form([row({ job: " ", startDate: " " })]),
-      GAME,
-    );
+    const errors = validateForm(form([row({ job: " ", startDate: " " })]));
     expect(errors.resume?.[0]).toEqual({
       job: "Enter a job.",
       startDate: "Enter a start date.",
@@ -683,14 +672,12 @@ describe("validateForm resume rows", () => {
     ).toBeUndefined();
   });
 
-  it("refuses a start after the game date", () => {
-    expect(rowErrors(row({ startDate: "11 February 1962" }))?.startDate).toBe(
-      "Start date is after the game date.",
-    );
-    expect(rowErrors(row({ startDate: "1962" }))?.startDate).toBeUndefined();
-    expect(rowErrors(row({ startDate: "March 1962" }))?.startDate).toBe(
-      "Start date is after the game date.",
-    );
+  it("accepts a start after the game date", () => {
+    for (const startDate of ["11 February 1962", "March 1962", "1970"]) {
+      const errors = validateForm(form([row({ startDate })]));
+      expect(errors.resume?.[0]?.startDate).toBeUndefined();
+      expect(hasErrors(errors)).toBe(false);
+    }
   });
 
   it("refuses a start before the birth date and shows it on the birth date", () => {
@@ -699,7 +686,6 @@ describe("validateForm resume rows", () => {
         [row({ job: " Clerk ", startDate: "February 1950" })],
         "2 March 1950",
       ),
-      GAME,
     );
     expect(errors.resume?.[0].startDate).toBe(
       "Start date is before the birth date.",
@@ -709,8 +695,8 @@ describe("validateForm resume rows", () => {
     );
     for (const startDate of ["1949", "1 March 1950"]) {
       expect(
-        validateForm(form([row({ startDate })], "2 March 1950"), GAME)
-          .resume?.[0].startDate,
+        validateForm(form([row({ startDate })], "2 March 1950")).resume?.[0]
+          .startDate,
       ).toBe("Start date is before the birth date.");
     }
   });
@@ -718,10 +704,7 @@ describe("validateForm resume rows", () => {
   it.each(["1950", "March 1950", "2 March 1950"])(
     "lets a start of %j touch the birth date of 2 March 1950",
     (startDate) => {
-      const errors = validateForm(
-        form([row({ startDate })], "2 March 1950"),
-        GAME,
-      );
+      const errors = validateForm(form([row({ startDate })], "2 March 1950"));
       expect(errors.resume?.[0].startDate).toBeUndefined();
       expect(errors.birthDate).toBeUndefined();
     },
@@ -730,7 +713,6 @@ describe("validateForm resume rows", () => {
   it("refuses an end after the death date and shows it on the death date", () => {
     const errors = validateForm(
       form([row({ endDate: "September 1961" })], "", "3 August 1961"),
-      GAME,
     );
     expect(errors.resume?.[0].endDate).toBe(
       "End date is after the death date.",
@@ -740,8 +722,8 @@ describe("validateForm resume rows", () => {
     );
     for (const endDate of ["1962", "4 August 1961"]) {
       expect(
-        validateForm(form([row({ endDate })], "", "3 August 1961"), GAME)
-          .resume?.[0].endDate,
+        validateForm(form([row({ endDate })], "", "3 August 1961")).resume?.[0]
+          .endDate,
       ).toBe("End date is after the death date.");
     }
   });
@@ -751,7 +733,6 @@ describe("validateForm resume rows", () => {
     (endDate) => {
       const errors = validateForm(
         form([row({ endDate })], "", "3 August 1961"),
-        GAME,
       );
       expect(errors.resume?.[0].endDate).toBeUndefined();
       expect(errors.deathDate).toBeUndefined();
@@ -759,26 +740,31 @@ describe("validateForm resume rows", () => {
   );
 
   it("lets an open job of the dead end at the death date", () => {
-    const errors = validateForm(form([row()], "", "3 August 1961"), GAME);
+    const errors = validateForm(form([row()], "", "3 August 1961"));
     expect(errors.deathDate).toBeUndefined();
     expect(hasErrors(errors)).toBe(false);
   });
 
   it("keeps the person's own date errors first", () => {
-    const errors = validateForm(
-      form(
-        [row({ startDate: "1920", endDate: "1965" })],
-        "soon",
-        "1 March 1962",
-      ),
-      GAME,
-    );
-    expect(errors.birthDate).toBe("Use day, month and year.");
-    expect(errors.deathDate).toBe("Death date is after the game date.");
+    expect(
+      validateForm(
+        form([row({ startDate: "1920", endDate: "1965" })], "soon", ""),
+      ).birthDate,
+    ).toBe("Use day, month and year.");
+    // The job also ends after the death date.
+    expect(
+      validateForm(
+        form(
+          [row({ startDate: "1940", endDate: "1965" })],
+          "1 January 1930",
+          "1 March 1925",
+        ),
+      ).deathDate,
+    ).toBe("Death date is before the birth date.");
   });
 
   it("gives errors per row", () => {
-    const errors = validateForm(form([row(), row({ job: "" }), row()]), GAME);
+    const errors = validateForm(form([row(), row({ job: "" }), row()]));
     expect(errors.resume?.map((e) => e.job)).toEqual([
       undefined,
       "Enter a job.",

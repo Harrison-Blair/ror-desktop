@@ -26,7 +26,6 @@ import { RailPanel } from "@/components/panels/RailPanel/RailPanel";
 import { ResizeHandle } from "@/components/panels/ResizeHandle/ResizeHandle";
 import { SidePanel } from "@/components/panels/SidePanel/SidePanel";
 import { Rail, type RailItem } from "@/components/Rail/Rail";
-import { useToast } from "@/components/Toast/Toast";
 import type { DiceResult } from "@/lib/dice";
 import {
   NotesPageActions,
@@ -34,6 +33,11 @@ import {
   NotesPageRail,
 } from "@/pages/NotesPage/NotesPage";
 import { useNotesPage } from "@/pages/NotesPage/useNotesPage";
+import {
+  SessionPageMain,
+  SessionPageRail,
+} from "@/pages/SessionPage/SessionPage";
+import { useSessionPage } from "@/pages/SessionPage/useSessionPage";
 import {
   SettingsPageMain,
   SettingsPageRail,
@@ -58,7 +62,6 @@ type SidePanelId = "chat" | "dice";
 // The frame around the pages: the rail, the panels, Chat, Dice and the
 // moves between tabs. Inside the ToastProvider so it can raise toasts.
 export function AppShell() {
-  const notify = useToast();
   const [activeId, setActiveId] = useState("notes");
   // Settings takes over the rail panel and the main panel while it is open.
   const [settings, setSettings] = useState<SettingsPage | null>(null);
@@ -93,6 +96,10 @@ export function AppShell() {
   });
   const world = useWorldPage({
     active: settings === null && activeId === "world",
+    confirmDiscard,
+  });
+  const session = useSessionPage({
+    active: settings === null && activeId === "session",
     confirmDiscard,
   });
   const [railPanelWidth, setRailPanelWidth] = useState(
@@ -188,22 +195,24 @@ export function AppShell() {
     setRolls((previous) => [roll, ...previous].slice(0, DICE_HISTORY_LENGTH));
   };
 
-  // Before a person form leaves the main panel. Resolves false to stay on
-  // the form.
+  // Before a person form, World Settings or Session Overview leaves the main
+  // panel. Resolves false to stay on the form.
   const leavePersonForms = async () =>
-    (await world.leave()) && (await notes.leaveCharacterEdit());
+    (await world.leave()) &&
+    (await session.leave()) &&
+    (await notes.leaveCharacterEdit());
 
-  // Shows a tab, and on World the sheet of `personId` when given. World
-  // replaces the editor, so the open note's edit is saved first; a failed
-  // save keeps the editor and its text. Resolves false when the tab wasn't
-  // shown.
+  // Shows a tab, and on World the sheet of `personId` when given. World and
+  // Session replace the editor, so the open note's edit is saved first; a
+  // failed save keeps the editor and its text. Resolves false when the tab
+  // wasn't shown.
   const showTab = async (id: string, personId?: string) => {
     const click = ++railClicks.current;
-    if (id === "world" && !(await notes.flush())) return false;
+    if (id !== "notes" && !(await notes.flush())) return false;
     if (!(await leavePersonForms())) return false;
     if (click !== railClicks.current) return false;
     // The files may have been fixed or changed since the last load.
-    if (id === "world") reloadPeople();
+    if (id !== "notes") reloadPeople();
     if (personId !== undefined) world.openPerson(personId);
     setSettings(null);
     setActiveId(id);
@@ -212,13 +221,6 @@ export function AppShell() {
   };
 
   const selectRailItem = (id: string) => {
-    // Session is not built yet.
-    if (id === "session") {
-      railClicks.current++;
-      const label = railItems.find((item) => item.id === id)?.label;
-      notify({ kind: "error", message: `${label} is not implemented yet.` });
-      return;
-    }
     if (settings === null && id === activeId) {
       railClicks.current++;
       setRailPanelOpen((open) => !open);
@@ -266,12 +268,15 @@ export function AppShell() {
         {settings === null && activeId === "world" && (
           <WorldPageRail world={world.view} />
         )}
+        {settings === null && activeId === "session" && <SessionPageRail />}
       </RailPanel>
       <MainPanel>
         {settings !== null ? (
           <SettingsPageMain page={settings} />
         ) : activeId === "world" ? (
           <WorldPageMain world={world.view} people={people} />
+        ) : activeId === "session" ? (
+          <SessionPageMain session={session.view} people={people} />
         ) : (
           <NotesPageMain
             notes={notes.view}

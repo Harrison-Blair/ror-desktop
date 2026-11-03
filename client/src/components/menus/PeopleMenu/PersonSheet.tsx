@@ -90,7 +90,6 @@ export function PersonSheet({
     <SectionEditor
       section={section}
       person={person}
-      gameDate={gameDate}
       statNames={statNames}
       photoVersion={photoVersion}
       pending={pending}
@@ -277,7 +276,6 @@ export function PersonSheet({
 function SectionEditor({
   section,
   person,
-  gameDate,
   statNames,
   photoVersion,
   pending,
@@ -287,7 +285,6 @@ function SectionEditor({
 }: {
   section: SheetSection;
   person: Character;
-  gameDate: string;
   statNames: StatName[];
   photoVersion: number;
   pending?: Pending;
@@ -298,7 +295,6 @@ function SectionEditor({
   const { draft, setDraft, errors, busy, save } = usePersonDraft({
     person,
     section,
-    gameDate,
     pending,
     onDirty,
     onSave,

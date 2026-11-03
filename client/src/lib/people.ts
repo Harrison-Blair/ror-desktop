@@ -448,12 +448,11 @@ const startsBeforeBirth = (start: string, birth: string) =>
   periodEnd(start) < birth;
 const endsAfterDeath = (end: string, death: string) => periodStart(end) > death;
 
-// A row's errors against the birth, death and game dates ("YYYY-MM-DD").
+// A row's errors against the birth and death dates ("YYYY-MM-DD").
 const jobErrors = (
   row: JobDraft,
   birth: string | undefined,
   death: string | undefined,
-  gameDate: string,
 ): JobErrors => {
   const typedError = (text: string) => {
     const parsed = parseJobDate(text);
@@ -466,11 +465,9 @@ const jobErrors = (
   const startDate = !row.startDate.trim()
     ? "Enter a start date."
     : (typedError(row.startDate) ??
-      (first && first > gameDate
-        ? "Start date is after the game date."
-        : start && birth && startsBeforeBirth(start, birth)
-          ? "Start date is before the birth date."
-          : undefined));
+      (start && birth && startsBeforeBirth(start, birth)
+        ? "Start date is before the birth date."
+        : undefined));
   const endDate = !row.endDate.trim()
     ? undefined
     : (typedError(row.endDate) ??
@@ -493,11 +490,8 @@ const statError = (text: string) => {
     : "Use a whole number within the safe integer range.";
 };
 
-// Checks the edit form against the game date ("YYYY-MM-DD").
-export const validateForm = (
-  form: CharacterForm,
-  gameDate: string,
-): FormErrors => {
+// Checks the edit form.
+export const validateForm = (form: CharacterForm): FormErrors => {
   const errors: FormErrors = {
     name: form.name.trim() ? undefined : "Enter a name.",
     birthDate: dateError(form.birthDate),
@@ -509,19 +503,13 @@ export const validateForm = (
   };
   const birth = parseDate(form.birthDate);
   const death = parseDate(form.deathDate);
-  if ("date" in death) {
-    if ("date" in birth && death.date < birth.date) {
-      errors.deathDate = "Death date is before the birth date.";
-    } else if (death.date > gameDate) {
-      errors.deathDate = "Death date is after the game date.";
-    }
+  if ("date" in death && "date" in birth && death.date < birth.date) {
+    errors.deathDate = "Death date is before the birth date.";
   }
   const birthDate = "date" in birth ? birth.date : undefined;
   const deathDate = "date" in death ? death.date : undefined;
   const rows = form.resume ?? [];
-  errors.resume = rows.map((row) =>
-    jobErrors(row, birthDate, deathDate, gameDate),
-  );
+  errors.resume = rows.map((row) => jobErrors(row, birthDate, deathDate));
   // The same conflicts, shown on the person's own dates too. An open job
   // ends at the death date, so it never conflicts.
   for (const row of rows) {
@@ -567,9 +555,8 @@ export type CharacterDraftResult =
 
 export const characterDraftToFields = (
   draft: CharacterDraft,
-  gameDate: string,
 ): CharacterDraftResult => {
-  const errors = validateForm(draft, gameDate);
+  const errors = validateForm(draft);
   if (hasErrors(errors)) return { errors };
   const dateOf = (text: string) => {
     const parsed = parseDate(text);

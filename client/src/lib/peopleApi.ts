@@ -94,6 +94,5 @@ export const readPickedPhoto = (source: string) =>
 export const getWorld = () => invoke<World>("world_get");
 
 // Saves the full World together. Blank stat labels keep their saved values.
-// Rejects a game date before a death date or a job's start.
 export const updateWorld = (world: World) =>
   invoke<World>("world_update", { world });

@@ -466,31 +466,6 @@ fn checked(mut f: CharacterFields) -> Result<CharacterFields> {
     Ok(f)
 }
 
-/// The rules that depend on the game date: no death and no job start after
-/// it.
-fn valid_for_world(fields: &CharacterFields, world: &World) -> Result<()> {
-    if fields
-        .death_date
-        .as_ref()
-        .is_some_and(|date| date > &world.game_date)
-    {
-        return Err("Death date is after the game date.".to_string());
-    }
-    if fields
-        .resume
-        .iter()
-        .any(|job| starts_after(job, &world.game_date))
-    {
-        return Err("Start date is after the game date.".to_string());
-    }
-    Ok(())
-}
-
-/// Whether the first day of the job's start is after `date`.
-fn starts_after(job: &Job, date: &str) -> bool {
-    job_period(&job.start_date).is_some_and(|(start, _)| start.as_str() > date)
-}
-
 /// A plain file name, never a path.
 fn is_file_name(name: &str) -> bool {
     Path::new(name).file_name() == Some(name.as_ref())
@@ -532,7 +507,6 @@ pub fn list(paths: &Paths) -> Result<People> {
 pub fn create(paths: &Paths, fields: CharacterFields) -> Result<Character> {
     let fields = checked(fields)?;
     let _guard = lock();
-    valid_for_world(&fields, &get_world(paths)?)?;
     let mut characters = read_characters(paths)?;
     let character = Character {
         id: uuid::Uuid::new_v4().to_string(),
@@ -548,7 +522,6 @@ pub fn create(paths: &Paths, fields: CharacterFields) -> Result<Character> {
 pub fn update(paths: &Paths, id: &str, fields: CharacterFields) -> Result<Character> {
     let fields = checked(fields)?;
     let _guard = lock();
-    valid_for_world(&fields, &get_world(paths)?)?;
     let mut characters = read_characters(paths)?;
     let character = characters
         .iter_mut()
@@ -721,30 +694,6 @@ pub fn update_world(paths: &Paths, mut world: World) -> Result<World> {
             } else {
                 new.trim().to_string()
             };
-        }
-    }
-    for character in read_characters(paths)? {
-        if character
-            .fields
-            .death_date
-            .as_ref()
-            .is_some_and(|date| date > &world.game_date)
-        {
-            return Err(format!(
-                "Game date is before the death date of {}.",
-                character.fields.name
-            ));
-        }
-        let fields = &character.fields;
-        if let Some(job) = fields
-            .resume
-            .iter()
-            .find(|job| starts_after(job, &world.game_date))
-        {
-            return Err(format!(
-                "Game date is before the start of {}'s job as {}.",
-                fields.name, job.job
-            ));
         }
     }
     write(&paths.world(), &world, "the world")?;
@@ -1100,57 +1049,21 @@ mod tests {
     }
 
     #[test]
-    fn death_dates_cannot_be_after_the_saved_game_date() {
+    fn death_dates_after_the_game_date_are_saved() {
         let (_temp, paths) = setup();
+        // The game date is 1962-02-10.
         let mut fields = CharacterFields {
             death_date: Some("1962-02-11".into()),
             ..named("Ada")
         };
-        assert_eq!(
-            create(&paths, fields.clone()),
-            Err("Death date is after the game date.".into())
-        );
-        assert!(!paths.characters().exists());
-        fields.death_date = Some("1962-02-10".into());
         let ada = create(&paths, fields.clone()).unwrap();
-        let before = fs::read(paths.characters()).unwrap();
-        fields.death_date = Some("1962-02-11".into());
-        assert_eq!(
-            update(&paths, &ada.id, fields.clone()),
-            Err("Death date is after the game date.".into())
-        );
-        assert_eq!(fs::read(paths.characters()).unwrap(), before);
-        fields.death_date = Some("1962-02-09".into());
+        assert_eq!(ada.fields, fields);
+        fields.death_date = Some("1970-05-13".into());
         assert_eq!(
             update(&paths, &ada.id, fields.clone()).unwrap().fields,
             fields
         );
-    }
-
-    #[test]
-    fn people_death_dates_use_the_saved_world_date() {
-        let (_temp, paths) = setup();
-        fs::create_dir_all(&paths.data).unwrap();
-        let world = World {
-            game_date: "1970-05-12".into(),
-            ..Default::default()
-        };
-        write(&paths.world(), &world, "the world").unwrap();
-        let ada = create(
-            &paths,
-            CharacterFields {
-                death_date: Some("1970-05-12".into()),
-                ..named("Ada")
-            },
-        )
-        .unwrap();
-        let fields = CharacterFields {
-            death_date: Some("1970-05-13".into()),
-            ..named("Bo")
-        };
-        assert!(create(&paths, fields.clone()).is_err());
-        assert!(update(&paths, &ada.id, fields).is_err());
-        assert_eq!(list(&paths).unwrap().characters, vec![ada]);
+        assert_eq!(list(&paths).unwrap().characters[0].fields, fields);
     }
 
     #[test]
@@ -1582,34 +1495,34 @@ mod tests {
     }
 
     #[test]
-    fn a_world_update_cannot_move_before_any_saved_death_date() {
+    fn the_game_date_saves_before_death_dates_and_job_starts() {
         let (_temp, paths) = setup();
         update_world(&paths, World::default()).unwrap();
-        for (name, date) in [("Ada", "1961-01-01"), ("Bo", "1962-02-10")] {
-            create(
-                &paths,
-                CharacterFields {
-                    death_date: Some(date.into()),
-                    ..named(name)
-                },
-            )
-            .unwrap();
-        }
-        let before = fs::read(paths.world()).unwrap();
+        create(
+            &paths,
+            CharacterFields {
+                death_date: Some("1962-02-10".into()),
+                ..named("Ada")
+            },
+        )
+        .unwrap();
+        create(
+            &paths,
+            CharacterFields {
+                name: "Bo".into(),
+                ..with_jobs(None, None, vec![job("Typist", "1961-03", Some("1961-04"))])
+            },
+        )
+        .unwrap();
+        let characters = fs::read(paths.characters()).unwrap();
         let mut proposed = World {
-            game_date: "1962-02-09".into(),
+            game_date: "1961-02-28".into(),
             ..Default::default()
         };
         proposed.stat_names[0].left = "Changed".into();
-        assert_eq!(
-            update_world(&paths, proposed.clone()),
-            Err("Game date is before the death date of Bo.".into())
-        );
-        assert_eq!(fs::read(paths.world()).unwrap(), before);
-        assert!(!paths.data.join("world.json.tmp").exists());
-        proposed.game_date = "1962-02-10".into();
         assert_eq!(update_world(&paths, proposed.clone()).unwrap(), proposed);
         assert_eq!(get_world(&paths).unwrap(), proposed);
+        assert_eq!(fs::read(paths.characters()).unwrap(), characters);
     }
 
     #[test]
@@ -1627,23 +1540,6 @@ mod tests {
             .unwrap_err()
             .starts_with("Couldn't save the world"));
         assert_eq!(fs::read(paths.world()).unwrap(), before);
-    }
-
-    #[test]
-    fn damaged_people_block_world_updates_without_changing_either_file() {
-        let (_temp, paths) = setup();
-        update_world(&paths, World::default()).unwrap();
-        let before = fs::read(paths.world()).unwrap();
-        fs::write(paths.characters(), "{ damaged").unwrap();
-        let proposed = World {
-            game_date: "1963-01-01".into(),
-            ..Default::default()
-        };
-        assert!(update_world(&paths, proposed)
-            .unwrap_err()
-            .contains("characters.json is damaged"));
-        assert_eq!(fs::read(paths.world()).unwrap(), before);
-        assert_eq!(fs::read(paths.characters()).unwrap(), b"{ damaged");
     }
 
     // A non-empty folder where a file should be can't be removed or replaced
@@ -1962,54 +1858,17 @@ mod tests {
     }
 
     #[test]
-    fn jobs_cannot_start_after_the_saved_game_date() {
+    fn jobs_starting_after_the_game_date_are_saved() {
         let (_temp, paths) = setup();
+        // The game date is 1962-02-10.
         let late = |start: &str| with_jobs(None, None, vec![job("Clerk", start, None)]);
         for start in ["1962-02-11", "1962-03", "1963"] {
-            assert_eq!(
-                create(&paths, late(start)),
-                Err("Start date is after the game date.".into())
-            );
+            assert!(create(&paths, late(start)).is_ok(), "{start}");
         }
-        assert!(!paths.characters().exists());
         let ada = create(&paths, late("1962")).unwrap();
-        let before = fs::read(paths.characters()).unwrap();
-        assert_eq!(
-            update(&paths, &ada.id, late("1962-02-11")),
-            Err("Start date is after the game date.".into())
-        );
-        assert_eq!(fs::read(paths.characters()).unwrap(), before);
-    }
-
-    #[test]
-    fn a_world_update_cannot_move_before_any_job_start() {
-        let (_temp, paths) = setup();
-        update_world(&paths, World::default()).unwrap();
-        create(
-            &paths,
-            with_jobs(None, None, vec![job("Clerk", "1950", None)]),
-        )
-        .unwrap();
-        create(
-            &paths,
-            CharacterFields {
-                name: "Bo".into(),
-                ..with_jobs(None, None, vec![job("Typist", "1961-03", Some("1961-04"))])
-            },
-        )
-        .unwrap();
-        let before = fs::read(paths.world()).unwrap();
-        let mut proposed = World {
-            game_date: "1961-02-28".into(),
-            ..Default::default()
-        };
-        assert_eq!(
-            update_world(&paths, proposed.clone()),
-            Err("Game date is before the start of Bo's job as Typist.".into())
-        );
-        assert_eq!(fs::read(paths.world()).unwrap(), before);
-        proposed.game_date = "1961-03-01".into();
-        assert_eq!(update_world(&paths, proposed.clone()).unwrap(), proposed);
+        let updated = update(&paths, &ada.id, late("1962-02-11")).unwrap();
+        assert_eq!(updated.fields.resume[0].start_date, "1962-02-11");
+        assert_eq!(list(&paths).unwrap().characters.len(), 4);
     }
 
     #[test]

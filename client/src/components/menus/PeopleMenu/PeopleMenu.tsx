@@ -138,7 +138,6 @@ export function PeopleMenu({
     return (
       <PersonForm
         statNames={world.statNames}
-        gameDate={world.gameDate}
         photoVersion={photoVersion}
         onCancel={toList}
         onDirty={onFormDirty}
