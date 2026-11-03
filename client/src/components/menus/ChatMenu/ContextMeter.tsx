@@ -182,7 +182,7 @@ export function ContextMeter({
                 </div>
               </dl>
               <p className={styles.contextHint}>
-                ≈ estimated from text length, scaled to the provider's total.
+                ≈ estimated from text length.
               </p>
             </>
           )}
