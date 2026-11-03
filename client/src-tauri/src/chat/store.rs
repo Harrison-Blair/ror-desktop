@@ -26,6 +26,9 @@ pub struct Chat {
     pub updated_at: u64,
     pub backend: BackendId,
     pub model: String,
+    /// The reasoning effort the chat's last turn asked for, if any.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub effort: Option<String>,
     #[serde(default)]
     pub archived: bool,
     /// The user named the chat, so it is never titled for them.
@@ -110,6 +113,7 @@ impl Chat {
             updated_at: now,
             backend,
             model: model.to_string(),
+            effort: None,
             archived: false,
             renamed: false,
             messages: Vec::new(),
@@ -339,6 +343,32 @@ mod tests {
             value["messages"][2],
             serde_json::json!({ "role": "tool", "callId": "call_1", "name": "dice_roll", "content": "17", "isError": false })
         );
+    }
+
+    #[test]
+    fn a_chat_effort_loads_back_and_an_old_chat_has_none() {
+        let temp = tempfile::tempdir().unwrap();
+        let mut chat = chat_with_everything();
+        chat.effort = Some("high".into());
+        save(temp.path(), &chat).unwrap();
+        let text = fs::read_to_string(temp.path().join(format!("{}.json", chat.id))).unwrap();
+        let value: serde_json::Value = serde_json::from_str(&text).unwrap();
+        assert_eq!(value["effort"], "high");
+        assert_eq!(
+            load(temp.path(), &chat.id).unwrap().effort.as_deref(),
+            Some("high")
+        );
+
+        // A chat saved before chats had an effort.
+        let id = uuid::Uuid::new_v4().to_string();
+        let old = serde_json::json!({
+            "id": id, "title": "The ogre", "createdAt": 1, "updatedAt": 2,
+            "backend": "opencode-go", "model": "glm-5.3", "archived": false,
+            "messages": [{ "role": "user", "text": "The ogre" }],
+            "usage": { "inputTokens": 0, "outputTokens": 0 },
+        });
+        fs::write(temp.path().join(format!("{id}.json")), old.to_string()).unwrap();
+        assert_eq!(load(temp.path(), &id).unwrap().effort, None);
     }
 
     #[test]

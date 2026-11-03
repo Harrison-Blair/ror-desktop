@@ -45,6 +45,7 @@ vi.mock("@/lib/chat/chatApi", () => ({
   getChatSettings: vi.fn(async () => ({
     model: "glm-5.3",
     backend: "opencode-go",
+    effort: null,
     permissionMode: "auto",
   })),
   latestChat: vi.fn(async () => null),
@@ -260,6 +261,7 @@ describe("people tools in the app", () => {
     chat.getChatSettings.mockResolvedValueOnce({
       model: "glm-5.3",
       backend: "opencode-go",
+      effort: null,
       permissionMode: "manual",
     });
     await startTurn(openWorld);

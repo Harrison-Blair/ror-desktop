@@ -27,6 +27,7 @@ import { errorMessage } from "@/lib/errorMessage";
 import { openWebLink } from "@/lib/linksApi";
 import { ChatHistory } from "./ChatHistory";
 import styles from "./ChatMenu.module.css";
+import { EffortSelect } from "./EffortSelect";
 import { ModelMenu } from "./ModelMenu";
 import type { ChatController, PendingApproval } from "./useChat";
 
@@ -381,14 +382,21 @@ function Composer({ chat }: { chat: ChatController }) {
               model={chat.model}
               backend={chat.backend}
               lockedTo={chat.chatBackend}
-              onChoose={(backend, model) => {
-                chat.chooseModel(backend, model);
+              onChoose={(backend, model, effort) => {
+                chat.chooseModel(backend, model, effort);
                 setMenuOpen(false);
               }}
               onClose={() => setMenuOpen(false)}
             />
           )}
         </div>
+        {chat.backend === "codex" && chat.model !== null && (
+          <EffortSelect
+            model={chat.model}
+            effort={chat.effort}
+            onChoose={chat.chooseEffort}
+          />
+        )}
         <fieldset className={styles.modes} aria-label="Permission mode">
           {(["manual", "auto"] as const).map((mode) => (
             <button

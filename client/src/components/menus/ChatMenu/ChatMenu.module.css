@@ -249,6 +249,12 @@
   white-space: nowrap;
 }
 
+/* The reasoning effort of a Codex model. */
+.effort {
+  composes: toggle from "@/components/menus/EditorMenu/EditorMenu.module.css";
+  flex: none;
+}
+
 /* Two toggles joined into one control. */
 .modes {
   display: flex;

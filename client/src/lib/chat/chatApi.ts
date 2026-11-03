@@ -32,6 +32,8 @@ export type Chat = {
   updatedAt: number;
   backend: BackendId;
   model: string;
+  // The reasoning effort of the last turn, for Codex models.
+  effort?: string;
   archived: boolean;
   messages: Message[];
   usage: Usage;
@@ -51,6 +53,8 @@ export type ChatSettings = {
   model: string | null;
   // The backend of `model`.
   backend: BackendId;
+  // The reasoning effort chosen for `model`.
+  effort: string | null;
   permissionMode: PermissionMode;
 };
 
@@ -59,8 +63,11 @@ export type KeyProvider = "opencode-go" | "tavily";
 
 export const getChatSettings = () => invoke<ChatSettings>("chat_settings");
 
-export const saveChatModel = (backend: BackendId, model: string) =>
-  invoke<void>("chat_set_model", { backend, model });
+export const saveChatModel = (
+  backend: BackendId,
+  model: string,
+  effort: string | null,
+) => invoke<void>("chat_set_model", { backend, model, effort });
 
 export const savePermissionMode = (mode: PermissionMode) =>
   invoke<void>("chat_set_permission_mode", { mode });
@@ -78,10 +85,17 @@ export const removeKey = (provider: KeyProvider) =>
 export const listModels = (backend: BackendId) =>
   invoke<string[]>("chat_models", { backend });
 
+// A Codex model and the reasoning efforts it offers.
+export type CodexModel = {
+  name: string;
+  efforts: { effort: string; description: string }[];
+  defaultEffort: string;
+};
+
 // Codex signs in with `codex login`. Signed out, it may still list models.
 export type CodexStatus =
-  | { state: "ready"; models: string[] }
-  | { state: "signedOut"; models: string[] }
+  | { state: "ready"; models: CodexModel[] }
+  | { state: "signedOut"; models: CodexModel[] }
   | { state: "notInstalled" }
   | { state: "error"; message: string };
 
@@ -99,6 +113,8 @@ export type Send = {
   backend: BackendId;
   text: string;
   model: string;
+  // The reasoning effort, for Codex models. Rust drops one the model lacks.
+  effort: string | null;
   system: string;
   tools: ToolSpec[];
   onEvent: (event: ChatEvent) => void;

@@ -230,6 +230,8 @@ async fn endpoint_for(
 pub struct ChatSettings {
     model: Option<String>,
     backend: BackendId,
+    /// The reasoning effort chosen for `model`.
+    effort: Option<String>,
     permission_mode: PermissionMode,
 }
 
@@ -239,15 +241,22 @@ pub fn chat_settings(app: AppHandle) -> Result<ChatSettings, String> {
     Ok(ChatSettings {
         model: config.chat_model,
         backend: config.chat_backend.unwrap_or(BackendId::OpencodeGo),
+        effort: config.chat_effort,
         permission_mode: config.permission_mode,
     })
 }
 
 #[tauri::command]
-pub fn chat_set_model(app: AppHandle, backend: BackendId, model: String) -> Result<(), String> {
+pub fn chat_set_model(
+    app: AppHandle,
+    backend: BackendId,
+    model: String,
+    effort: Option<String>,
+) -> Result<(), String> {
     config::update(&config_file(&app)?, |c| {
         c.chat_model = Some(model);
         c.chat_backend = Some(backend);
+        c.chat_effort = effort;
     })
     .map_err(|e| format!("Couldn't save the model: {e}."))
 }
@@ -295,7 +304,7 @@ pub async fn chat_models(
 ) -> Result<Vec<String>, String> {
     if backend == BackendId::Codex {
         return match state.codex.status().await {
-            codex::Status::Ready { models } => Ok(models),
+            codex::Status::Ready { models } => Ok(models.into_iter().map(|m| m.name).collect()),
             codex::Status::SignedOut { .. } => Err(codex::SIGNED_OUT.to_string()),
             codex::Status::NotInstalled => Err(codex::NOT_INSTALLED.to_string()),
             codex::Status::Error { message } => Err(message),
@@ -404,6 +413,7 @@ impl Drop for TurnGuard<'_> {
 
 /// Runs one turn: adds the user's message to the chat (a new one when
 /// `chat_id` is None), then streams the reply as events on `on_event`.
+/// `effort` is the reasoning effort for Codex models.
 #[allow(clippy::too_many_arguments)]
 #[tauri::command]
 pub async fn chat_send(
@@ -414,6 +424,7 @@ pub async fn chat_send(
     backend: BackendId,
     text: String,
     model: String,
+    effort: Option<String>,
     system: String,
     tools: Vec<ToolSpec>,
     on_event: Channel<ChatEvent>,
@@ -427,6 +438,7 @@ pub async fn chat_send(
         None => Chat::new(backend, &model),
     };
     chat.model = model.clone();
+    chat.effort = effort.clone();
     let host = TauriHost {
         channel: on_event,
         state: &state,
@@ -457,6 +469,7 @@ pub async fn chat_send(
         let session = codex::Session {
             codex: state.codex.clone(),
             model: model.clone(),
+            effort,
         };
         agent::answer(&Backend::Codex(session), &mut turn, &host).await
     } else {

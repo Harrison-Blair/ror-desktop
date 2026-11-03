@@ -28,7 +28,8 @@ export function ModelMenu({
   backend: BackendId;
   // The backend the open chat is on: the others can't be chosen.
   lockedTo: BackendId | null;
-  onChoose: (backend: BackendId, model: string) => void;
+  // `effort`: the model's default reasoning effort; null for OpenCode Go.
+  onChoose: (backend: BackendId, model: string, effort: string | null) => void;
   onClose: () => void;
 }) {
   const menu = useRef<HTMLDivElement>(null);
@@ -87,6 +88,12 @@ export function ModelMenu({
     return () => document.removeEventListener("pointerdown", closeOutside);
   }, [onClose]);
 
+  const defaultEffort = (from: BackendId, name: string) =>
+    from === "codex" &&
+    (codex?.state === "ready" || codex?.state === "signedOut")
+      ? (codex.models.find((m) => m.name === name)?.defaultEffort ?? null)
+      : null;
+
   const label = (from: BackendId) =>
     from === "opencode-go" ? "OpenCode Go" : "Codex";
 
@@ -113,7 +120,9 @@ export function ModelMenu({
                     className={styles.modelItem}
                     aria-pressed={chosen}
                     disabled={locked || unavailable}
-                    onClick={() => onChoose(from, name)}
+                    onClick={() =>
+                      onChoose(from, name, defaultEffort(from, name))
+                    }
                   >
                     <span className={styles.modelCheck}>
                       {chosen && (
@@ -189,7 +198,10 @@ export function ModelMenu({
             ? codex
             : {
                 state: "ready",
-                models: codex.state === "notInstalled" ? [] : codex.models,
+                models:
+                  codex.state === "notInstalled"
+                    ? []
+                    : codex.models.map((m) => m.name),
               },
         codex?.state !== "ready",
       )}

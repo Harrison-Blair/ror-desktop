@@ -304,7 +304,7 @@ export function ProvidersSettings() {
 
   const codexModels =
     codex?.state === "ready" || codex?.state === "signedOut"
-      ? codex.models
+      ? codex.models.map((m) => m.name)
       : [];
 
   return (

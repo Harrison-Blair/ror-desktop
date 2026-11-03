@@ -31,6 +31,7 @@ vi.mock("@/lib/chat/chatApi", () => ({
   getChatSettings: vi.fn(async () => ({
     model: "glm-5.3",
     backend: "opencode-go",
+    effort: null,
     permissionMode: "auto",
   })),
   latestChat: vi.fn(async () => saved[0]),
@@ -38,6 +39,7 @@ vi.mock("@/lib/chat/chatApi", () => ({
   savePermissionMode: vi.fn(async () => {}),
   isKeySaved: vi.fn(async () => true),
   listModels: vi.fn(async () => []),
+  codexStatus: vi.fn(async () => ({ state: "notInstalled" })),
   sendMessage: vi.fn(
     (send: Send) =>
       new Promise((resolve) => {

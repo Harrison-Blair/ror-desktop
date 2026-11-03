@@ -467,12 +467,29 @@ impl Codex {
     }
 }
 
+/// A Codex model and the reasoning efforts it offers.
+#[derive(Clone, Debug, PartialEq, Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct Model {
+    pub name: String,
+    pub efforts: Vec<Effort>,
+    /// One of `efforts`, when Codex lists it there.
+    pub default_effort: String,
+}
+
+#[derive(Clone, Debug, PartialEq, Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct Effort {
+    pub effort: String,
+    pub description: String,
+}
+
 /// What the model menu shows for Codex.
 #[derive(Debug, PartialEq, Serialize)]
 #[serde(tag = "state", rename_all = "camelCase")]
 pub enum Status {
-    Ready { models: Vec<String> },
-    SignedOut { models: Vec<String> },
+    Ready { models: Vec<Model> },
+    SignedOut { models: Vec<Model> },
     NotInstalled,
     Error { message: String },
 }
@@ -484,8 +501,8 @@ async fn signed_in(conn: &Conn) -> Result<bool, String> {
     Ok(!account["account"].is_null() || account["requiresOpenaiAuth"] == json!(false))
 }
 
-async fn list_models(conn: &Conn) -> Result<Vec<String>, String> {
-    let mut models: Vec<String> = Vec::new();
+async fn list_models(conn: &Conn) -> Result<Vec<Model>, String> {
+    let mut models: Vec<Model> = Vec::new();
     let mut cursor = Value::Null;
     loop {
         let page = conn
@@ -493,9 +510,33 @@ async fn list_models(conn: &Conn) -> Result<Vec<String>, String> {
             .await?;
         for model in page["data"].as_array().into_iter().flatten() {
             let name = model["model"].as_str().unwrap_or_default().to_string();
-            if model["hidden"] != json!(true) && !name.is_empty() && !models.contains(&name) {
-                models.push(name);
+            if model["hidden"] == json!(true)
+                || name.is_empty()
+                || models.iter().any(|m| m.name == name)
+            {
+                continue;
             }
+            let efforts = model["supportedReasoningEfforts"].as_array();
+            models.push(Model {
+                name,
+                efforts: efforts
+                    .into_iter()
+                    .flatten()
+                    .filter_map(|option| {
+                        Some(Effort {
+                            effort: option["reasoningEffort"].as_str()?.to_string(),
+                            description: option["description"]
+                                .as_str()
+                                .unwrap_or_default()
+                                .to_string(),
+                        })
+                    })
+                    .collect(),
+                default_effort: model["defaultReasoningEffort"]
+                    .as_str()
+                    .unwrap_or_default()
+                    .to_string(),
+            });
         }
         cursor = page["nextCursor"].clone();
         if cursor.is_null() {
@@ -504,10 +545,33 @@ async fn list_models(conn: &Conn) -> Result<Vec<String>, String> {
     }
 }
 
-/// A chat's way to Codex: the shared app server and the chat's model.
+/// A chat's way to Codex: the shared app server, the chat's model and the
+/// reasoning effort chosen for it.
 pub struct Session {
     pub codex: Arc<Codex>,
     pub model: String,
+    pub effort: Option<String>,
+}
+
+// `effort` when the model offers it, else the model's default. None when
+// no effort is chosen, or Codex doesn't list the model.
+async fn effort_for(
+    conn: &Conn,
+    model: &str,
+    effort: Option<&str>,
+) -> Result<Option<String>, String> {
+    let Some(effort) = effort else {
+        return Ok(None);
+    };
+    let models = list_models(conn).await?;
+    let Some(model) = models.iter().find(|m| m.name == model) else {
+        return Ok(None);
+    };
+    if model.efforts.iter().any(|e| e.effort == effort) {
+        Ok(Some(effort.to_string()))
+    } else {
+        Ok(Some(model.default_effort.clone()).filter(|e| !e.is_empty()))
+    }
 }
 
 // The chat's messages as Responses API items, for `thread/inject_items`.
@@ -559,14 +623,16 @@ fn thread_params(session: &Session, instructions: &str, tools: Value) -> Value {
     })
 }
 
-// Starts a thread with `thread` and `history`, then a turn with `text`, and
-// returns their ids. A start that fails after the thread exists forgets it.
+// Starts a thread with `thread` and `history`, then a turn with `text` at
+// `effort`, and returns their ids. A start that fails after the thread
+// exists forgets it.
 async fn begin(
     conn: Arc<Conn>,
     cancel: CancellationToken,
     thread: Value,
     history: Vec<Value>,
     text: String,
+    effort: Option<String>,
 ) -> Result<(String, String), String> {
     let started = conn.request("thread/start", thread).await?;
     let thread = started["thread"]["id"]
@@ -585,15 +651,14 @@ async fn begin(
         if cancel.is_cancelled() {
             return Err(STOPPED.to_string());
         }
-        let turn = conn
-            .request(
-                "turn/start",
-                json!({
-                    "threadId": thread,
-                    "input": [{ "type": "text", "text": text, "text_elements": [] }],
-                }),
-            )
-            .await?;
+        let mut params = json!({
+            "threadId": thread,
+            "input": [{ "type": "text", "text": text, "text_elements": [] }],
+        });
+        if let Some(effort) = effort {
+            params["effort"] = json!(effort);
+        }
+        let turn = conn.request("turn/start", params).await?;
         Ok(turn["turn"]["id"]
             .as_str()
             .ok_or("Codex started no turn.")?
@@ -619,8 +684,16 @@ async fn start(
     thread: Value,
     history: Vec<Value>,
     text: String,
+    effort: Option<String>,
 ) -> Option<Result<(String, String), String>> {
-    let mut starting = tokio::spawn(begin(conn.clone(), cancel.clone(), thread, history, text));
+    let mut starting = tokio::spawn(begin(
+        conn.clone(),
+        cancel.clone(),
+        thread,
+        history,
+        text,
+        effort,
+    ));
     tokio::select! {
         biased;
         () = cancel.cancelled() => {
@@ -865,7 +938,17 @@ async fn drive(
         Ok(false) => return Some(failed(SIGNED_OUT.to_string())),
         Err(e) => return Some(failed(e)),
     }
-    let (thread, codex_turn) = match start(conn, &cancel, thread, history, input).await {
+    // A saved effort the model no longer offers gives way to its default.
+    let effort = tokio::select! {
+        biased;
+        () = cancel.cancelled() => return Some(stopped()),
+        effort = effort_for(conn, &session.model, session.effort.as_deref()) => effort,
+    };
+    let effort = match effort {
+        Ok(effort) => effort,
+        Err(e) => return Some(failed(e)),
+    };
+    let (thread, codex_turn) = match start(conn, &cancel, thread, history, input, effort).await {
         None => return Some(stopped()),
         Some(Ok(ids)) => ids,
         Some(Err(e)) => return Some(failed(e)),
@@ -1002,6 +1085,7 @@ pub async fn title(
             thread,
             Vec::new(),
             openai::title_exchange(chat),
+            None,
         );
         let (thread, codex_turn) = started.await.unwrap_or(Err(STOPPED.to_string()))?;
         let mut text = String::new();

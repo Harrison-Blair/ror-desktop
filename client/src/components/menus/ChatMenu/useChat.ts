@@ -64,6 +64,8 @@ export function useChat({
   const [model, setModel] = useState<string | null>(null);
   // The backend of `model`.
   const [backend, setBackend] = useState<BackendId>("opencode-go");
+  // The reasoning effort chosen for `model`, for Codex models.
+  const [effort, setEffort] = useState<string | null>(null);
   // The backend the current chat is on, or null before its first message.
   const [chatBackend, setChatBackend] = useState<BackendId | null>(null);
   const [mode, setMode] = useState<PermissionMode>("manual");
@@ -140,6 +142,7 @@ export function useChat({
       if (!modelChosen.current) {
         setModel(settings.model);
         setBackend(settings.backend);
+        setEffort(settings.effort);
       }
       if (modeChosen.current) return;
       modeRef.current = settings.permissionMode;
@@ -160,6 +163,7 @@ export function useChat({
       setChatBackend(chat.backend);
       setBackend(chat.backend);
       setModel(chat.model);
+      setEffort(chat.effort ?? null);
       reads.current = new Map();
     }, fail);
   }, [fail, showChatId]);
@@ -260,6 +264,7 @@ export function useChat({
       backend,
       text,
       model,
+      effort: backend === "codex" ? effort : null,
       system: systemPrompt(openNoteRef.current),
       tools: registry.specs(),
       onEvent,
@@ -328,6 +333,7 @@ export function useChat({
       setChatBackend(chat.backend);
       setBackend(chat.backend);
       setModel(chat.model);
+      setEffort(chat.effort ?? null);
       reads.current = new Map();
     }, fail);
   };
@@ -343,11 +349,25 @@ export function useChat({
     });
   };
 
-  const chooseModel = (nextBackend: BackendId, next: string) => {
+  // `nextEffort`: the model's default effort, or null when it has none.
+  const chooseModel = (
+    nextBackend: BackendId,
+    next: string,
+    nextEffort: string | null,
+  ) => {
     modelChosen.current = true;
     setBackend(nextBackend);
     setModel(next);
-    saveChatModel(nextBackend, next).catch(fail);
+    setEffort(nextEffort);
+    saveChatModel(nextBackend, next, nextEffort).catch(fail);
+  };
+
+  // Applies from the next message, and is saved beside the model.
+  const chooseEffort = (next: string) => {
+    if (model === null) return;
+    modelChosen.current = true;
+    setEffort(next);
+    saveChatModel(backend, model, next).catch(fail);
   };
 
   const chooseMode = (next: PermissionMode) => {
@@ -368,6 +388,7 @@ export function useChat({
     approvals,
     model,
     backend,
+    effort,
     chatBackend,
     mode,
     load,
@@ -386,6 +407,7 @@ export function useChat({
     closeHistory: () => setHistoryOpen(false),
     answer,
     chooseModel,
+    chooseEffort,
     chooseMode,
   };
 }

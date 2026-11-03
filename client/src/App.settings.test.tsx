@@ -18,6 +18,7 @@ vi.mock("@/lib/chat/chatApi", () => ({
   getChatSettings: vi.fn(async () => ({
     model: "glm-5.3",
     backend: "opencode-go",
+    effort: null,
     permissionMode: "manual",
   })),
   latestChat: vi.fn(async () => null),
@@ -39,6 +40,17 @@ vi.mock("@/lib/chat/chatApi", () => ({
 }));
 
 const api = vi.mocked(chatApi);
+
+// A Codex model with low, medium and high effort, medium by default.
+const codexModel = (name: string): chatApi.CodexModel => ({
+  name,
+  efforts: [
+    { effort: "low", description: "Fast" },
+    { effort: "medium", description: "Balanced" },
+    { effort: "high", description: "Thorough" },
+  ],
+  defaultEffort: "medium",
+});
 
 beforeEach(() => {
   vi.clearAllMocks();
@@ -136,7 +148,11 @@ describe("Settings", () => {
     await user.click(
       await within(menu).findByRole("button", { name: "kimi-k3" }),
     );
-    expect(api.saveChatModel).toHaveBeenCalledWith("opencode-go", "kimi-k3");
+    expect(api.saveChatModel).toHaveBeenCalledWith(
+      "opencode-go",
+      "kimi-k3",
+      null,
+    );
 
     await user.click(
       within(built).getByRole("button", { name: "Replace OpenCode Go key" }),
@@ -395,12 +411,12 @@ describe("Settings", () => {
   });
 
   it("shows the Codex status as words", async () => {
-    codex = { state: "ready", models: ["gpt-6.1-sol"] };
+    codex = { state: "ready", models: [codexModel("gpt-6.1-sol")] };
     const user = await openSettings();
     const built = section("Built in");
     expect(await within(built).findByText("Signed in")).toBeInTheDocument();
 
-    codex = { state: "signedOut", models: ["gpt-6.1-sol"] };
+    codex = { state: "signedOut", models: [codexModel("gpt-6.1-sol")] };
     await user.click(
       within(built).getByRole("button", { name: "Check again" }),
     );
