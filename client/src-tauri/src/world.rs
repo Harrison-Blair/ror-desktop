@@ -164,14 +164,14 @@ type Result<T> = std::result::Result<T, String>;
 // Changes read, change and write whole files, so they run one at a time.
 static UPDATE: Mutex<()> = Mutex::new(());
 
-fn lock() -> std::sync::MutexGuard<'static, ()> {
+pub(crate) fn lock() -> std::sync::MutexGuard<'static, ()> {
     UPDATE.lock().unwrap_or_else(|e| e.into_inner())
 }
 
 /// Reads a JSON object file. A missing file counts as the defaults. A file
 /// that can't be read, can't be parsed, lacks a field or breaks a rule of
 /// `valid` is an error and stays as it is, so its data can be recovered.
-fn read<T: DeserializeOwned + Default>(
+pub(crate) fn read<T: DeserializeOwned + Default>(
     file: &Path,
     valid: fn(&T) -> std::result::Result<(), String>,
 ) -> Result<T> {
@@ -200,7 +200,7 @@ fn read<T: DeserializeOwned + Default>(
 
 /// Writes beside the file and renames over it, so a failed write keeps the
 /// previous data.
-fn write_atomic(file: &Path, bytes: &[u8]) -> io::Result<()> {
+pub(crate) fn write_atomic(file: &Path, bytes: &[u8]) -> io::Result<()> {
     if let Some(parent) = file.parent() {
         fs::create_dir_all(parent)?;
     }
@@ -214,7 +214,7 @@ fn write_atomic(file: &Path, bytes: &[u8]) -> io::Result<()> {
     result
 }
 
-fn write<T: Serialize>(file: &Path, value: &T, what: &str) -> Result<()> {
+pub(crate) fn write<T: Serialize>(file: &Path, value: &T, what: &str) -> Result<()> {
     let text = serde_json::to_string_pretty(value).map_err(|e| e.to_string())?;
     write_atomic(file, text.as_bytes()).map_err(|e| format!("Couldn't save {what}: {e}."))
 }
@@ -700,7 +700,24 @@ pub fn update_world(paths: &Paths, mut world: World) -> Result<World> {
     Ok(world)
 }
 
-fn app_paths(app: &AppHandle) -> Result<Paths> {
+/// Changes only the game date, so a save of another World field can't be
+/// undone by it. Callers hold UPDATE.
+pub(crate) fn set_game_date_locked(paths: &Paths, date: &str) -> Result<World> {
+    if !is_iso_date(date) {
+        return Err("Not a real date.".to_string());
+    }
+    let mut world = get_world(paths)?;
+    world.game_date = date.to_string();
+    write(&paths.world(), &world, "the world")?;
+    Ok(world)
+}
+
+pub fn set_game_date(paths: &Paths, date: &str) -> Result<World> {
+    let _guard = lock();
+    set_game_date_locked(paths, date)
+}
+
+pub(crate) fn app_paths(app: &AppHandle) -> Result<Paths> {
     Ok(Paths {
         data: app.path().app_data_dir().map_err(|e| e.to_string())?,
         config_file: crate::config_file(app).map_err(|e| e.to_string())?,
@@ -804,6 +821,11 @@ pub fn people_read_photo(app: AppHandle, id: String) -> Result<Response> {
 #[tauri::command]
 pub fn world_get(app: AppHandle) -> Result<World> {
     get_world(&app_paths(&app)?)
+}
+
+#[tauri::command]
+pub fn world_set_game_date(app: AppHandle, date: String) -> Result<World> {
+    set_game_date(&app_paths(&app)?, &date)
 }
 
 #[tauri::command]

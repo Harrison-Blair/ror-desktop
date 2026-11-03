@@ -1,11 +1,34 @@
 import styles from "./SessionMenu.module.css";
 
-// The Session rail sections. Overview is the only one so far, so it is
-// always selected.
-export function SessionMenu() {
+export type SessionSection = "overview" | "rounds" | "sessions";
+
+const sections: { id: SessionSection; label: string }[] = [
+  { id: "overview", label: "Overview" },
+  { id: "rounds", label: "Rounds" },
+  { id: "sessions", label: "Sessions" },
+];
+
+// The Session rail sections.
+export function SessionMenu({
+  section,
+  onSelect,
+}: {
+  section: SessionSection;
+  onSelect: (section: SessionSection) => void;
+}) {
   return (
-    <button type="button" className={styles.item} aria-pressed>
-      Overview
-    </button>
+    <>
+      {sections.map(({ id, label }) => (
+        <button
+          key={id}
+          type="button"
+          className={styles.item}
+          aria-pressed={id === section}
+          onClick={() => onSelect(id)}
+        >
+          {label}
+        </button>
+      ))}
+    </>
   );
 }

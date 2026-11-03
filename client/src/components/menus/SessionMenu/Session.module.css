@@ -1,0 +1,685 @@
+/* Session › Overview, Rounds, Sessions and the round notes. */
+
+/* The main panel pads 24px; 40px more leaves room for the timer pill. */
+.page {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-4);
+  max-width: 952px;
+  padding-top: 40px;
+  color: var(--ink);
+  font: 400 14px / 20px var(--font-sans);
+}
+
+.page button:focus-visible,
+.page input:focus-visible,
+.page select:focus-visible {
+  outline: 2px solid var(--focus);
+  outline-offset: 2px;
+}
+
+.hidden {
+  position: absolute;
+  width: 1px;
+  height: 1px;
+  overflow: hidden;
+  clip-path: inset(50%);
+  white-space: nowrap;
+}
+
+.h1 {
+  margin: 0;
+  font: 600 24px / 32px var(--font-sans);
+}
+
+.spacer {
+  flex: 1;
+}
+
+.mono {
+  font: 400 13px / 18px var(--font-mono);
+}
+
+.muted {
+  margin: 0;
+  color: var(--ink-muted);
+  font-size: 13px;
+  line-height: 18px;
+}
+
+.loadError {
+  margin: 0;
+  padding: var(--space-4);
+  color: var(--error);
+  overflow-wrap: anywhere;
+  border: 1px solid var(--error);
+  border-radius: var(--radius-1);
+}
+
+/* Buttons */
+.btn {
+  display: inline-flex;
+  flex: none;
+  align-items: center;
+  gap: 6px;
+  height: 32px;
+  padding: 0 var(--space-3);
+  color: var(--ink);
+  font: 600 14px / 20px var(--font-sans);
+  white-space: nowrap;
+  background: transparent;
+  border: 1px solid var(--line-control);
+  border-radius: var(--radius-1);
+  cursor: pointer;
+}
+
+.btn:hover {
+  background: var(--well);
+}
+
+.btn:disabled {
+  cursor: default;
+  opacity: 0.5;
+}
+
+.quiet {
+  color: var(--ink-muted);
+  font-weight: 500;
+}
+
+.quiet:hover {
+  color: var(--ink);
+}
+
+.small {
+  height: 28px;
+  padding: 0 10px;
+  font-size: 13px;
+}
+
+.primary,
+.primary:hover {
+  color: var(--sunken);
+  background: var(--ink);
+  border-color: var(--ink);
+}
+
+.alert,
+.alert:hover {
+  color: var(--sunken);
+  background: var(--error);
+  border-color: var(--error);
+}
+
+.link {
+  display: inline-flex;
+  align-items: center;
+  gap: 2px;
+  padding: 2px var(--space-1);
+  color: var(--ink);
+  font: 500 13px / 18px var(--font-sans);
+  text-decoration: underline;
+  text-decoration-color: var(--line-control);
+  text-underline-offset: 3px;
+  background: none;
+  border: 0;
+  border-radius: var(--radius-1);
+  cursor: pointer;
+}
+
+.input {
+  box-sizing: border-box;
+  min-width: 0;
+  height: 32px;
+  padding: 0 var(--space-2);
+  color: var(--ink);
+  font: inherit;
+  background: var(--ground);
+  border: 1px solid var(--line-control);
+  border-radius: var(--radius-1);
+}
+
+.input.invalid {
+  border-color: var(--error);
+}
+
+.fieldError {
+  color: var(--error);
+  font-size: 13px;
+  line-height: 18px;
+}
+
+/* Segmented control */
+.segs {
+  display: flex;
+  overflow: hidden;
+  border: 1px solid var(--line-control);
+  border-radius: var(--radius-1);
+}
+
+.seg {
+  display: flex;
+  align-items: center;
+  height: 28px;
+  padding: 0 10px;
+  color: var(--ink-muted);
+  font: 400 13px / 18px var(--font-sans);
+  background: transparent;
+  border: 0;
+  border-right: 1px solid var(--line);
+  cursor: pointer;
+}
+
+.seg:last-child {
+  border-right: 0;
+}
+
+.seg[aria-checked="true"] {
+  color: var(--ink);
+  background: var(--well);
+}
+
+/* Play-night line */
+.night {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 10px;
+  min-height: 44px;
+  padding: 0 var(--space-2) 0 14px;
+  border: 1px solid var(--line);
+  border-radius: var(--radius-1);
+}
+
+.dot {
+  flex: none;
+  width: 8px;
+  height: 8px;
+  background: var(--ink);
+  border-radius: 50%;
+}
+
+.dot.off {
+  background: transparent;
+  border: 1px solid var(--line-control);
+}
+
+.nightLabel {
+  font-weight: 600;
+}
+
+.nightMeta {
+  color: var(--ink-muted);
+  font: 400 13px / 18px var(--font-mono);
+}
+
+/* "Now" card */
+.now {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) auto;
+  gap: 14px var(--space-5);
+  padding: 18px 20px;
+  background: var(--raised);
+  border: 1px solid var(--line-control);
+  border-radius: var(--radius-1);
+}
+
+.now.zero {
+  border-color: var(--error);
+  box-shadow: 0 0 0 3px var(--error-wash);
+}
+
+.nowHead {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-1);
+  min-width: 0;
+}
+
+.eyebrow {
+  color: var(--ink-muted);
+  font: 600 12px / 16px var(--font-sans);
+  letter-spacing: 0.04em;
+}
+
+.who {
+  margin: 0;
+  overflow: hidden;
+  font: 600 24px / 32px var(--font-sans);
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.char {
+  color: var(--ink-muted);
+  font-weight: 400;
+}
+
+.clock {
+  display: flex;
+  flex-direction: column;
+  align-items: flex-end;
+  gap: 2px;
+}
+
+.time {
+  font: 600 40px / 44px var(--font-mono);
+  letter-spacing: -0.02em;
+}
+
+.clockState {
+  color: var(--ink-muted);
+  font-size: 13px;
+  line-height: 18px;
+}
+
+.now.zero .time,
+.now.zero .clockState {
+  color: var(--error);
+}
+
+.acts {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: var(--space-2);
+}
+
+.timerActs {
+  display: flex;
+  justify-content: flex-end;
+  gap: var(--space-2);
+}
+
+.next {
+  color: var(--ink-muted);
+  font-size: 13px;
+  line-height: 18px;
+}
+
+.next b {
+  color: var(--ink);
+  font-weight: 500;
+}
+
+/* The time left, edited in place while paused. */
+.timeEdit {
+  box-sizing: border-box;
+  width: 150px;
+  height: 48px;
+  padding: 0 10px;
+  color: var(--ink);
+  font: 600 36px / 44px var(--font-mono);
+  text-align: right;
+  background: var(--ground);
+  border: 1px solid var(--line-control);
+  border-radius: var(--radius-1);
+}
+
+.now.zero .timeEdit {
+  color: var(--error);
+}
+
+/* Round box */
+.box {
+  display: flex;
+  flex-direction: column;
+  background: var(--sunken);
+  border: 1px solid var(--line);
+  border-radius: var(--radius-1);
+}
+
+.roundHead {
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+  padding: 14px var(--space-3) var(--space-3) var(--space-4);
+  border-bottom: 1px solid var(--line);
+}
+
+.roundLine {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 10px;
+}
+
+.roundTitle {
+  margin: 0;
+  font: 600 18px / 24px var(--font-sans);
+}
+
+.roundMeta {
+  color: var(--ink-muted);
+  font-size: 13px;
+}
+
+.roundMeta .value {
+  color: var(--ink);
+}
+
+.status {
+  display: inline-block;
+  padding: 0 6px;
+  color: var(--ink);
+  font: 500 11px / 18px var(--font-sans);
+  border: 1px solid var(--ink-muted);
+  border-radius: var(--radius-1);
+}
+
+.status.closed {
+  color: var(--ink-muted);
+  border-color: var(--line-control);
+}
+
+.inlineEdit {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+}
+
+.inlineEdit .input {
+  height: 28px;
+  font: 400 13px / 18px var(--font-mono);
+}
+
+.lengthInput {
+  width: 72px;
+  text-align: right;
+}
+
+.dateInput {
+  width: 160px;
+}
+
+.row {
+  display: grid;
+  grid-template-columns: 20px minmax(0, 1fr) 84px 150px 176px;
+  gap: var(--space-3);
+  align-items: center;
+  min-height: 48px;
+  padding: var(--space-1) var(--space-3) var(--space-1) var(--space-4);
+  border-bottom: 1px solid var(--line);
+}
+
+.row.isNow {
+  background: var(--raised);
+  box-shadow: inset 2px 0 0 var(--ink);
+}
+
+.row.ended {
+  color: var(--ink-muted);
+}
+
+.pos {
+  color: var(--ink-muted);
+  font: 500 13px / 18px var(--font-mono);
+}
+
+.name {
+  min-width: 0;
+  overflow: hidden;
+  padding: 0;
+  color: inherit;
+  font: inherit;
+  text-align: left;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  background: none;
+  border: 0;
+  border-radius: var(--radius-1);
+}
+
+button.name {
+  cursor: pointer;
+}
+
+.name b {
+  font-weight: 600;
+}
+
+.row.ended .name b {
+  font-weight: 500;
+}
+
+.name .char {
+  font-weight: 400;
+}
+
+.state {
+  justify-self: start;
+  padding: 0 6px;
+  color: var(--ink-muted);
+  font: 500 11px / 18px var(--font-sans);
+  border: 1px solid var(--line-control);
+  border-radius: var(--radius-1);
+}
+
+.state.isNow {
+  color: var(--sunken);
+  font-weight: 600;
+  background: var(--ink);
+  border-color: var(--ink);
+}
+
+.state.ended {
+  border-style: dashed;
+}
+
+.used {
+  overflow: hidden;
+  color: var(--ink-muted);
+  white-space: nowrap;
+  text-overflow: ellipsis;
+  font: 400 13px / 18px var(--font-mono);
+}
+
+.used.over {
+  color: var(--warn);
+}
+
+.rowActs {
+  display: flex;
+  justify-content: flex-end;
+  gap: 6px;
+}
+
+.roundFoot {
+  display: flex;
+  align-items: center;
+  gap: var(--space-2);
+  padding: var(--space-3);
+}
+
+/* Rounds and Sessions tables */
+.table {
+  display: flex;
+  flex-direction: column;
+  background: var(--sunken);
+  border: 1px solid var(--line);
+  border-radius: var(--radius-1);
+}
+
+.tr {
+  display: grid;
+  gap: var(--space-3);
+  align-items: center;
+  min-height: 48px;
+  padding: var(--space-1) var(--space-3) var(--space-1) var(--space-4);
+  border-bottom: 1px solid var(--line);
+}
+
+.tr:last-child {
+  border-bottom: 0;
+}
+
+.tr.head {
+  min-height: 32px;
+  color: var(--ink-muted);
+  font: 600 12px / 16px var(--font-sans);
+  letter-spacing: 0.02em;
+}
+
+.tr.cur {
+  background: var(--raised);
+}
+
+.tr.cur .first {
+  font-weight: 600;
+}
+
+.rounds {
+  grid-template-columns: 90px minmax(0, 1.6fr) 80px 80px 110px minmax(0, 1fr) 70px;
+}
+
+.nights {
+  grid-template-columns: 110px 150px minmax(0, 1fr) 120px minmax(0, 1fr) 80px;
+}
+
+.cell {
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.endCell {
+  justify-self: end;
+}
+
+.recap {
+  color: var(--ink-muted);
+  font-size: 13px;
+  line-height: 18px;
+}
+
+/* Notes inside Session */
+.noteHead {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-1);
+}
+
+.back {
+  align-self: flex-start;
+  padding: 2px 0;
+  color: var(--ink-muted);
+  font: 500 13px / 18px var(--font-sans);
+  background: none;
+  border: 0;
+  cursor: pointer;
+}
+
+.back:hover {
+  color: var(--ink);
+}
+
+.readNote {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-2);
+  padding: var(--space-4) 0;
+  border-bottom: 1px solid var(--line);
+}
+
+.readNote:last-child {
+  border-bottom: 0;
+}
+
+.readTitle {
+  display: flex;
+  align-items: center;
+  gap: var(--space-3);
+  margin: 0;
+  font: 600 16px / 22px var(--font-sans);
+}
+
+/* Edit order dialog */
+.backdrop {
+  position: fixed;
+  inset: 0;
+  z-index: 20;
+  display: grid;
+  place-items: center;
+  background: rgba(0, 0, 0, 0.5);
+}
+
+.dialog {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-4);
+  box-sizing: border-box;
+  width: 560px;
+  max-width: calc(100vw - 2 * var(--space-4));
+  max-height: calc(100vh - 2 * var(--space-4));
+  padding: 20px;
+  overflow-y: auto;
+  color: var(--ink);
+  background: var(--raised);
+  border: 1px solid var(--line);
+  border-radius: var(--radius-1);
+  box-shadow: var(--shadow-pop);
+}
+
+.dialog button:focus-visible,
+.dialog input:focus-visible,
+.dialog select:focus-visible {
+  outline: 2px solid var(--focus);
+  outline-offset: 2px;
+}
+
+.dialogTitle {
+  margin: 0;
+  font: 600 16px / 22px var(--font-sans);
+}
+
+.dialogText {
+  margin: 0;
+  color: var(--ink-muted);
+}
+
+.playerRow {
+  display: grid;
+  grid-template-columns: 20px minmax(0, 1fr) minmax(0, 1fr) auto;
+  gap: var(--space-2);
+  align-items: center;
+}
+
+/* A turn kept for its history: no name, character or remove controls. */
+.keptRow {
+  display: flex;
+  grid-column: span 2;
+  gap: var(--space-3);
+  align-items: baseline;
+  min-width: 0;
+  padding: 0 var(--space-2);
+}
+
+.iconBtn {
+  display: grid;
+  place-items: center;
+  width: 28px;
+  height: 28px;
+  padding: 0;
+  color: var(--ink-muted);
+  background: transparent;
+  border: 1px solid var(--line-control);
+  border-radius: var(--radius-1);
+  cursor: pointer;
+}
+
+.iconBtn:hover {
+  color: var(--ink);
+}
+
+.iconBtn:disabled {
+  cursor: default;
+  opacity: 0.4;
+}
+
+.dialogActs {
+  display: flex;
+  flex-wrap: wrap;
+  justify-content: flex-end;
+  gap: var(--space-2);
+}
