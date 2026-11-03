@@ -917,6 +917,23 @@ describe("Chat panel", () => {
     await user.keyboard("{Escape}");
     expect(card()).toBeNull();
 
+    // With a menu open over a pinned card, Esc closes the menu first and
+    // returns focus to its button, then a second Esc closes the card.
+    act(() => meter.focus());
+    await user.keyboard("{Enter}");
+    const permission = within(panel()).getByRole("button", {
+      name: "Permission mode: Manual",
+    });
+    act(() => permission.focus());
+    await user.keyboard("{Enter}");
+    expect(screen.getByRole("menu", { name: "Permission mode" })).toBeVisible();
+    await user.keyboard("{Escape}");
+    expect(screen.queryByRole("menu", { name: "Permission mode" })).toBeNull();
+    expect(permission).toHaveFocus();
+    expect(card()).toHaveTextContent("Pinned");
+    await user.keyboard("{Escape}");
+    expect(card()).toBeNull();
+
     // Keyboard focus opens it too.
     act(() => meter.focus());
     expect(card()).not.toBeNull();
