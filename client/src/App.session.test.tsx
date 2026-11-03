@@ -418,6 +418,17 @@ describe("The round", () => {
       "Ana’s turn has ended. Remove Ana from the usual order instead.",
     );
     expect(screen.getByRole("dialog")).toBeVisible();
+    // While refused, This round only is greyed out; Back clears it.
+    expect(
+      order.getByRole("button", { name: "This round only" }),
+    ).toBeDisabled();
+    await user.click(order.getByRole("button", { name: "Back" }));
+    await user.click(order.getByRole("button", { name: "Save" }));
+    expect(
+      order.getByRole("button", { name: "This round only" }),
+    ).toBeEnabled();
+    await user.click(order.getByRole("button", { name: "Back" }));
+    await user.click(order.getByRole("button", { name: "Save" }));
     // The reason shows in the dialog, not as a toast.
     expect(
       within(screen.getByRole("region", { name: "Notifications" })).queryByRole(
@@ -428,6 +439,48 @@ describe("The round", () => {
       order.getByRole("button", { name: "The usual order too" }),
     );
     expect(screen.queryByRole("dialog")).not.toBeInTheDocument();
+  });
+
+  it("Edit order shows a kept turn as a fixed row that only moves", async () => {
+    withRounds(
+      round(4, [
+        ben(),
+        cleo(),
+        turn("Ana", "marie-dubois", { state: "ended", kept: true }),
+      ]),
+    );
+    const user = await openSession();
+    await user.click(roundBox().getByRole("button", { name: "Edit order" }));
+    const order = within(screen.getByRole("dialog"));
+    const rows = screen
+      .getByRole("dialog")
+      .querySelectorAll(`.${sessionStyles.playerRow}`);
+    expect(rows[2].textContent).toBe(
+      "3Ana · Marie DuboisNot in the usual order",
+    );
+    expect(within(rows[2] as HTMLElement).queryByRole("textbox")).toBeNull();
+    expect(within(rows[2] as HTMLElement).queryByRole("combobox")).toBeNull();
+    expect(
+      order.queryByRole("button", { name: "Remove player 3" }),
+    ).not.toBeInTheDocument();
+    expect(order.getAllByRole("textbox")).toHaveLength(2);
+    await user.click(order.getByRole("button", { name: "Move player 3 up" }));
+    await user.click(order.getByRole("button", { name: "Save" }));
+    await user.click(
+      order.getByRole("button", { name: "The usual order too" }),
+    );
+    expect(acts()).toEqual([
+      {
+        type: "saveOrder",
+        roundId: "round-4",
+        players: [
+          { id: "player-ben", name: "Ben", characterId: "karl-weber" },
+          { id: "player-ana", name: "Ana", characterId: "marie-dubois" },
+          { id: "player-cleo", name: "Cleo", characterId: "rosa-alvarez" },
+        ],
+        usual: true,
+      },
+    ]);
   });
 
   it("Edit order saves for this round only", async () => {

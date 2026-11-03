@@ -158,6 +158,11 @@ pub struct Turn {
     /// An ended turn keeps the time it had left, for Reopen.
     pub clock: Clock,
     pub note_id: String,
+    /// True for a turn kept in its round for its history after its player
+    /// left the usual order. Its player never returns to the usual order
+    /// through it.
+    #[serde(default)]
+    pub kept: bool,
     pub updated_at: i64,
 }
 
@@ -312,6 +317,7 @@ fn new_turn(player: &Player, usual_seconds: i64, now: i64) -> Turn {
         used_ms: 0,
         clock: Clock::fresh(usual_seconds),
         note_id: new_id(),
+        kept: false,
         updated_at: now,
     }
 }
@@ -878,7 +884,11 @@ fn apply(
                 match old_turns.iter().position(|t| t.player_id == player.id) {
                     Some(i) => {
                         let mut turn = old_turns.remove(i);
-                        if turn.name != player.name || turn.character_id != player.character_id {
+                        // A kept turn only moves.
+                        if !turn.kept
+                            && (turn.name != player.name
+                                || turn.character_id != player.character_id)
+                        {
                             turn.name = player.name.clone();
                             turn.character_id = player.character_id.clone();
                             turn.updated_at = now;
@@ -906,14 +916,25 @@ fn apply(
                             name = turn.name
                         ));
                     }
-                    Some(_) => round.turns.push(turn),
+                    Some(_) => {
+                        let mut turn = turn;
+                        turn.kept = true;
+                        turn.updated_at = now;
+                        round.turns.push(turn);
+                    }
                     None => {}
                 }
             }
             keep_now(round, timed);
             round.updated_at = now;
             if also_usual {
-                table.players = list;
+                let kept: HashSet<String> = round
+                    .turns
+                    .iter()
+                    .filter(|t| t.kept)
+                    .map(|t| t.player_id.clone())
+                    .collect();
+                table.players = list.into_iter().filter(|p| !kept.contains(&p.id)).collect();
             }
             vec![round_id]
         }
@@ -1693,6 +1714,58 @@ mod tests {
             read_note(&paths, &turn(&s, "Ben").note_id, T0).unwrap(),
             "Ben plans."
         );
+        assert!(turn(&s, "Ana").kept && turn(&s, "Ben").kept);
+    }
+
+    #[test]
+    fn a_kept_turn_never_returns_to_the_usual_order() {
+        let (_temp, paths) = setup();
+        with_players(&paths);
+        let s = get(&paths, T0).unwrap();
+        run(
+            &paths,
+            Action::EndTurn {
+                turn_id: turn_id(&s, "Ana"),
+            },
+            T0,
+        );
+        let s = keep_only(&paths, &["Ben", "Cleo"], true).unwrap();
+        assert_eq!(order(&s).0, ["Ben", "Cleo", "Ana"]);
+        // A later save of the usual order sends every row, Ana's kept turn
+        // too, moved to the front and renamed: she only moves.
+        let mut rows: Vec<PlayerInput> = current(&s)
+            .round
+            .turns
+            .iter()
+            .map(|t| PlayerInput {
+                id: Some(t.player_id.clone()),
+                name: t.name.clone(),
+                character_id: t.character_id.clone(),
+            })
+            .collect();
+        rows.rotate_right(1);
+        rows[0].name = "Anna".into();
+        rows[1].name = "Benjamin".into();
+        let s = run(
+            &paths,
+            Action::SaveOrder {
+                round_id: current(&s).round.id.clone(),
+                players: rows,
+                usual: true,
+            },
+            T0,
+        );
+        assert_eq!(order(&s).0, ["Ana", "Benjamin", "Cleo"]);
+        let usual: Vec<_> = s.players.iter().map(|p| p.name.as_str()).collect();
+        assert_eq!(usual, ["Benjamin", "Cleo"]);
+        let s = run(
+            &paths,
+            Action::NextRound {
+                round_id: current(&s).round.id.clone(),
+            },
+            T0,
+        );
+        assert_eq!(order(&s).0, ["Benjamin", "Cleo"]);
     }
 
     #[test]

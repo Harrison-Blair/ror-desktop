@@ -32,6 +32,9 @@ export type Turn = {
   usedMs: number;
   clock: Clock;
   noteId: string;
+  // Kept in its round for its history after its player left the usual
+  // order. It never returns to the usual order.
+  kept: boolean;
   updatedAt: number;
 };
 

@@ -46,6 +46,7 @@ export const turn = (
     usedMs: 0,
     clock: clock(),
     noteId: `note-${id}`,
+    kept: false,
     updatedAt: 0,
     ...extra,
   };

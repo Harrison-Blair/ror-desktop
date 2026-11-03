@@ -1,17 +1,21 @@
 import { ArrowDown, ArrowUp, Plus, X } from "lucide-react";
 import { type KeyboardEvent, useId, useState } from "react";
 import type { Character } from "@/lib/peopleApi";
-import type { PlayerInput, Round } from "@/lib/sessionApi";
+import { turnLabel } from "@/lib/session";
+import type { PlayerInput, Round, Turn } from "@/lib/sessionApi";
 import styles from "./Session.module.css";
 
-type Row = PlayerInput & { key: string };
+// `kept` is a turn kept for its history after its player left the usual
+// order: a fixed row that only moves within this round.
+type Row = PlayerInput & { key: string; kept?: Turn };
 
 let nextKey = 0;
 const newKey = () => `new-${++nextKey}`;
 
 // Edit order: the round's players in order. Each has a name and the
 // character they play, picked from People. Save then asks whether the change
-// is for this round only or the usual order too.
+// is for this round only or the usual order too. A kept turn's row is sent
+// for its place in this round; table.rs never puts it in the usual order.
 export function OrderDialog({
   round,
   characters,
@@ -32,13 +36,14 @@ export function OrderDialog({
           id: t.playerId,
           name: t.name,
           characterId: t.characterId,
+          kept: t.kept ? t : undefined,
         }))
       : [{ key: newKey(), id: null, name: "", characterId: null }],
   );
   const [step, setStep] = useState<"edit" | "scope">("edit");
   const [shown, setShown] = useState(false);
   const [refused, setRefused] = useState<string | null>(null);
-  const blank = rows.some((r) => !r.name.trim());
+  const blank = rows.some((r) => !r.kept && !r.name.trim());
 
   const change = (key: string, part: Partial<Row>) =>
     setRows((list) => list.map((r) => (r.key === key ? { ...r, ...part } : r)));
@@ -86,36 +91,49 @@ export function OrderDialog({
             {rows.map((row, i) => (
               <div key={row.key} className={styles.playerRow}>
                 <span className={styles.pos}>{i + 1}</span>
-                <input
-                  className={`${styles.input} ${shown && !row.name.trim() ? styles.invalid : ""}`}
-                  aria-label={`Player ${i + 1} name`}
-                  placeholder="Player name"
-                  value={row.name}
-                  // biome-ignore lint/a11y/noAutofocus: the dialog's first field
-                  autoFocus={i === 0}
-                  onChange={(e) => change(row.key, { name: e.target.value })}
-                />
-                <select
-                  className={styles.input}
-                  aria-label={`Player ${i + 1} character`}
-                  value={row.characterId ?? ""}
-                  onChange={(e) =>
-                    change(row.key, { characterId: e.target.value || null })
-                  }
-                >
-                  <option value="">No character</option>
-                  {row.characterId &&
-                    !characters.some((c) => c.id === row.characterId) && (
-                      <option value={row.characterId}>
-                        (a deleted character)
-                      </option>
-                    )}
-                  {characters.map((c) => (
-                    <option key={c.id} value={c.id}>
-                      {c.name}
-                    </option>
-                  ))}
-                </select>
+                {row.kept ? (
+                  <span className={styles.keptRow}>
+                    <span className={styles.cell}>
+                      {turnLabel(row.kept, characters)}
+                    </span>
+                    <span className={styles.muted}>Not in the usual order</span>
+                  </span>
+                ) : (
+                  <>
+                    <input
+                      className={`${styles.input} ${shown && !row.name.trim() ? styles.invalid : ""}`}
+                      aria-label={`Player ${i + 1} name`}
+                      placeholder="Player name"
+                      value={row.name}
+                      // biome-ignore lint/a11y/noAutofocus: the dialog's first field
+                      autoFocus={i === 0}
+                      onChange={(e) =>
+                        change(row.key, { name: e.target.value })
+                      }
+                    />
+                    <select
+                      className={styles.input}
+                      aria-label={`Player ${i + 1} character`}
+                      value={row.characterId ?? ""}
+                      onChange={(e) =>
+                        change(row.key, { characterId: e.target.value || null })
+                      }
+                    >
+                      <option value="">No character</option>
+                      {row.characterId &&
+                        !characters.some((c) => c.id === row.characterId) && (
+                          <option value={row.characterId}>
+                            (a deleted character)
+                          </option>
+                        )}
+                      {characters.map((c) => (
+                        <option key={c.id} value={c.id}>
+                          {c.name}
+                        </option>
+                      ))}
+                    </select>
+                  </>
+                )}
                 <span className={styles.acts}>
                   <button
                     type="button"
@@ -135,16 +153,18 @@ export function OrderDialog({
                   >
                     <ArrowDown size={14} aria-hidden />
                   </button>
-                  <button
-                    type="button"
-                    className={styles.iconBtn}
-                    aria-label={`Remove player ${i + 1}`}
-                    onClick={() =>
-                      setRows((list) => list.filter((r) => r.key !== row.key))
-                    }
-                  >
-                    <X size={14} aria-hidden />
-                  </button>
+                  {!row.kept && (
+                    <button
+                      type="button"
+                      className={styles.iconBtn}
+                      aria-label={`Remove player ${i + 1}`}
+                      onClick={() =>
+                        setRows((list) => list.filter((r) => r.key !== row.key))
+                      }
+                    >
+                      <X size={14} aria-hidden />
+                    </button>
+                  )}
                 </span>
               </div>
             ))}
@@ -214,6 +234,7 @@ export function OrderDialog({
                 className={styles.btn}
                 // biome-ignore lint/a11y/noAutofocus: the step's first choice
                 autoFocus
+                disabled={refused !== null}
                 onClick={() => save(false)}
               >
                 This round only

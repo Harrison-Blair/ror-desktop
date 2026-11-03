@@ -645,6 +645,16 @@ button.name {
   align-items: center;
 }
 
+/* A turn kept for its history: no name, character or remove controls. */
+.keptRow {
+  display: flex;
+  grid-column: span 2;
+  gap: var(--space-3);
+  align-items: baseline;
+  min-width: 0;
+  padding: 0 var(--space-2);
+}
+
 .iconBtn {
   display: grid;
   place-items: center;
