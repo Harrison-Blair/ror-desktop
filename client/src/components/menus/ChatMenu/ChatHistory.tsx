@@ -93,8 +93,7 @@ export function ChatHistory({ chat }: { chat: ChatController }) {
     notify({ kind: "error", message: errorMessage(e) });
   const refresh = () => setVersion((v) => v + 1);
 
-  // A turn that ends may have titled its chat, so the list is read again.
-  // biome-ignore lint/correctness/useExhaustiveDependencies: see above
+  // biome-ignore lint/correctness/useExhaustiveDependencies: `version` reads the list again
   useEffect(() => {
     let current = true;
     listChats(archived, query).then(
@@ -106,7 +105,7 @@ export function ChatHistory({ chat }: { chat: ChatController }) {
     return () => {
       current = false;
     };
-  }, [archived, query, version, chat.running, notify]);
+  }, [archived, query, version, notify]);
 
   const open = (id: string) => {
     chat.open(id);

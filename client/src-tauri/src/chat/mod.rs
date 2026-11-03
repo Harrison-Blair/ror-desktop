@@ -435,7 +435,8 @@ pub async fn chat_send(
 
     let mut chat = match &chat_id {
         Some(id) => store::load(&dir, id).map_err(|e| format!("Couldn't open the chat: {e}."))?,
-        None => Chat::new(backend, &model),
+        None => store::new_chat(&dir, backend, &model)
+            .map_err(|e| format!("Couldn't save the chat: {e}."))?,
     };
     chat.model = model.clone();
     chat.effort = effort.clone();

@@ -1052,28 +1052,26 @@ async fn a_codex_turn_without_an_effort_sends_none() {
 }
 
 #[tokio::test]
-async fn the_first_codex_reply_titles_the_chat_in_a_turn_without_tools() {
-    let seen = Arc::new(Mutex::new(Vec::new()));
-    let record = seen.clone();
+async fn the_first_codex_reply_starts_no_title_turn() {
+    let after = Arc::new(Mutex::new(Vec::new()));
+    let record = after.clone();
     let (codex, _) = codex(vec![script(move |mut peer| async move {
         peer.handshake().await;
         peer.begin(false).await;
         peer.delta("m1", "Ambush them at the ford.").await;
-        peer.usage(100, 10).await;
         peer.completed("completed", Value::Null).await;
         peer.expect("thread/unsubscribe").await;
-        // The title: a new thread without tools, with the first exchange.
-        let thread = peer.expect("thread/start").await;
-        peer.reply(&thread, thread_started(&thread)).await;
-        let turn = peer.expect("turn/start").await;
-        peer.reply(&turn, turn_started()).await;
-        peer.delta("m2", "\"Goblin Ambush at the Ford\"").await;
-        peer.usage(40, 5).await;
-        peer.completed("completed", Value::Null).await;
-        record.lock().unwrap().extend([thread, turn]);
+        // Anything the app sends after the turn, such as a title thread.
+        while let Ok(Some(message)) =
+            tokio::time::timeout(std::time::Duration::from_millis(200), peer.next()).await
+        {
+            record.lock().unwrap().push(message["method"].clone());
+        }
+        record.lock().unwrap().push(json!("quiet"));
         peer.hold().await;
     })]);
     let mut chat = new_chat("How do I ambush goblins?");
+    chat.title = "1".into();
     let host = Host::default();
     let backend = Backend::Codex(Session {
         codex: codex.clone(),
@@ -1090,21 +1088,8 @@ async fn the_first_codex_reply_titles_the_chat_in_a_turn_without_tools() {
     let end = within(agent::answer(&backend, &mut turn, &host)).await;
 
     assert_eq!(end, TurnEnd::Done);
-    assert_eq!(chat.title, "Goblin Ambush at the Ford");
-    assert_eq!(chat.usage.input_tokens, 140);
-    assert_eq!(chat.usage.output_tokens, 15);
-    assert_eq!(
-        host.saved.lock().unwrap().as_ref().unwrap().title,
-        chat.title
-    );
-    let seen = recorded(&seen, 2).await;
-    assert_eq!(seen[0]["params"]["dynamicTools"], json!([]));
-    assert_eq!(seen[0]["params"]["baseInstructions"], openai::TITLE_PROMPT);
-    assert_eq!(seen[0]["params"]["model"], "gpt-5.6-terra");
-    assert_eq!(
-        seen[1]["params"]["input"][0]["text"],
-        "User: How do I ambush goblins?\n\nAssistant: Ambush them at the ford."
-    );
+    assert_eq!(chat.title, "1");
+    assert_eq!(recorded(&after, 1).await, vec![json!("quiet")]);
 }
 
 #[tokio::test]
@@ -1146,59 +1131,6 @@ async fn stop_before_codex_answers_turn_start_interrupts_the_turn_once_it_starts
             text: agent::STOPPED.into(),
         })
     );
-    let seen = recorded(&seen, 2).await;
-    assert_eq!(
-        seen[0]["params"],
-        json!({ "threadId": THREAD, "turnId": TURN })
-    );
-    assert_eq!(seen[1]["params"], json!({ "threadId": THREAD }));
-}
-
-#[tokio::test]
-async fn stop_during_the_codex_title_ends_the_title_turn() {
-    let seen = Arc::new(Mutex::new(Vec::new()));
-    let record = seen.clone();
-    let cancel = CancellationToken::new();
-    let stop = cancel.clone();
-    let (codex, _) = codex(vec![script(move |mut peer| async move {
-        peer.handshake().await;
-        peer.begin(false).await;
-        peer.delta("m1", "Ambush them at the ford.").await;
-        peer.usage(100, 10).await;
-        peer.completed("completed", Value::Null).await;
-        peer.expect("thread/unsubscribe").await;
-        let thread = peer.expect("thread/start").await;
-        peer.reply(&thread, thread_started(&thread)).await;
-        let turn = peer.expect("turn/start").await;
-        // Stop while the title turn starts.
-        stop.cancel();
-        tokio::time::sleep(std::time::Duration::from_millis(50)).await;
-        peer.reply(&turn, turn_started()).await;
-        let interrupt = peer.expect("turn/interrupt").await;
-        let unsubscribe = peer.expect("thread/unsubscribe").await;
-        record.lock().unwrap().extend([interrupt, unsubscribe]);
-        peer.hold().await;
-    })]);
-    let mut chat = new_chat("How do I ambush goblins?");
-    let untitled = chat.title.clone();
-    let host = Host::default();
-    let backend = Backend::Codex(Session {
-        codex: codex.clone(),
-        model: "gpt-5.6-terra".into(),
-        effort: None,
-    });
-    let mut turn = Turn {
-        chat: &mut chat,
-        system: SYSTEM.into(),
-        tools: vec![roll_tool()],
-        cancel,
-    };
-
-    let end = within(agent::answer(&backend, &mut turn, &host)).await;
-
-    assert_eq!(end, TurnEnd::Done);
-    assert_eq!(chat.title, untitled);
-    assert_eq!(chat.usage.input_tokens, 100);
     let seen = recorded(&seen, 2).await;
     assert_eq!(
         seen[0]["params"],

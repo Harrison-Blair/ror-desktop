@@ -8,7 +8,7 @@
 
 use super::agent::{ChatEvent, ToolOutput, Turn, TurnEnd, TurnHost, MAX_TOOL_CALLS, STOPPED};
 use super::openai;
-use super::store::{Chat, Message, NoticeLevel, ToolCall, Usage};
+use super::store::{Message, NoticeLevel, ToolCall, Usage};
 use serde::Serialize;
 use serde_json::{json, Value};
 use std::collections::HashMap;
@@ -1061,65 +1061,4 @@ async fn drive(
     conn.send("thread/unsubscribe", json!({ "threadId": thread }))
         .await;
     ending
-}
-
-/// Asks the chat's model for a short title for its first exchange, in one
-/// turn without tools. Stop ends the title turn.
-pub async fn title(
-    session: &Session,
-    chat: &Chat,
-    cancel: &CancellationToken,
-) -> Result<(String, Usage), String> {
-    let connected = tokio::select! {
-        biased;
-        () = cancel.cancelled() => return Err(STOPPED.to_string()),
-        connected = session.codex.connection() => connected,
-    };
-    let conn = connected.map_err(|e| e.message())?;
-    let mut events = conn.listen();
-    let result = async {
-        let thread = thread_params(session, openai::TITLE_PROMPT, json!([]));
-        let started = start(
-            &conn,
-            cancel,
-            thread,
-            Vec::new(),
-            openai::title_exchange(chat),
-            None,
-        );
-        let (thread, codex_turn) = started.await.unwrap_or(Err(STOPPED.to_string()))?;
-        let mut text = String::new();
-        let mut usage = Usage::default();
-        loop {
-            let event = tokio::select! {
-                biased;
-                () = cancel.cancelled() => {
-                    end_thread(&conn, &thread, Some(&codex_turn)).await;
-                    return Err(STOPPED.to_string());
-                }
-                event = next_event(&conn, &mut events, &thread) => event,
-            };
-            match event {
-                None => return Err(CRASHED.to_string()),
-                Some(Some(Event::Delta(delta))) => text.push_str(&delta),
-                Some(Some(Event::Usage(total))) => usage = total,
-                Some(Some(Event::Refuse { id, method })) => {
-                    conn.respond(&id, refusal(&method)).await
-                }
-                Some(Some(Event::ToolCall { id, .. })) => {
-                    conn.respond(&id, refusal("item/tool/call")).await
-                }
-                Some(Some(Event::Completed(done))) => {
-                    end_thread(&conn, &thread, None).await;
-                    done?;
-                    let title = openai::clean_title(&text).ok_or("Codex sent no title.")?;
-                    return Ok((title, usage));
-                }
-                Some(_) => {}
-            }
-        }
-    }
-    .await;
-    conn.stop_listening();
-    result
 }
