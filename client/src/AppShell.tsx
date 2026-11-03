@@ -20,12 +20,14 @@ import {
   type DiceRoll,
 } from "@/components/menus/DiceMenu/DiceMenu";
 import { usePeople } from "@/components/menus/PeopleMenu/usePeople";
+import { useTable } from "@/components/menus/SessionMenu/useTable";
 import type { SettingsPage } from "@/components/menus/SettingsMenu/SettingsMenu";
 import { MainPanel } from "@/components/panels/MainPanel/MainPanel";
 import { RailPanel } from "@/components/panels/RailPanel/RailPanel";
 import { ResizeHandle } from "@/components/panels/ResizeHandle/ResizeHandle";
 import { SidePanel } from "@/components/panels/SidePanel/SidePanel";
 import { Rail, type RailItem } from "@/components/Rail/Rail";
+import { TimerPill } from "@/components/TimerPill/TimerPill";
 import type { DiceResult } from "@/lib/dice";
 import {
   NotesPageActions,
@@ -78,6 +80,8 @@ export function AppShell() {
   // Shared by World and the Notes character button.
   const people = usePeople();
   const reloadPeople = people.reload;
+  // Shared by Session and the timer pill.
+  const table = useTable(people.setWorld);
   // Answers the open "Discard changes?" question.
   const [discardAnswer, setDiscardAnswer] = useState<
     ((discard: boolean) => void) | null
@@ -213,6 +217,7 @@ export function AppShell() {
     if (click !== railClicks.current) return false;
     // The files may have been fixed or changed since the last load.
     if (id !== "notes") reloadPeople();
+    if (id === "session") table.reload();
     if (personId !== undefined) world.openPerson(personId);
     setSettings(null);
     setActiveId(id);
@@ -268,15 +273,30 @@ export function AppShell() {
         {settings === null && activeId === "world" && (
           <WorldPageRail world={world.view} />
         )}
-        {settings === null && activeId === "session" && <SessionPageRail />}
+        {settings === null && activeId === "session" && (
+          <SessionPageRail session={session.view} />
+        )}
       </RailPanel>
-      <MainPanel>
+      <MainPanel
+        overlay={
+          <TimerPill
+            table={table}
+            onOpen={async () => {
+              if (await showTab("session")) session.showOverview();
+            }}
+          />
+        }
+      >
         {settings !== null ? (
           <SettingsPageMain page={settings} />
         ) : activeId === "world" ? (
           <WorldPageMain world={world.view} people={people} />
         ) : activeId === "session" ? (
-          <SessionPageMain session={session.view} people={people} />
+          <SessionPageMain
+            session={session.view}
+            table={table}
+            people={people}
+          />
         ) : (
           <NotesPageMain
             notes={notes.view}

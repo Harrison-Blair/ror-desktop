@@ -6,6 +6,7 @@ import { type Tool, ToolRegistry } from "@/lib/chat/registry";
 import { diceRoll } from "@/lib/dice.tools";
 import { notesTools } from "@/lib/notes.tools";
 import { peopleTools } from "@/lib/people.tools";
+import { sessionTools } from "@/lib/session.tools";
 import { webFetchTool, webSearchTool } from "@/lib/web.tools";
 
 export type ChatFeature = {
@@ -51,8 +52,9 @@ export const features: ChatFeature[] = [
   },
   {
     name: "Session",
-    summary: "Session is not built yet.",
-    tools: [],
+    summary:
+      "Session runs the table: rounds of turns (one per player, with a timer and a turn note) and the interterm, and play nights (sessions) with recaps. get_round and get_session read them; write_recap replaces a session's recap.",
+    tools: sessionTools,
   },
   {
     name: "World",

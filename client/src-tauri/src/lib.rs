@@ -2,6 +2,7 @@ mod chat;
 mod config;
 mod notes;
 mod secrets;
+mod table;
 mod web;
 mod world;
 
@@ -286,7 +287,12 @@ pub fn run() {
             world::people_read_photo,
             world::people_read_picked_photo,
             world::world_get,
-            world::world_update
+            world::world_update,
+            world::world_set_game_date,
+            table::session_get,
+            table::session_act,
+            table::round_note_read,
+            table::round_note_write
         ])
         .build(tauri::generate_context!())
         .expect("error while running Ror Desktop")

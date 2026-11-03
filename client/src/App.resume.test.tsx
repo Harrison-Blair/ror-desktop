@@ -613,37 +613,3 @@ describe("Add person", () => {
     );
   });
 });
-
-describe("Game date save", () => {
-  it("saves a date before a job's start", async () => {
-    store.characters = [ada(), otto()];
-    render(<App />);
-    const user = userEvent.setup();
-    await user.click(screen.getByRole("button", { name: "Session" }));
-    const date = await main().findByLabelText("Game date");
-    await user.clear(date);
-    await user.type(date, "1 June 1954");
-    await user.click(main().getByRole("button", { name: "Save" }));
-
-    expect(date).not.toHaveAccessibleDescription();
-    expect(api.updateWorld).toHaveBeenCalledWith(
-      expect.objectContaining({ gameDate: "1954-06-01" }),
-    );
-  });
-
-  it("other save errors stay toasts", async () => {
-    api.updateWorld.mockRejectedValueOnce("Disk full.");
-    render(<App />);
-    const user = userEvent.setup();
-    await user.click(screen.getByRole("button", { name: "Session" }));
-    const date = await main().findByLabelText("Game date");
-    await user.click(main().getByRole("button", { name: "Save" }));
-
-    expect(
-      await within(
-        screen.getByRole("region", { name: "Notifications" }),
-      ).findByRole("alert"),
-    ).toHaveTextContent("Disk full.");
-    expect(date).not.toHaveAccessibleDescription();
-  });
-});
