@@ -22,6 +22,10 @@ pub struct Endpoint {
     /// Sent as `x-opencode-session`, so OpenCode Go can route and cache each
     /// conversation. Set for OpenCode Go only.
     pub session: Option<String>,
+    /// Sent as `reasoning_effort`. None sends no field: the model's default.
+    pub effort: Option<String>,
+    /// The model's context size, when models.dev knows it.
+    pub context_window: Option<u64>,
 }
 
 impl Endpoint {
@@ -162,6 +166,9 @@ fn request_body(endpoint: &Endpoint, turn: &Turn) -> Value {
         "stream": true,
         "stream_options": { "include_usage": true },
     });
+    if let Some(effort) = &endpoint.effort {
+        body["reasoning_effort"] = json!(effort);
+    }
     if !turn.tools.is_empty() {
         body["tools"] = turn
             .tools
@@ -326,6 +333,9 @@ pub async fn run_turn(endpoint: &Endpoint, turn: &mut Turn<'_>, host: &impl Turn
             host.emit(ChatEvent::Usage {
                 usage: turn.chat.usage,
             });
+        }
+        if reply.input_tokens > 0 {
+            turn.record_context(host, reply.input_tokens, endpoint.context_window);
         }
         // A stopped or failed reply keeps its text but not its calls.
         let (calls, end) = match result {

@@ -8,6 +8,8 @@
   --ink: #e6e6e6;
   --ink-muted: #a3a3a3;
   --error: #f87171;
+  /* A context that is filling up. */
+  --warn: #fbbf24;
   --focus: #e6e6e6;
   /* Your-character star. A placeholder: the design system has no accent yet. */
   --star: #e8b04a;

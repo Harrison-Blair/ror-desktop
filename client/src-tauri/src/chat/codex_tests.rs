@@ -205,6 +205,11 @@ impl Peer {
     }
 
     async fn usage(&mut self, input: u64, output: u64) {
+        self.usage_with_last(input, output, 1, json!(258400)).await;
+    }
+
+    // `last`: the input of the last request. `window`: the context size.
+    async fn usage_with_last(&mut self, input: u64, output: u64, last: u64, window: Value) {
         let breakdown = |input: u64, output: u64| {
             json!({ "totalTokens": input + output, "inputTokens": input, "cachedInputTokens": 0,
                     "cacheWriteInputTokens": 0, "outputTokens": output, "reasoningOutputTokens": 0 })
@@ -212,7 +217,7 @@ impl Peer {
         self.notify(
             "thread/tokenUsage/updated",
             json!({ "threadId": THREAD, "turnId": TURN, "tokenUsage": {
-                "total": breakdown(input, output), "last": breakdown(1, 1), "modelContextWindow": 258400 } }),
+                "total": breakdown(input, output), "last": breakdown(last, 1), "modelContextWindow": window } }),
         )
         .await;
     }
@@ -470,7 +475,7 @@ async fn a_codex_turn_streams_text_into_the_chat_with_its_history_injected() {
         peer.message_started("m2").await;
         peer.delta("m2", "Roll initiative.").await;
         peer.usage(120, 30).await;
-        peer.usage(250, 45).await;
+        peer.usage_with_last(250, 45, 210, json!(258400)).await;
         peer.completed("completed", Value::Null).await;
         record
             .lock()
@@ -508,6 +513,18 @@ async fn a_codex_turn_streams_text_into_the_chat_with_its_history_injected() {
     // The last total of the thread is the turn's usage.
     assert_eq!(chat.usage.input_tokens, 1250);
     assert_eq!(chat.usage.output_tokens, 45);
+    // The last request's prompt fills the context. Its parts are counted
+    // without the new reply, which that prompt did not hold.
+    let context = chat.context.expect("the reply saves its context");
+    assert_eq!(context.prompt_tokens, 210);
+    assert_eq!(context.window, Some(258400));
+    assert_eq!(context.system_chars, SYSTEM.chars().count() as u64);
+    // The tool definitions hold at least the tool's name and description.
+    assert!(context.tools_chars > "dice_rollRolls dice.".len() as u64);
+    // "Who is in the lair?", "A dragon." and "And the goblins?"
+    assert_eq!(context.conversation_chars, 19 + 9 + 16);
+    // dice_roll, {"notation":"1d20"} and 17
+    assert_eq!(context.tool_activity_chars, 9 + 19 + 2);
 
     let seen = recorded(&seen, 3).await;
     let thread = &seen[0]["params"];

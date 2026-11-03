@@ -237,8 +237,9 @@ pub fn run() {
             app.manage(NotesRoot(Mutex::new(start.root)));
             app.manage(MissingNotesDir(start.missing));
             app.manage(world::PickedPhoto::default());
-            app.manage(chat::ChatState::with_codex_dir(
+            app.manage(chat::ChatState::with_dirs(
                 app.path().app_cache_dir()?.join("codex"),
+                app.path().app_data_dir()?.join("models-dev.json"),
             ));
             Ok(())
         })
@@ -262,6 +263,7 @@ pub fn run() {
             chat::key_remove,
             chat::chat_models,
             chat::codex_status,
+            chat::opencode_model_info,
             chat::chat_latest,
             chat::chat_list,
             chat::chat_open,

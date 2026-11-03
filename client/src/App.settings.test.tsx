@@ -415,6 +415,12 @@ describe("Settings", () => {
     const user = await openSettings();
     const built = section("Built in");
     expect(await within(built).findByText("Signed in")).toBeInTheDocument();
+    // Codex models show without the gpt- they all share.
+    const chips = await within(built).findByRole("list", {
+      name: "Codex models",
+    });
+    expect(within(chips).getByText("6.1-sol")).toBeInTheDocument();
+    expect(within(chips).queryByText("gpt-6.1-sol")).toBeNull();
 
     codex = { state: "signedOut", models: [codexModel("gpt-6.1-sol")] };
     await user.click(
@@ -486,15 +492,14 @@ describe("Model menu", () => {
     await within(menu).findByRole("list", { name: "OpenCode Go" });
     const separator = within(menu).getByRole("separator");
     const codex = within(menu).getByRole("heading", { name: "Codex" });
-    const goList = within(menu).getByRole("list", { name: "OpenCode Go" });
-    // After the OpenCode Go models, before the Codex heading.
+    const go = within(menu).getByRole("heading", { name: "OpenCode Go" });
+    // After the Codex group, before the OpenCode Go heading.
     expect(
-      goList.compareDocumentPosition(separator) &
+      codex.compareDocumentPosition(separator) &
         Node.DOCUMENT_POSITION_FOLLOWING,
     ).toBeTruthy();
     expect(
-      separator.compareDocumentPosition(codex) &
-        Node.DOCUMENT_POSITION_FOLLOWING,
+      separator.compareDocumentPosition(go) & Node.DOCUMENT_POSITION_FOLLOWING,
     ).toBeTruthy();
   });
 });

@@ -137,7 +137,7 @@ describe("a chat opened from history", () => {
     );
     await within(panel()).findByText("Reply in Dragon lair");
     expect(
-      screen.getByRole("button", { name: "Model: gpt-5.5" }),
+      screen.getByRole("button", { name: "Model: 5.5" }),
     ).toBeInTheDocument();
 
     await user.type(message(), "Go{Enter}");

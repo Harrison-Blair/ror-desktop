@@ -3,6 +3,7 @@ import { useToast } from "@/components/Toast/Toast";
 import {
   type BackendId,
   type ChatEvent,
+  type Context,
   getChatSettings,
   latestChat,
   type Message,
@@ -60,11 +61,13 @@ export function useChat({
   // The index in `messages` where the running turn's messages begin.
   const [turnStart, setTurnStart] = useState(0);
   const [usage, setUsage] = useState<Usage>(NO_USAGE);
+  // How full the context was at the last reply. null before the first.
+  const [context, setContext] = useState<Context | null>(null);
   const [approvals, setApprovals] = useState<PendingApproval[]>([]);
   const [model, setModel] = useState<string | null>(null);
   // The backend of `model`.
   const [backend, setBackend] = useState<BackendId>("opencode-go");
-  // The reasoning effort chosen for `model`, for Codex models.
+  // The reasoning effort chosen for `model`. null is the model's default.
   const [effort, setEffort] = useState<string | null>(null);
   // The backend the current chat is on, or null before its first message.
   const [chatBackend, setChatBackend] = useState<BackendId | null>(null);
@@ -158,6 +161,7 @@ export function useChat({
       showChatId(chat.id);
       setMessages(chat.messages);
       setUsage(chat.usage);
+      setContext(chat.context ?? null);
       // The chat continues on its own backend and model.
       modelChosen.current = true;
       setChatBackend(chat.backend);
@@ -253,6 +257,9 @@ export function useChat({
         case "usage":
           setUsage(event.usage);
           break;
+        case "context":
+          setContext(event.context);
+          break;
         case "toast":
           notify({ kind: "error", message: event.message });
           break;
@@ -264,7 +271,7 @@ export function useChat({
       backend,
       text,
       model,
-      effort: backend === "codex" ? effort : null,
+      effort,
       system: systemPrompt(openNoteRef.current),
       tools: registry.specs(),
       onEvent,
@@ -299,6 +306,7 @@ export function useChat({
     setMessages([]);
     setStreaming("");
     setUsage(NO_USAGE);
+    setContext(null);
     setChatBackend(null);
     reads.current = new Map();
   };
@@ -329,6 +337,7 @@ export function useChat({
       setMessages(chat.messages);
       setStreaming("");
       setUsage(chat.usage);
+      setContext(chat.context ?? null);
       modelChosen.current = true;
       setChatBackend(chat.backend);
       setBackend(chat.backend);
@@ -363,7 +372,7 @@ export function useChat({
   };
 
   // Applies from the next message, and is saved beside the model.
-  const chooseEffort = (next: string) => {
+  const chooseEffort = (next: string | null) => {
     if (model === null) return;
     modelChosen.current = true;
     setEffort(next);
@@ -385,6 +394,7 @@ export function useChat({
     stopped,
     turnStart,
     usage,
+    context,
     approvals,
     model,
     backend,

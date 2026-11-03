@@ -34,6 +34,9 @@ pub struct Chat {
     pub messages: Vec<Message>,
     #[serde(default)]
     pub usage: Usage,
+    /// How full the context was at the last reply. None before the first.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub context: Option<Context>,
 }
 
 #[derive(Clone, Debug, PartialEq, Serialize, Deserialize)]
@@ -92,6 +95,24 @@ pub struct Usage {
     pub output_tokens: u64,
 }
 
+/// The prompt of the chat's last reply: its size, the model's context size,
+/// and the characters of each part, from which the panel estimates the
+/// tokens of each part.
+#[derive(Clone, Copy, Debug, Default, PartialEq, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct Context {
+    /// The prompt size, in tokens, as the provider counted it.
+    pub prompt_tokens: u64,
+    /// The model's context size, in tokens, when known.
+    pub window: Option<u64>,
+    pub system_chars: u64,
+    pub tools_chars: u64,
+    /// The text of the user and assistant messages.
+    pub conversation_chars: u64,
+    /// The tool calls and their results.
+    pub tool_activity_chars: u64,
+}
+
 pub fn now_ms() -> u64 {
     SystemTime::now()
         .duration_since(UNIX_EPOCH)
@@ -112,6 +133,7 @@ impl Chat {
             archived: false,
             messages: Vec::new(),
             usage: Usage::default(),
+            context: None,
         }
     }
 
@@ -302,6 +324,40 @@ pub fn delete(dir: &Path, id: &str) -> io::Result<()> {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn a_chat_file_from_before_the_context_loads_with_none() {
+        let dir = tempfile::tempdir().unwrap();
+        let chat = Chat::new(BackendId::Codex, "gpt-6.1-terra");
+        // A new chat writes no context field either.
+        assert!(serde_json::to_value(&chat)
+            .unwrap()
+            .get("context")
+            .is_none());
+        fs::write(
+            dir.path().join(format!("{}.json", chat.id)),
+            r#"{"id":"ID","title":"1","createdAt":1,"updatedAt":1,"backend":"codex","model":"m","messages":[]}"#
+                .replace("ID", &chat.id),
+        )
+        .unwrap();
+        assert_eq!(load(dir.path(), &chat.id).unwrap().context, None);
+    }
+
+    #[test]
+    fn the_context_is_saved_with_the_chat() {
+        let dir = tempfile::tempdir().unwrap();
+        let mut chat = Chat::new(BackendId::Codex, "gpt-6.1-terra");
+        chat.context = Some(Context {
+            prompt_tokens: 168_000,
+            window: Some(400_000),
+            system_chars: 1,
+            tools_chars: 2,
+            conversation_chars: 3,
+            tool_activity_chars: 4,
+        });
+        save(dir.path(), &chat).unwrap();
+        assert_eq!(load(dir.path(), &chat.id).unwrap(), chat);
+    }
 
     fn chat_with_everything() -> Chat {
         let mut chat = Chat::new(BackendId::OpencodeGo, "glm-5.3");
