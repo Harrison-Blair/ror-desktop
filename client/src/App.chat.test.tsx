@@ -23,6 +23,8 @@ let turn: { send: Send; end: (chatId?: string) => void } | null = null;
 let latest: Chat | null = null;
 let keySaved = false;
 let codex: chatApi.CodexStatus = { state: "notInstalled" };
+// What models.dev says about each OpenCode Go model. null: nothing known.
+let goInfo: chatApi.ModelInfo | null = null;
 vi.mock("@/lib/chat/chatApi", () => ({
   getChatSettings: vi.fn(async () => ({
     model: "glm-5.3",
@@ -44,6 +46,7 @@ vi.mock("@/lib/chat/chatApi", () => ({
   }),
   listModels: vi.fn(async () => ["glm-5.3", "kimi-k3"]),
   codexStatus: vi.fn(async () => codex),
+  opencodeModelInfo: vi.fn(async () => goInfo),
   sendMessage: vi.fn(
     (send: Send) =>
       new Promise((resolve) => {
@@ -112,6 +115,7 @@ beforeEach(() => {
   latest = null;
   keySaved = false;
   codex = { state: "notInstalled" };
+  goInfo = null;
 });
 
 async function openChat() {
@@ -124,6 +128,39 @@ async function openChat() {
 }
 
 const panel = () => screen.getByRole("complementary", { name: "Chat" });
+
+type User = ReturnType<typeof userEvent.setup>;
+
+// Opens the permission menu and picks `mode`.
+async function pickMode(user: User, mode: "Manual" | "Auto") {
+  await user.click(screen.getByRole("button", { name: /^Permission mode: / }));
+  const menu = screen.getByRole("menu", { name: "Permission mode" });
+  await user.click(within(menu).getByRole("menuitemradio", { name: mode }));
+}
+
+const effortButton = () => screen.findByRole("button", { name: /^Effort: / });
+
+// The effort menu's levels, and the checked one. Closes the menu again.
+async function effortLevels(user: User) {
+  await user.click(await effortButton());
+  const menu = screen.getByRole("menu", { name: "Effort" });
+  const items = within(menu).getAllByRole("menuitemradio");
+  const name = (item: HTMLElement) => item.textContent;
+  const levels = {
+    names: items.map(name),
+    checked: items
+      .filter((i) => i.getAttribute("aria-checked") === "true")
+      .map(name),
+  };
+  await user.keyboard("{Escape}");
+  return levels;
+}
+
+async function pickEffort(user: User, level: string) {
+  await user.click(await effortButton());
+  const menu = screen.getByRole("menu", { name: "Effort" });
+  await user.click(within(menu).getByRole("menuitemradio", { name: level }));
+}
 
 // Sends an event from the running turn.
 const emit = (event: ChatEvent) => act(() => turn?.send.onEvent(event));
@@ -168,23 +205,43 @@ describe("Chat panel", () => {
         { role: "user", text: "Who are the ogres?" },
         { role: "assistant", text: "Hill **giants**." },
       ],
-      usage: { inputTokens: 1200, outputTokens: 300 },
+      usage: { inputTokens: 1_200_000, outputTokens: 30_000 },
+      context: {
+        promptTokens: 168_000,
+        window: 400_000,
+        systemChars: 12_000,
+        toolsChars: 24_000,
+        conversationChars: 560_000,
+        toolActivityChars: 48_000,
+      },
     };
-    await openChat();
+    const user = await openChat();
 
     expect(await screen.findByText("Who are the ogres?")).toBeInTheDocument();
     expect(within(panel()).getByText("giants").tagName).toBe("STRONG");
-    const meter = within(panel()).getByRole("img", {
-      name: "1500 tokens: 1200 input and 300 output",
-    });
-    expect(meter).toHaveTextContent(/^1\.5k$/);
     expect(
       within(panel()).getByRole("button", { name: "Model: glm-5.3" }),
     ).toHaveAttribute("title", "glm-5.3");
-    expect(meter).toHaveAttribute(
-      "title",
-      "1500 tokens: 1200 input and 300 output",
-    );
+    // The saved fill shows at once, with its parts on hover.
+    const meter = within(panel()).getByRole("button", { name: "Context 42%" });
+    expect(meter).toHaveTextContent("42%");
+    await user.hover(meter);
+    const card = screen.getByRole("region", { name: "Context usage" });
+    expect(within(card).getByText("168k of 400k")).toBeInTheDocument();
+    const rows = [...card.querySelectorAll("dt")].map((dt) => [
+      dt.textContent,
+      dt.nextElementSibling?.textContent,
+    ]);
+    // 4 characters a token: 3k + 6k + 140k + 12k, so 7k is left for Other.
+    expect(rows).toEqual([
+      ["System prompt", "≈ 3k"],
+      ["Tools", "≈ 6k"],
+      ["Conversation", "≈ 140k"],
+      ["Tool activity", "≈ 12k"],
+      ["Other", "≈ 7k"],
+      ["Free", "232k"],
+      ["This chat spent", "1.2M"],
+    ]);
   });
 
   it("shows a notice's detail on its own line under the message", async () => {
@@ -350,9 +407,10 @@ describe("Chat panel", () => {
 
   it("in Auto a write tool runs without a card, and the mode is saved", async () => {
     const user = await openChat();
-    const auto = screen.getByRole("button", { name: "Auto" });
-    await user.click(auto);
-    expect(auto).toHaveAttribute("aria-pressed", "true");
+    await pickMode(user, "Auto");
+    expect(
+      screen.getByRole("button", { name: "Permission mode: Auto" }),
+    ).toBeInTheDocument();
     expect(api.savePermissionMode).toHaveBeenCalledWith("auto");
 
     await user.type(
@@ -487,15 +545,14 @@ describe("Chat panel", () => {
     const user = userEvent.setup();
     render(<App />);
     await user.click(screen.getByRole("button", { name: "Chat" }));
-    await user.click(screen.getByRole("button", { name: "Auto" }));
-    await user.click(screen.getByRole("button", { name: "Manual" }));
+    await pickMode(user, "Auto");
+    await pickMode(user, "Manual");
 
     await act(async () => loadSettings());
     await screen.findByRole("button", { name: "Model: glm-5.3" });
-    expect(screen.getByRole("button", { name: "Manual" })).toHaveAttribute(
-      "aria-pressed",
-      "true",
-    );
+    expect(
+      screen.getByRole("button", { name: "Permission mode: Manual" }),
+    ).toBeInTheDocument();
 
     // The write tool still asks first.
     await user.type(
@@ -534,6 +591,12 @@ describe("Chat panel", () => {
     await user.click(screen.getByRole("button", { name: "Model: glm-5.3" }));
     const menu = screen.getByRole("dialog", { name: "Models" });
     expect(await within(menu).findByText("Install Codex")).toBeInTheDocument();
+    // Codex comes first, OpenCode Go under it.
+    expect(
+      within(menu)
+        .getAllByRole("heading")
+        .map((h) => h.textContent),
+    ).toEqual(["Codex", "OpenCode Go"]);
     expect(
       within(menu).getByText("Install the Codex CLI, then run codex login."),
     ).toBeInTheDocument();
@@ -556,10 +619,10 @@ describe("Chat panel", () => {
     ).toBeInTheDocument();
     const models = within(menu).getByRole("list", { name: "Codex" });
     expect(
-      within(models).getByRole("button", { name: "gpt-6.1-sol" }),
+      within(models).getByRole("button", { name: "6.1-sol" }),
     ).toBeDisabled();
     expect(
-      within(models).getByRole("button", { name: "gpt-5.6-terra" }),
+      within(models).getByRole("button", { name: "5.6-terra" }),
     ).toBeDisabled();
   });
 
@@ -574,7 +637,7 @@ describe("Chat panel", () => {
     let menu = screen.getByRole("dialog", { name: "Models" });
     expect(await within(menu).findByText("Signed in")).toBeInTheDocument();
     await user.click(
-      await within(menu).findByRole("button", { name: "gpt-6.1-sol" }),
+      await within(menu).findByRole("button", { name: "6.1-sol" }),
     );
     expect(api.saveChatModel).toHaveBeenCalledWith(
       "codex",
@@ -591,9 +654,7 @@ describe("Chat panel", () => {
       model: "gpt-6.1-sol",
     });
 
-    await user.click(
-      screen.getByRole("button", { name: "Model: gpt-6.1-sol" }),
-    );
+    await user.click(screen.getByRole("button", { name: "Model: 6.1-sol" }));
     menu = screen.getByRole("dialog", { name: "Models" });
     expect(
       await within(menu).findByRole("button", { name: "kimi-k3" }),
@@ -604,7 +665,7 @@ describe("Chat panel", () => {
       ),
     ).toBeInTheDocument();
     expect(
-      await within(menu).findByRole("button", { name: "gpt-5.6-terra" }),
+      await within(menu).findByRole("button", { name: "5.6-terra" }),
     ).toBeEnabled();
   });
 
@@ -612,7 +673,8 @@ describe("Chat panel", () => {
     keySaved = true;
     codex = { state: "ready", models: [codexModel("gpt-6.1-sol")] };
     const user = await openChat();
-    expect(screen.queryByRole("combobox", { name: "Effort" })).toBeNull();
+    await screen.findByRole("button", { name: "Context 0%" });
+    expect(screen.queryByRole("button", { name: /^Effort/ })).toBeNull();
     await user.type(
       screen.getByRole("textbox", { name: "Message" }),
       "Hi{Enter}",
@@ -639,23 +701,25 @@ describe("Chat panel", () => {
     await user.click(screen.getByRole("button", { name: "Model: glm-5.3" }));
     let menu = screen.getByRole("dialog", { name: "Models" });
     await user.click(
-      await within(menu).findByRole("button", { name: "gpt-6.1-sol" }),
+      await within(menu).findByRole("button", { name: "6.1-sol" }),
     );
     expect(api.saveChatModel).toHaveBeenLastCalledWith(
       "codex",
       "gpt-6.1-sol",
       "medium",
     );
-    const effort = await screen.findByRole("combobox", { name: "Effort" });
-    expect(
-      within(effort)
-        .getAllByRole("option")
-        .map((o) => o.textContent),
-    ).toEqual(["low", "medium", "high"]);
-    expect(effort).toHaveValue("medium");
-
-    await user.selectOptions(effort, "high");
-    expect(effort).toHaveValue("high");
+    expect(await effortLevels(user)).toEqual({
+      names: ["low", "medium", "high"],
+      checked: ["medium"],
+    });
+    await user.click(await effortButton());
+    const efforts = screen.getByRole("menu", { name: "Effort" });
+    expect(within(efforts).getByText("6.1-sol")).toBeInTheDocument();
+    await user.click(
+      within(efforts).getByRole("menuitemradio", { name: "high" }),
+    );
+    expect(screen.queryByRole("menu", { name: "Effort" })).toBeNull();
+    expect(await effortButton()).toHaveAccessibleName("Effort: high");
     expect(api.saveChatModel).toHaveBeenLastCalledWith(
       "codex",
       "gpt-6.1-sol",
@@ -673,27 +737,21 @@ describe("Chat panel", () => {
     act(() => turn?.end());
 
     // Another model starts at its own default.
-    await user.click(
-      screen.getByRole("button", { name: "Model: gpt-6.1-sol" }),
-    );
+    await user.click(screen.getByRole("button", { name: "Model: 6.1-sol" }));
     menu = screen.getByRole("dialog", { name: "Models" });
     await user.click(
-      await within(menu).findByRole("button", { name: "gpt-5.6-terra" }),
+      await within(menu).findByRole("button", { name: "5.6-terra" }),
     );
     expect(api.saveChatModel).toHaveBeenLastCalledWith(
       "codex",
       "gpt-5.6-terra",
       "xhigh",
     );
-    await waitFor(() =>
-      expect(
-        within(screen.getByRole("combobox", { name: "Effort" }))
-          .getAllByRole("option")
-          .map((o) => o.textContent),
-      ).toEqual(["minimal", "xhigh"]),
-    );
-    expect(screen.getByRole("combobox", { name: "Effort" })).toHaveValue(
-      "xhigh",
+    await waitFor(async () =>
+      expect(await effortLevels(user)).toEqual({
+        names: ["minimal", "xhigh"],
+        checked: ["xhigh"],
+      }),
     );
     await user.type(
       screen.getByRole("textbox", { name: "Message" }),
@@ -716,8 +774,7 @@ describe("Chat panel", () => {
     const user = userEvent.setup();
     render(<App />);
     await user.click(screen.getByRole("button", { name: "Chat" }));
-    const effort = await screen.findByRole("combobox", { name: "Effort" });
-    expect(effort).toHaveValue("medium");
+    expect(await effortButton()).toHaveAccessibleName("Effort: medium");
   });
 
   it("a reopened Codex chat continues at its own effort", async () => {
@@ -737,8 +794,151 @@ describe("Chat panel", () => {
     const user = userEvent.setup();
     render(<App />);
     await user.click(screen.getByRole("button", { name: "Chat" }));
-    const effort = await screen.findByRole("combobox", { name: "Effort" });
-    expect(effort).toHaveValue("low");
+    expect(await effortButton()).toHaveAccessibleName("Effort: low");
+  });
+
+  it("an OpenCode Go model offers Default and the models.dev efforts", async () => {
+    keySaved = true;
+    goInfo = { context: 1_000_000, efforts: ["low", "high", "max"] };
+    const user = await openChat();
+    expect(await effortLevels(user)).toEqual({
+      names: ["Default", "low", "high", "max"],
+      checked: ["Default"],
+    });
+    expect(api.opencodeModelInfo).toHaveBeenCalledWith("glm-5.3");
+
+    // Default sends no effort.
+    await user.type(
+      screen.getByRole("textbox", { name: "Message" }),
+      "Hi{Enter}",
+    );
+    expect(turn?.send).toMatchObject({ backend: "opencode-go", effort: null });
+    act(() => turn?.end());
+
+    await pickEffort(user, "high");
+    expect(api.saveChatModel).toHaveBeenLastCalledWith(
+      "opencode-go",
+      "glm-5.3",
+      "high",
+    );
+    expect(await effortButton()).toHaveAccessibleName("Effort: high");
+    await user.type(
+      screen.getByRole("textbox", { name: "Message" }),
+      "Again{Enter}",
+    );
+    expect(turn?.send).toMatchObject({ effort: "high" });
+  });
+
+  it("the context doughnut fills from the last reply and colours its level", async () => {
+    keySaved = true;
+    const user = await openChat();
+    const meter = () =>
+      within(panel()).getByRole("button", { name: /^Context/ });
+    // A new chat: an empty ring.
+    expect(meter()).toHaveAccessibleName("Context 0%");
+    expect(meter()).toHaveAttribute("data-level", "normal");
+
+    await user.type(
+      screen.getByRole("textbox", { name: "Message" }),
+      "Hi{Enter}",
+    );
+    const context = (promptTokens: number, window: number | null) =>
+      emit({
+        type: "context",
+        context: {
+          promptTokens,
+          window,
+          systemChars: 0,
+          toolsChars: 0,
+          conversationChars: 0,
+          toolActivityChars: 0,
+        },
+      });
+    context(312_000, 400_000);
+    expect(meter()).toHaveAccessibleName("Context 78%");
+    expect(meter()).toHaveAttribute("data-level", "warn");
+    context(376_000, 400_000);
+    expect(meter()).toHaveAccessibleName("Context 94%");
+    expect(meter()).toHaveAttribute("data-level", "danger");
+
+    // An unknown context size: a dashed ring and ?%, without Free.
+    context(168_000, null);
+    expect(meter()).toHaveAccessibleName("Context unknown");
+    expect(meter()).toHaveTextContent("?%");
+    await user.hover(meter());
+    const card = screen.getByRole("region", { name: "Context usage" });
+    expect(within(card).getByText("168k of ?")).toBeInTheDocument();
+    expect(within(card).queryByText("Free")).toBeNull();
+    // Quietly: no toast.
+    expect(screen.queryByRole("alert")).toBeNull();
+
+    // New chat empties it again.
+    act(() => turn?.end());
+    await user.click(screen.getByRole("button", { name: "New chat" }));
+    expect(meter()).toHaveAccessibleName("Context 0%");
+  });
+
+  it("the context card opens on hover and focus, and a click pins it", async () => {
+    const user = await openChat();
+    const meter = within(panel()).getByRole("button", { name: "Context 0%" });
+    const card = () => screen.queryByRole("region", { name: "Context usage" });
+
+    await user.hover(meter);
+    expect(card()).toHaveTextContent("No reply yet.");
+    expect(meter).toHaveAttribute("aria-expanded", "true");
+    // The pointer can move from the button into the card.
+    await user.unhover(meter);
+    await user.hover(card() as HTMLElement);
+    await new Promise((r) => setTimeout(r, 200));
+    expect(card()).not.toBeNull();
+    await user.unhover(card() as HTMLElement);
+    await waitFor(() => expect(card()).toBeNull());
+
+    // A click pins it: leaving keeps it, Esc closes it.
+    await user.click(meter);
+    await user.unhover(meter);
+    await new Promise((r) => setTimeout(r, 200));
+    expect(card()).toHaveTextContent("Pinned");
+    await user.keyboard("{Escape}");
+    expect(card()).toBeNull();
+
+    // Pinned again, a click outside closes it.
+    await user.click(meter);
+    await user.unhover(meter);
+    await user.click(screen.getByRole("textbox", { name: "Message" }));
+    await waitFor(() => expect(card()).toBeNull());
+
+    // Pinned from the keyboard, Esc closes it after focus moves on.
+    act(() => meter.focus());
+    await user.keyboard("{Enter}");
+    const message = screen.getByRole("textbox", { name: "Message" });
+    act(() => message.focus());
+    expect(card()).toHaveTextContent("Pinned");
+    await user.keyboard("{Escape}");
+    expect(card()).toBeNull();
+
+    // With a menu open over a pinned card, Esc closes the menu first and
+    // returns focus to its button, then a second Esc closes the card.
+    act(() => meter.focus());
+    await user.keyboard("{Enter}");
+    const permission = within(panel()).getByRole("button", {
+      name: "Permission mode: Manual",
+    });
+    act(() => permission.focus());
+    await user.keyboard("{Enter}");
+    expect(screen.getByRole("menu", { name: "Permission mode" })).toBeVisible();
+    await user.keyboard("{Escape}");
+    expect(screen.queryByRole("menu", { name: "Permission mode" })).toBeNull();
+    expect(permission).toHaveFocus();
+    expect(card()).toHaveTextContent("Pinned");
+    await user.keyboard("{Escape}");
+    expect(card()).toBeNull();
+
+    // Keyboard focus opens it too.
+    act(() => meter.focus());
+    expect(card()).not.toBeNull();
+    act(() => meter.blur());
+    expect(card()).toBeNull();
   });
 
   it("a chat on OpenCode Go shows the Codex models locked", async () => {
@@ -753,7 +953,7 @@ describe("Chat panel", () => {
     await user.click(screen.getByRole("button", { name: "Model: glm-5.3" }));
     const menu = screen.getByRole("dialog", { name: "Models" });
     expect(
-      await within(menu).findByRole("button", { name: "gpt-6.1-sol" }),
+      await within(menu).findByRole("button", { name: "6.1-sol" }),
     ).toBeDisabled();
     expect(
       within(menu).getByText(

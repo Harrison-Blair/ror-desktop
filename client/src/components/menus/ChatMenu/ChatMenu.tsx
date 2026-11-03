@@ -23,10 +23,13 @@ import { Markdown } from "@/components/Markdown/Markdown";
 import { useToast } from "@/components/Toast/Toast";
 import type { Message } from "@/lib/chat/chatApi";
 import type { ToolCall } from "@/lib/chat/gate";
+import { modelLabel } from "@/lib/chat/modelLabel";
 import { errorMessage } from "@/lib/errorMessage";
 import { openWebLink } from "@/lib/linksApi";
 import { ChatHistory } from "./ChatHistory";
 import styles from "./ChatMenu.module.css";
+import { ChoiceMenu } from "./ChoiceMenu";
+import { ContextMeter } from "./ContextMeter";
 import { EffortSelect } from "./EffortSelect";
 import { ModelMenu } from "./ModelMenu";
 import type { ChatController, PendingApproval } from "./useChat";
@@ -36,9 +39,6 @@ type ToolResult = Extract<Message, { role: "tool" }>;
 // The notice `send_error` makes when a provider can't be reached: a fixed
 // first line, then the technical detail. Other notices are shown as they are.
 const UNREACHABLE = /^(Could not reach [^\n]+\.)\n([\s\S]+)$/;
-
-const formatTokens = (n: number) =>
-  n < 1000 ? String(n) : `${(n / 1000).toFixed(1)}k`;
 
 // The header buttons of the chat panel.
 export function ChatMenuActions({
@@ -321,8 +321,8 @@ function Composer({ chat }: { chat: ChatController }) {
   const notify = useToast();
   const [text, setText] = useState("");
   const [menuOpen, setMenuOpen] = useState(false);
-  const total = chat.usage.inputTokens + chat.usage.outputTokens;
-  const usageLabel = `${total} tokens: ${chat.usage.inputTokens} input and ${chat.usage.outputTokens} output`;
+  const model =
+    chat.model === null ? null : modelLabel(chat.backend, chat.model);
 
   const submit = (event?: FormEvent) => {
     event?.preventDefault();
@@ -361,20 +361,18 @@ function Composer({ chat }: { chat: ChatController }) {
         <div className={styles.modelSlot}>
           <button
             type="button"
-            className={styles.toggle}
-            aria-label={`Model: ${chat.model ?? "none"}`}
-            title={chat.model ?? undefined}
+            className={`${styles.dropdown} ${styles.modelButton}`}
+            aria-label={`Model: ${model ?? "none"}`}
+            title={model ?? undefined}
             aria-expanded={menuOpen}
             aria-haspopup="dialog"
             onClick={() => setMenuOpen((open) => !open)}
           >
-            <span className={styles.modelName}>
-              {chat.model ?? "Choose model"}
-            </span>
+            <span className={styles.modelName}>{model ?? "Choose model"}</span>
             {menuOpen ? (
-              <ChevronUp size={14} strokeWidth={1.75} aria-hidden />
+              <ChevronUp size={12} strokeWidth={2} aria-hidden />
             ) : (
-              <ChevronDown size={14} strokeWidth={1.75} aria-hidden />
+              <ChevronDown size={12} strokeWidth={2} aria-hidden />
             )}
           </button>
           {menuOpen && (
@@ -390,59 +388,45 @@ function Composer({ chat }: { chat: ChatController }) {
             />
           )}
         </div>
-        {chat.backend === "codex" && chat.model !== null && (
+        <div className={styles.rightGroup}>
+          <ChoiceMenu
+            label="Permission mode"
+            choices={[
+              { value: "manual", name: "Manual" },
+              { value: "auto", name: "Auto" },
+            ]}
+            value={chat.mode}
+            onChoose={chat.chooseMode}
+            variant="permission"
+          />
+          <ContextMeter context={chat.context} usage={chat.usage} />
+          {chat.running ? (
+            <button
+              type="button"
+              className={styles.sendButton}
+              aria-label="Stop"
+              onClick={chat.stop}
+            >
+              <Square size={14} strokeWidth={1.75} aria-hidden />
+            </button>
+          ) : (
+            <button
+              type="submit"
+              className={styles.sendButton}
+              aria-label="Send"
+              disabled={chat.busy}
+            >
+              <ArrowUp size={16} strokeWidth={1.75} aria-hidden />
+            </button>
+          )}
+        </div>
+        {chat.model !== null && (
           <EffortSelect
+            backend={chat.backend}
             model={chat.model}
             effort={chat.effort}
             onChoose={chat.chooseEffort}
           />
-        )}
-        <fieldset className={styles.modes} aria-label="Permission mode">
-          {(["manual", "auto"] as const).map((mode) => (
-            <button
-              key={mode}
-              type="button"
-              className={styles.toggle}
-              aria-pressed={chat.mode === mode}
-              title={
-                mode === "manual"
-                  ? "Ask before tools change your data"
-                  : "Run all tools without asking"
-              }
-              onClick={() => chat.chooseMode(mode)}
-            >
-              {mode === "manual" ? "Manual" : "Auto"}
-            </button>
-          ))}
-        </fieldset>
-        {total > 0 && (
-          <span
-            className={styles.usage}
-            role="img"
-            aria-label={usageLabel}
-            title={usageLabel}
-          >
-            {formatTokens(total)}
-          </span>
-        )}
-        {chat.running ? (
-          <button
-            type="button"
-            className={styles.sendButton}
-            aria-label="Stop"
-            onClick={chat.stop}
-          >
-            <Square size={14} strokeWidth={1.75} aria-hidden />
-          </button>
-        ) : (
-          <button
-            type="submit"
-            className={styles.sendButton}
-            aria-label="Send"
-            disabled={chat.busy}
-          >
-            <ArrowUp size={16} strokeWidth={1.75} aria-hidden />
-          </button>
         )}
       </div>
     </form>

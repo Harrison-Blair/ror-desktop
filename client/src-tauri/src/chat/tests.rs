@@ -220,6 +220,8 @@ async fn run(server: &FakeServer, host: &TestHost, cancel: CancellationToken) ->
         api_key: KEY.into(),
         model: "fake-model".into(),
         session: Some(chat.id.clone()),
+        effort: None,
+        context_window: None,
     });
     chat.push(Message::User {
         text: "Roll a d20".into(),
@@ -272,6 +274,8 @@ async fn a_turn_streams_text_runs_a_tool_and_sends_the_result_back() {
     assert_eq!(first["stream"], true);
     assert_eq!(first["stream_options"], json!({ "include_usage": true }));
     assert_eq!(first["tools"][0]["function"]["name"], "dice_roll");
+    // No effort chosen: the model's default, with no field sent.
+    assert_eq!(first.get("reasoning_effort"), None);
     assert_eq!(
         first["messages"],
         json!([
@@ -318,8 +322,59 @@ async fn a_turn_streams_text_runs_a_tool_and_sends_the_result_back() {
             output_tokens: 25
         }
     );
+    // The last reply's prompt, without that reply. No context size is known.
+    let context = chat.context.expect("the reply saves its context");
+    assert_eq!(context.prompt_tokens, 130);
+    assert_eq!(context.window, None);
+    assert_eq!(
+        context.system_chars,
+        "You help with a campaign.".len() as u64
+    );
+    // "Roll a d20" and "Rolling now."
+    assert_eq!(context.conversation_chars, 10 + 12);
+    // dice_roll, {"notation":"1d20"}, and the result.
+    assert_eq!(
+        context.tool_activity_chars,
+        9 + 19 + "dice_roll ran with {\"notation\":\"1d20\"}".len() as u64
+    );
+    assert!(host.events_json().contains(r#""type":"context""#));
     assert_eq!(host.saved.lock().unwrap().as_ref(), Some(&chat));
     assert!(!host.events_json().contains(KEY));
+}
+
+#[tokio::test]
+async fn a_chosen_effort_is_sent_and_the_context_size_is_saved() {
+    let server = serve(|_| Reply::Stream(vec![text("Done."), usage(400, 10)]));
+    let host = TestHost::default();
+    let mut chat = Chat::new(BackendId::OpencodeGo, "fake-model");
+    chat.push(Message::User { text: "Hi".into() });
+    let backend = Backend::OpenAi(Endpoint {
+        client: reqwest::Client::new(),
+        base_url: server.url.clone(),
+        label: "Fake".into(),
+        api_key: KEY.into(),
+        model: "fake-model".into(),
+        session: None,
+        effort: Some("high".into()),
+        context_window: Some(1_000_000),
+    });
+    let mut turn = Turn {
+        chat: &mut chat,
+        system: String::new(),
+        tools: vec![],
+        cancel: CancellationToken::new(),
+    };
+    assert_eq!(backend.run_turn(&mut turn, &host).await, TurnEnd::Done);
+
+    let requests = server.requests.lock().unwrap();
+    assert_eq!(requests[0].body["reasoning_effort"], "high");
+    let context = chat.context.unwrap();
+    assert_eq!(
+        (context.prompt_tokens, context.window),
+        (400, Some(1_000_000))
+    );
+    assert_eq!(context.tools_chars, 0);
+    assert_eq!(host.saved.lock().unwrap().as_ref(), Some(&chat));
 }
 
 #[tokio::test]
@@ -517,6 +572,8 @@ async fn models_are_listed_from_the_models_endpoint() {
         api_key: KEY.into(),
         model: String::new(),
         session: None,
+        effort: None,
+        context_window: None,
     };
     assert_eq!(
         super::openai::list_models(&endpoint, super::openai::MODELS_TIMEOUT)
@@ -860,6 +917,8 @@ fn a_stalled_model_list_gives_up_after_the_timeout() {
         api_key: String::new(),
         model: String::new(),
         session: None,
+        effort: None,
+        context_window: None,
     };
     let error = within(std::time::Duration::from_secs(2), move || {
         tokio::runtime::Builder::new_current_thread()
@@ -886,6 +945,8 @@ fn fake_backend(server: &FakeServer, chat: &Chat) -> Backend {
         api_key: KEY.into(),
         model: "fake-model".into(),
         session: Some(chat.id.clone()),
+        effort: None,
+        context_window: None,
     })
 }
 

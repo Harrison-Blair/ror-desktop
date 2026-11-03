@@ -7,6 +7,7 @@ import {
   isKeySaved,
   listModels,
 } from "@/lib/chat/chatApi";
+import { modelLabel } from "@/lib/chat/modelLabel";
 import { errorMessage } from "@/lib/errorMessage";
 import styles from "./ChatMenu.module.css";
 
@@ -28,7 +29,8 @@ export function ModelMenu({
   backend: BackendId;
   // The backend the open chat is on: the others can't be chosen.
   lockedTo: BackendId | null;
-  // `effort`: the model's default reasoning effort; null for OpenCode Go.
+  // `effort`: the model's default reasoning effort; null for OpenCode Go,
+  // whose models start on Default.
   onChoose: (backend: BackendId, model: string, effort: string | null) => void;
   onClose: () => void;
 }) {
@@ -129,7 +131,7 @@ export function ModelMenu({
                         <Check size={14} strokeWidth={1.75} aria-hidden />
                       )}
                     </span>
-                    {name}
+                    {modelLabel(from, name)}
                   </button>
                 </li>
               );
@@ -157,17 +159,6 @@ export function ModelMenu({
         if (event.key === "Escape") onClose();
       }}
     >
-      <div className={styles.groupHeading}>
-        <h3 className={styles.heading}>OpenCode Go</h3>
-        <span className={styles.headingLabel}>
-          {goKey === null ? "" : goKey ? "Key saved" : "No key"}
-        </span>
-      </div>
-      {goKey === false && (
-        <p className={styles.menuNote}>Add a key in Settings</p>
-      )}
-      {group("opencode-go", goModels)}
-      <hr className={styles.separator} />
       <div className={styles.groupHeading}>
         <h3 className={styles.heading}>Codex</h3>
         <span className={styles.headingLabel}>
@@ -205,6 +196,17 @@ export function ModelMenu({
               },
         codex?.state !== "ready",
       )}
+      <hr className={styles.separator} />
+      <div className={styles.groupHeading}>
+        <h3 className={styles.heading}>OpenCode Go</h3>
+        <span className={styles.headingLabel}>
+          {goKey === null ? "" : goKey ? "Key saved" : "No key"}
+        </span>
+      </div>
+      {goKey === false && (
+        <p className={styles.menuNote}>Add a key in Settings</p>
+      )}
+      {group("opencode-go", goModels)}
       {error && <p className={styles.menuError}>{error}</p>}
     </div>
   );

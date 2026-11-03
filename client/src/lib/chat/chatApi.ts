@@ -25,6 +25,18 @@ export type Message =
 
 export type Usage = { inputTokens: number; outputTokens: number };
 
+// The prompt of a chat's last reply: its size and the model's context size,
+// in tokens, and the characters of each part of it.
+export type Context = {
+  promptTokens: number;
+  // null when the context size is not known.
+  window: number | null;
+  systemChars: number;
+  toolsChars: number;
+  conversationChars: number;
+  toolActivityChars: number;
+};
+
 export type Chat = {
   id: string;
   title: string;
@@ -32,11 +44,13 @@ export type Chat = {
   updatedAt: number;
   backend: BackendId;
   model: string;
-  // The reasoning effort of the last turn, for Codex models.
+  // The reasoning effort of the last turn.
   effort?: string;
   archived: boolean;
   messages: Message[];
   usage: Usage;
+  // Missing before the first reply.
+  context?: Context;
 };
 
 export type ChatEvent =
@@ -45,6 +59,7 @@ export type ChatEvent =
   // `token` names this call in this turn: the result goes back with it.
   | { type: "toolCall"; call: ToolCall; token: string }
   | { type: "usage"; usage: Usage }
+  | { type: "context"; context: Context }
   | { type: "toast"; message: string };
 
 export type TurnEnd = "done" | "stopped" | "toolLimit" | "failed";
@@ -101,6 +116,17 @@ export type CodexStatus =
 
 export const codexStatus = () => invoke<CodexStatus>("codex_status");
 
+// What models.dev says about an OpenCode Go model.
+export type ModelInfo = {
+  context: number | null;
+  // The values of `reasoning_effort` the model takes.
+  efforts: string[];
+};
+
+// null when models.dev can't be reached and nothing is cached.
+export const opencodeModelInfo = (model: string) =>
+  invoke<ModelInfo | null>("opencode_model_info", { model });
+
 // The most recently updated chat that is not archived, if any.
 export const latestChat = () => invoke<Chat | null>("chat_latest");
 
@@ -113,7 +139,8 @@ export type Send = {
   backend: BackendId;
   text: string;
   model: string;
-  // The reasoning effort, for Codex models. Rust drops one the model lacks.
+  // The reasoning effort. null asks for the model's default. Rust drops one
+  // the model lacks.
   effort: string | null;
   system: string;
   tools: ToolSpec[];

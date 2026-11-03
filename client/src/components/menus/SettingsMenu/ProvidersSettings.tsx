@@ -17,6 +17,7 @@ import {
   removeKey,
   saveKey,
 } from "@/lib/chat/chatApi";
+import { modelLabel } from "@/lib/chat/modelLabel";
 import { errorMessage } from "@/lib/errorMessage";
 import { runningChange, startChange } from "./changeGuard";
 import styles from "./SettingsMenu.module.css";
@@ -304,7 +305,7 @@ export function ProvidersSettings() {
 
   const codexModels =
     codex?.state === "ready" || codex?.state === "signedOut"
-      ? codex.models.map((m) => m.name)
+      ? codex.models.map((m) => modelLabel("codex", m.name))
       : [];
 
   return (

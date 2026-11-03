@@ -4,6 +4,7 @@
 
 pub mod agent;
 pub mod codex;
+pub mod models_dev;
 pub mod openai;
 pub mod store;
 
@@ -48,6 +49,7 @@ pub struct ChatState {
     client: reqwest::Client,
     turns: Mutex<Turns>,
     codex: Arc<codex::Codex>,
+    models_dev: models_dev::ModelsDev,
 }
 
 /// The HTTP client for providers and the web tools. Every request names the
@@ -62,15 +64,21 @@ pub fn http_client() -> reqwest::Client {
 impl ChatState {
     #[cfg(test)]
     pub fn new() -> Self {
-        Self::with_codex_dir(std::env::temp_dir().join("ror-desktop-codex"))
+        let temp = std::env::temp_dir();
+        Self::with_dirs(
+            temp.join("ror-desktop-codex"),
+            temp.join("ror-desktop-models-dev.json"),
+        )
     }
 
-    /// Codex runs in `dir`, an empty folder of the app's.
-    pub fn with_codex_dir(dir: PathBuf) -> Self {
+    /// Codex runs in `dir`, an empty folder of the app's. The models.dev
+    /// list is cached in `models_cache`.
+    pub fn with_dirs(dir: PathBuf, models_cache: PathBuf) -> Self {
         ChatState {
             client: http_client(),
             turns: Mutex::default(),
             codex: Arc::new(codex::Codex::new(Box::new(codex::CodexCommand), dir)),
+            models_dev: models_dev::ModelsDev::new(models_dev::URL, models_cache),
         }
     }
 
@@ -208,6 +216,8 @@ fn endpoint(
         api_key,
         model: model.to_string(),
         session,
+        effort: None,
+        context_window: None,
     })
 }
 
@@ -321,6 +331,16 @@ pub async fn codex_status(state: State<'_, ChatState>) -> Result<codex::Status, 
     Ok(state.codex.status().await)
 }
 
+/// What models.dev says about OpenCode Go model `model`. None when it is not
+/// known, such as when models.dev can't be reached and nothing is cached.
+#[tauri::command]
+pub async fn opencode_model_info(
+    state: State<'_, ChatState>,
+    model: String,
+) -> Result<Option<models_dev::ModelInfo>, String> {
+    Ok(state.models_dev.model(&state.client, &model).await)
+}
+
 #[tauri::command]
 pub fn chat_latest(app: AppHandle) -> Result<Option<Chat>, String> {
     store::latest(&chats_dir(&app)?).map_err(|e| format!("Couldn't read the saved chats: {e}."))
@@ -413,7 +433,8 @@ impl Drop for TurnGuard<'_> {
 
 /// Runs one turn: adds the user's message to the chat (a new one when
 /// `chat_id` is None), then streams the reply as events on `on_event`.
-/// `effort` is the reasoning effort for Codex models.
+/// `effort` is the reasoning effort. For OpenCode Go, one models.dev does
+/// not list for the model is dropped, so the model's default applies.
 #[allow(clippy::too_many_arguments)]
 #[tauri::command]
 pub async fn chat_send(
@@ -437,6 +458,14 @@ pub async fn chat_send(
         Some(id) => store::load(&dir, id).map_err(|e| format!("Couldn't open the chat: {e}."))?,
         None => store::new_chat(&dir, backend, &model)
             .map_err(|e| format!("Couldn't save the chat: {e}."))?,
+    };
+    // OpenCode Go: the model's context size and efforts, from models.dev.
+    let (effort, window) = if backend == BackendId::OpencodeGo {
+        let info = state.models_dev.model(&state.client, &model).await;
+        let info = info.unwrap_or_default();
+        (effort.filter(|e| info.efforts.contains(e)), info.context)
+    } else {
+        (effort, None)
     };
     chat.model = model.clone();
     chat.effort = effort.clone();
@@ -475,7 +504,11 @@ pub async fn chat_send(
         agent::answer(&Backend::Codex(session), &mut turn, &host).await
     } else {
         match endpoint_for(&app, &state, backend, &model, Some(turn.chat.id.clone())).await {
-            Ok(endpoint) => agent::answer(&Backend::OpenAi(endpoint), &mut turn, &host).await,
+            Ok(mut endpoint) => {
+                endpoint.effort = effort;
+                endpoint.context_window = window;
+                agent::answer(&Backend::OpenAi(endpoint), &mut turn, &host).await
+            }
             // A missing key or provider: the user must fix it in Settings.
             Err(message) => {
                 turn.notice(&host, NoticeLevel::Error, &message);

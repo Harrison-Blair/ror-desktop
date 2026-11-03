@@ -4,7 +4,7 @@
 // model's tool calls through the host until the model answers. The host
 // connects the turn to the app (the webview in the app, a fake in tests).
 
-use super::store::{Chat, Message, NoticeLevel, ToolCall, Usage};
+use super::store::{Chat, Context, Message, NoticeLevel, ToolCall, Usage};
 use super::{codex, openai};
 use serde::{Deserialize, Serialize};
 use std::future::Future;
@@ -59,6 +59,10 @@ pub enum ChatEvent {
     Usage {
         usage: Usage,
     },
+    /// How full the context was at the reply that just ended.
+    Context {
+        context: Context,
+    },
     /// An error the user should see outside the thread.
     Toast {
         message: String,
@@ -108,6 +112,26 @@ impl Turn<'_> {
         );
     }
 
+    /// Saves the context of a reply whose prompt was `prompt_tokens` long,
+    /// and tells the webview. The characters are counted from the messages
+    /// as they are now, so call it before the reply is added.
+    pub fn record_context(
+        &mut self,
+        host: &impl TurnHost,
+        prompt_tokens: u64,
+        window: Option<u64>,
+    ) {
+        let context = measure(
+            &self.system,
+            &self.tools,
+            &self.chat.messages,
+            prompt_tokens,
+            window,
+        );
+        self.chat.context = Some(context);
+        host.emit(ChatEvent::Context { context });
+    }
+
     /// Answers calls that will not run, so the next request has a result
     /// for every call.
     pub fn skip_calls(&mut self, host: &impl TurnHost, calls: &[ToolCall], reason: &str) {
@@ -123,6 +147,59 @@ impl Turn<'_> {
             );
         }
     }
+}
+
+fn chars(text: &str) -> u64 {
+    text.chars().count() as u64
+}
+
+/// The context of a prompt made of `system`, `tools` and `messages`.
+pub fn measure(
+    system: &str,
+    tools: &[ToolSpec],
+    messages: &[Message],
+    prompt_tokens: u64,
+    window: Option<u64>,
+) -> Context {
+    let tools_json: serde_json::Value = tools
+        .iter()
+        .map(|tool| {
+            serde_json::json!({
+                "name": tool.name,
+                "description": tool.description,
+                "parameters": tool.input_schema,
+            })
+        })
+        .collect();
+    let mut context = Context {
+        prompt_tokens,
+        window,
+        system_chars: chars(system),
+        tools_chars: if tools.is_empty() {
+            0
+        } else {
+            chars(&tools_json.to_string())
+        },
+        ..Context::default()
+    };
+    for message in messages {
+        match message {
+            Message::User { text } => context.conversation_chars += chars(text),
+            Message::Assistant {
+                text,
+                reasoning,
+                tool_calls,
+            } => {
+                context.conversation_chars += chars(text) + chars(reasoning);
+                for call in tool_calls {
+                    context.tool_activity_chars += chars(&call.name) + chars(&call.arguments);
+                }
+            }
+            Message::Tool { content, .. } => context.tool_activity_chars += chars(content),
+            Message::Notice { .. } => {}
+        }
+    }
+    context
 }
 
 /// How a chat reaches its model.

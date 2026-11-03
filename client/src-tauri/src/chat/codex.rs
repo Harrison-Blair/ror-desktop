@@ -733,12 +733,24 @@ async fn end_thread(conn: &Conn, thread: &str, turn: Option<&str>) {
 enum Event {
     Delta(String),
     MessageStarted,
-    ToolCall { id: Value, call: ToolCall },
-    Usage(Usage),
+    ToolCall {
+        id: Value,
+        call: ToolCall,
+    },
+    // The chat's total so far, the prompt size of the last request, and the
+    // model's context size.
+    Usage {
+        total: Usage,
+        prompt: u64,
+        window: Option<u64>,
+    },
     Error(String),
     Completed(Result<(), String>),
     // A request the backend answers itself, such as an approval.
-    Refuse { id: Value, method: String },
+    Refuse {
+        id: Value,
+        method: String,
+    },
 }
 
 // Reads one message of `thread`. Messages of other threads are dropped, and
@@ -779,11 +791,18 @@ async fn next_event(
             .map(|d| Event::Delta(d.to_string())),
         "item/started" if params["item"]["type"] == "agentMessage" => Some(Event::MessageStarted),
         "thread/tokenUsage/updated" => {
-            let total = &params["tokenUsage"]["total"];
-            Some(Event::Usage(Usage {
-                input_tokens: total["inputTokens"].as_u64().unwrap_or(0),
-                output_tokens: total["outputTokens"].as_u64().unwrap_or(0),
-            }))
+            let usage = &params["tokenUsage"];
+            let total = &usage["total"];
+            Some(Event::Usage {
+                total: Usage {
+                    input_tokens: total["inputTokens"].as_u64().unwrap_or(0),
+                    output_tokens: total["outputTokens"].as_u64().unwrap_or(0),
+                },
+                // The input of the last request, cached tokens included, is
+                // what the context holds.
+                prompt: usage["last"]["inputTokens"].as_u64().unwrap_or(0),
+                window: usage["modelContextWindow"].as_u64(),
+            })
         }
         "error" if params["willRetry"] != json!(true) => params["error"]["message"]
             .as_str()
@@ -851,6 +870,7 @@ pub async fn run_turn(session: &Session, turn: &mut Turn<'_>, host: &impl TurnHo
     };
     let mut events = conn.listen();
     let mut usage = Usage::default();
+    let mut fill = None;
     let mut text = String::new();
     let ending = drive(
         session,
@@ -858,7 +878,7 @@ pub async fn run_turn(session: &Session, turn: &mut Turn<'_>, host: &impl TurnHo
         &mut events,
         turn,
         host,
-        &mut usage,
+        (&mut usage, &mut fill),
         &mut text,
     )
     .await;
@@ -870,6 +890,12 @@ pub async fn run_turn(session: &Session, turn: &mut Turn<'_>, host: &impl TurnHo
         host.emit(ChatEvent::Usage {
             usage: turn.chat.usage,
         });
+    }
+    // Counted before the reply is added: the last request did not hold it.
+    if let Some((prompt, window)) = fill.filter(|&(prompt, _)| prompt > 0) {
+        turn.record_context(host, prompt, window);
+        // A turn that ends with no message would not save it.
+        host.save(turn.chat);
     }
     if !text.is_empty() {
         turn.push(
@@ -911,7 +937,8 @@ async fn drive(
     events: &mut mpsc::UnboundedReceiver<Incoming>,
     turn: &mut Turn<'_>,
     host: &impl TurnHost,
-    usage: &mut Usage,
+    // The usage and the last prompt size and context size, as they come.
+    (usage, fill): (&mut Usage, &mut Option<(u64, Option<u64>)>),
     text: &mut String,
 ) -> Option<Ending> {
     let cancel = turn.cancel.clone();
@@ -987,7 +1014,14 @@ async fn drive(
                 });
             }
             Some(Event::MessageStarted) => {}
-            Some(Event::Usage(total)) => *usage = total,
+            Some(Event::Usage {
+                total,
+                prompt,
+                window,
+            }) => {
+                *usage = total;
+                *fill = Some((prompt, window));
+            }
             Some(Event::Error(message)) => error = Some(message),
             Some(Event::Refuse { id, method }) => conn.respond(&id, refusal(&method)).await,
             Some(Event::Completed(Ok(()))) => break None,
