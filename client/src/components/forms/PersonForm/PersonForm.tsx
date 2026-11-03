@@ -11,7 +11,6 @@ import {
 
 export type PersonFormProps = {
   statNames: StatName[];
-  gameDate: string;
   photoVersion: number;
   onCancel: () => void;
   // Called with true while the form has unsaved changes.
@@ -23,7 +22,6 @@ export type PersonFormProps = {
 // section at a time on the sheet.
 export function PersonForm({
   statNames,
-  gameDate,
   photoVersion,
   onCancel,
   onDirty,
@@ -31,7 +29,6 @@ export function PersonForm({
 }: PersonFormProps) {
   const id = useId();
   const { draft, setDraft, errors, busy, save } = usePersonDraft({
-    gameDate,
     onDirty,
     onSave,
   });

@@ -104,7 +104,6 @@ async function openWorld() {
   render(<App />);
   const user = userEvent.setup();
   await user.click(screen.getByRole("button", { name: "World" }));
-  await main().findByRole("heading", { name: "Overview" });
   await user.click(
     railPanel().getByRole("button", { name: "People of interest" }),
   );
@@ -530,14 +529,14 @@ describe("Resume editor", () => {
     await user.click(main().getByRole("button", { name: "Edit resume" }));
     await user.click(main().getByRole("button", { name: "Add job" }));
 
-    await user.click(railPanel().getByRole("button", { name: "Overview" }));
+    await user.click(railPanel().getByRole("button", { name: "Settings" }));
     await user.click(discard().getByRole("button", { name: "Cancel" }));
     expect(main().getByRole("group", { name: "New job" })).toBeInTheDocument();
 
-    await user.click(railPanel().getByRole("button", { name: "Overview" }));
+    await user.click(railPanel().getByRole("button", { name: "Settings" }));
     await user.click(discard().getByRole("button", { name: "Discard" }));
     expect(
-      await main().findByRole("heading", { name: "Overview" }),
+      await main().findByRole("heading", { name: "Stat labels" }),
     ).toBeInTheDocument();
     expect(api.updatePerson).not.toHaveBeenCalled();
   });
@@ -586,79 +585,57 @@ describe("Add person", () => {
     await user.type(main().getByLabelText("Name"), "Ada");
     await user.click(main().getByRole("button", { name: "Add job" }));
     await user.type(main().getByLabelText("Start date"), "1970");
+    await user.type(main().getByLabelText("End date (optional)"), "1969");
     await user.click(main().getByRole("button", { name: "Save" }));
 
     expect(main().getByLabelText("Job")).toHaveAccessibleDescription(
       "Enter a job.",
     );
-    expect(main().getByLabelText("Start date")).toHaveAccessibleDescription(
-      "Start date is after the game date.",
-    );
+    expect(
+      main().getByLabelText("End date (optional)"),
+    ).toHaveAccessibleDescription("End date is before the start date.");
     expect(api.createPerson).not.toHaveBeenCalled();
+  });
+
+  it("saves a job that starts after the game date", async () => {
+    const user = await openWorld();
+    await user.click(main().getAllByRole("button", { name: "Add person" })[0]);
+    await user.type(main().getByLabelText("Name"), "Ada");
+    await user.click(main().getByRole("button", { name: "Add job" }));
+    await user.type(main().getByLabelText("Job"), "Clerk");
+    await user.type(main().getByLabelText("Start date"), "1970");
+    await user.click(main().getByRole("button", { name: "Save" }));
+
+    expect(api.createPerson).toHaveBeenCalledWith(
+      expect.objectContaining({
+        resume: [expect.objectContaining({ job: "Clerk", startDate: "1970" })],
+      }),
+    );
   });
 });
 
-describe("Game date before a job", () => {
-  it("shows the refusal under the Game date box and does not save", async () => {
+describe("Game date save", () => {
+  it("saves a date before a job's start", async () => {
     store.characters = [ada(), otto()];
     render(<App />);
     const user = userEvent.setup();
-    await user.click(screen.getByRole("button", { name: "World" }));
+    await user.click(screen.getByRole("button", { name: "Session" }));
     const date = await main().findByLabelText("Game date");
     await user.clear(date);
     await user.type(date, "1 June 1954");
     await user.click(main().getByRole("button", { name: "Save" }));
 
-    expect(date).toHaveAccessibleDescription(
-      "Game date is before the start of Otto Brandt's job as Publisher.",
-    );
-    expect(api.updateWorld).not.toHaveBeenCalled();
-    expect(screen.queryByRole("alert")).toBeNull();
-
-    await user.clear(date);
-    await user.type(date, "1 June 1955");
     expect(date).not.toHaveAccessibleDescription();
-    await user.click(main().getByRole("button", { name: "Save" }));
     expect(api.updateWorld).toHaveBeenCalledWith(
-      expect.objectContaining({ gameDate: "1955-06-01" }),
+      expect.objectContaining({ gameDate: "1954-06-01" }),
     );
-  });
-});
-
-describe("Game date refused by the save", () => {
-  it.each([
-    "Game date is before the start of Otto Brandt's job as Publisher.",
-    "Game date is before the death date of Jun Nakamura.",
-  ])("shows “%s” under the box, not as a toast", async (message) => {
-    // The characters fail to load, so the form can't check them itself.
-    store.damaged.characters = "characters.json is damaged.";
-    api.updateWorld.mockRejectedValueOnce(message);
-    render(<App />);
-    const user = userEvent.setup();
-    await user.click(screen.getByRole("button", { name: "World" }));
-    const date = await main().findByLabelText("Game date");
-    await user.clear(date);
-    await user.type(date, "1 June 1954");
-    await user.click(main().getByRole("button", { name: "Save" }));
-
-    await waitFor(() => expect(date).toHaveAccessibleDescription(message));
-    expect(
-      within(screen.getByRole("region", { name: "Notifications" })).queryByRole(
-        "alert",
-      ),
-    ).toBeNull();
-
-    // Another date clears it.
-    await user.clear(date);
-    await user.type(date, "1 June 1955");
-    expect(date).not.toHaveAccessibleDescription();
   });
 
   it("other save errors stay toasts", async () => {
     api.updateWorld.mockRejectedValueOnce("Disk full.");
     render(<App />);
     const user = userEvent.setup();
-    await user.click(screen.getByRole("button", { name: "World" }));
+    await user.click(screen.getByRole("button", { name: "Session" }));
     const date = await main().findByLabelText("Game date");
     await user.click(main().getByRole("button", { name: "Save" }));
 

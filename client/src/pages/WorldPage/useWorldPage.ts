@@ -17,7 +17,7 @@ export type WorldPageOptions = {
 export type WorldView = ReturnType<typeof useWorldView>;
 
 export type WorldPage = {
-  // Leaves Overview or the person form, asking before discarding edits.
+  // Leaves Settings or the person form, asking before discarding edits.
   // Resolves false to keep editing.
   leave: () => Promise<boolean>;
   // Shows a person's sheet the next time World is shown.
@@ -37,23 +37,25 @@ export function useWorldPage(options: WorldPageOptions): WorldPage {
 }
 
 function useWorldView({ active, confirmDiscard }: WorldPageOptions) {
-  const [section, setSection] = useState<WorldSection>("overview");
-  const [overviewVersion, setOverviewVersion] = useState(0);
+  const [section, setSection] = useState<WorldSection>("people");
+  const [settingsVersion, setSettingsVersion] = useState(0);
   const [peopleView, setPeopleView] = useState<PeopleView>({ screen: "list" });
   const [prefs, setPrefs] = useState<ListPrefs>(DEFAULT_PREFS);
-  // True while Overview or the person form has unsaved changes.
+  // True while Settings or the person form has unsaved changes.
   const formDirty = useRef(false);
 
-  // Discarded Overview edits reset; person forms return to the list or sheet.
+  // Discarded Settings edits reset; person forms return to the list or sheet.
   const leave = async () => {
-    const form = peopleView.screen === "add" || peopleView.screen === "edit";
-    if (!active || (section === "people" && !form)) return true;
+    const personForm =
+      section === "people" &&
+      (peopleView.screen === "add" || peopleView.screen === "edit");
+    if (!active || (section !== "settings" && !personForm)) return true;
     if (formDirty.current) {
       if (!(await confirmDiscard())) return false;
       formDirty.current = false;
     }
-    if (section === "overview") {
-      setOverviewVersion((version) => version + 1);
+    if (section === "settings") {
+      setSettingsVersion((version) => version + 1);
       return true;
     }
     setPeopleView(
@@ -78,7 +80,7 @@ function useWorldView({ active, confirmDiscard }: WorldPageOptions) {
   return {
     section,
     selectSection,
-    overviewVersion,
+    settingsVersion,
     peopleView,
     setPeopleView,
     prefs,

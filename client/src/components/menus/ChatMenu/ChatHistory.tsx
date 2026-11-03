@@ -93,7 +93,8 @@ export function ChatHistory({ chat }: { chat: ChatController }) {
     notify({ kind: "error", message: errorMessage(e) });
   const refresh = () => setVersion((v) => v + 1);
 
-  // A turn that ends may have titled its chat, so the list is read again.
+  // A turn that ends has saved its chat's messages, which search reads, so
+  // the list is read again.
   // biome-ignore lint/correctness/useExhaustiveDependencies: see above
   useEffect(() => {
     let current = true;

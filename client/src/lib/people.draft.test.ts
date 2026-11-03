@@ -57,7 +57,7 @@ describe("character draft adapter", () => {
       const draft = characterToDraft(fields);
       expect(draft.birthDate).toBe(`1 January ${year}`);
       expect(draft.deathDate).toBe(`31 December ${year}`);
-      expect(characterDraftToFields(draft, GAME)).toMatchObject({
+      expect(characterDraftToFields(draft)).toMatchObject({
         fields: { birthDate: `${year}-01-01`, deathDate: `${year}-12-31` },
       });
     },
@@ -82,7 +82,7 @@ describe("character draft adapter", () => {
     draft.stats[0].left = "50";
     expect(characterToDraft().stats[0].left).toBe("");
     expect(
-      characterDraftToFields({ ...characterToDraft(), name: "Ada" }, GAME),
+      characterDraftToFields({ ...characterToDraft(), name: "Ada" }),
     ).toEqual({
       fields: {
         name: "Ada",
@@ -129,47 +129,44 @@ describe("character draft adapter", () => {
     expect(draft).not.toHaveProperty("id");
     expect(draft).not.toHaveProperty("photo");
     const { id: _id, photo: _photo, ...fields } = person;
-    expect(characterDraftToFields(draft, GAME)).toEqual({ fields });
+    expect(characterDraftToFields(draft)).toEqual({ fields });
     draft.stats[0].left = "20";
     expect(person.stats[0].left).toBe(0);
   });
 
   it("normalizes names, places, dates and stats while preserving description", () => {
     expect(
-      characterDraftToFields(
-        {
-          ...characterToDraft(person),
-          name: "  Rosa  ",
-          birthDate: " June 14, 1930 ",
-          birthCity: " Havana ",
-          birthState: " La Habana ",
-          birthCountry: " Cuba ",
-          deathDate: "  ",
-          deathCity: " London ",
-          deathState: " England ",
-          deathCountry: " UK ",
-          stats: pairs([" 0 ", "100", " ", "045", "", "7", "50", " "], ""),
-          resume: [
-            {
-              id: "",
-              job: " Printer ",
-              employer: " La Prensa ",
-              startDate: " Mar 1950 ",
-              endDate: " 1955-3 ",
-              description: " Night shift.\n",
-            },
-            {
-              id: "job-2",
-              job: "Editor",
-              employer: "",
-              startDate: "April 1, 1955",
-              endDate: "  ",
-              description: "",
-            },
-          ],
-        },
-        GAME,
-      ),
+      characterDraftToFields({
+        ...characterToDraft(person),
+        name: "  Rosa  ",
+        birthDate: " June 14, 1930 ",
+        birthCity: " Havana ",
+        birthState: " La Habana ",
+        birthCountry: " Cuba ",
+        deathDate: "  ",
+        deathCity: " London ",
+        deathState: " England ",
+        deathCountry: " UK ",
+        stats: pairs([" 0 ", "100", " ", "045", "", "7", "50", " "], ""),
+        resume: [
+          {
+            id: "",
+            job: " Printer ",
+            employer: " La Prensa ",
+            startDate: " Mar 1950 ",
+            endDate: " 1955-3 ",
+            description: " Night shift.\n",
+          },
+          {
+            id: "job-2",
+            job: "Editor",
+            employer: "",
+            startDate: "April 1, 1955",
+            endDate: "  ",
+            description: "",
+          },
+        ],
+      }),
     ).toEqual({
       fields: {
         name: "Rosa",
@@ -206,25 +203,22 @@ describe("character draft adapter", () => {
   });
 
   it("returns all field errors and no saveable fields for invalid drafts", () => {
-    const result = characterDraftToFields(
-      {
-        ...characterToDraft(),
-        name: "  ",
-        birthDate: "31 April 1904",
-        deathDate: "11 February 1962",
-        stats: pairs(["-1", "101", "4.5", "1e2", "no", "", "50"], ""),
-        resume: [
-          { ...jobToDraft(), job: "Clerk", startDate: "1950" },
-          { ...jobToDraft(), startDate: "1962-03" },
-        ],
-      },
-      GAME,
-    );
+    const result = characterDraftToFields({
+      ...characterToDraft(),
+      name: "  ",
+      birthDate: "31 April 1904",
+      deathDate: "11 February 1962",
+      stats: pairs(["-1", "101", "4.5", "1e2", "no", "", "50"], ""),
+      resume: [
+        { ...jobToDraft(), job: "Clerk", startDate: "1950" },
+        { ...jobToDraft(), startDate: "1962-03" },
+      ],
+    });
     expect(result).toEqual({
       errors: {
         name: "Enter a name.",
         birthDate: "Not a real date.",
-        deathDate: "Death date is after the game date.",
+        deathDate: undefined,
         stats: pairs(
           [
             undefined,
@@ -241,7 +235,7 @@ describe("character draft adapter", () => {
           { job: undefined, startDate: undefined, endDate: undefined },
           {
             job: "Enter a job.",
-            startDate: "Start date is after the game date.",
+            startDate: undefined,
             endDate: undefined,
           },
         ],
@@ -257,12 +251,12 @@ describe("character draft adapter", () => {
       birthDate: "10 February 1962",
     };
     expect(
-      characterDraftToFields({ ...draft, deathDate: "9 February 1962" }, GAME),
+      characterDraftToFields({ ...draft, deathDate: "9 February 1962" }),
     ).toMatchObject({
       errors: { deathDate: "Death date is before the birth date." },
     });
     expect(
-      characterDraftToFields({ ...draft, deathDate: "10/2/1962" }, GAME),
+      characterDraftToFields({ ...draft, deathDate: "10/2/1962" }),
     ).toMatchObject({ fields: { birthDate: GAME, deathDate: GAME } });
   });
 });

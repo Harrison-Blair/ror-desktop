@@ -2,7 +2,7 @@ import { PeopleMenu } from "@/components/menus/PeopleMenu/PeopleMenu";
 import type { PeopleData } from "@/components/menus/PeopleMenu/usePeople";
 import { WorldMenu } from "@/components/menus/WorldMenu/WorldMenu";
 import type { WorldView } from "@/pages/WorldPage/useWorldPage";
-import { WorldOverview } from "./WorldOverview";
+import { WorldSettings } from "./WorldSettings";
 
 // The World views. They unmount when another tab is shown; their state lives
 // in useWorldPage.
@@ -18,10 +18,10 @@ export function WorldPageMain({
   world: WorldView;
   people: PeopleData;
 }) {
-  if (world.section === "overview") {
+  if (world.section === "settings") {
     return (
-      <WorldOverview
-        key={world.overviewVersion}
+      <WorldSettings
+        key={world.settingsVersion}
         data={people}
         onDirty={world.setFormDirty}
       />

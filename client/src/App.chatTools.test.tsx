@@ -45,6 +45,7 @@ vi.mock("@/lib/chat/chatApi", () => ({
   getChatSettings: vi.fn(async () => ({
     model: "glm-5.3",
     backend: "opencode-go",
+    effort: null,
     permissionMode: "auto",
   })),
   latestChat: vi.fn(async () => null),
@@ -246,7 +247,6 @@ describe("people tools in the app", () => {
   const main = () => within(screen.getByRole("main"));
   const openWorld = async (user: UserEvent) => {
     await user.click(screen.getByRole("button", { name: "World" }));
-    await main().findByRole("heading", { name: "Overview" });
     await user.click(
       within(
         screen.getByRole("region", { name: "World rail panel" }),
@@ -260,6 +260,7 @@ describe("people tools in the app", () => {
     chat.getChatSettings.mockResolvedValueOnce({
       model: "glm-5.3",
       backend: "opencode-go",
+      effort: null,
       permissionMode: "manual",
     });
     await startTurn(openWorld);

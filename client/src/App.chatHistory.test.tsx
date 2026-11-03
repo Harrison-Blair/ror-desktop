@@ -42,15 +42,23 @@ vi.mock("@/lib/chat/chatApi", () => ({
   stopTurn: vi.fn(async () => {}),
 }));
 
-// The store's search is tested in Rust. This fake matches titles only.
+// The store's search is tested in Rust. This fake matches titles and the
+// text of user and assistant messages.
 vi.mock("@/lib/chat/historyApi", () => ({
   listChats: vi.fn(async (archived: boolean, query: string) =>
     saved
-      .filter(
-        (c) =>
+      .filter((c) => {
+        const has = (text: string) =>
+          text.toLowerCase().includes(query.trim().toLowerCase());
+        return (
           c.archived === archived &&
-          c.title.toLowerCase().includes(query.trim().toLowerCase()),
-      )
+          (has(c.title) ||
+            c.messages.some(
+              (m) =>
+                (m.role === "user" || m.role === "assistant") && has(m.text),
+            ))
+        );
+      })
       .sort((a, b) => b.updatedAt - a.updatedAt)
       .map(({ id, title, updatedAt, archived }) => ({
         id,
@@ -440,6 +448,31 @@ describe("Chat history", () => {
         }),
       ).toBeEnabled(),
     );
+  });
+
+  it("a search during a reply finds the chat once the reply is saved", async () => {
+    const user = await openChat();
+    await user.type(
+      within(panel()).getByRole("textbox", { name: "Message" }),
+      "Who guards the ford?{Enter}",
+    );
+    await user.click(screen.getByRole("button", { name: "Chat history" }));
+    await user.type(
+      within(panel()).getByRole("searchbox", { name: "Search chats" }),
+      "goblins",
+    );
+    expect(
+      await within(panel()).findByText("No chats match."),
+    ).toBeInTheDocument();
+
+    // Rust saves the answer, then the turn ends.
+    saved[0].messages.push(
+      { role: "user", text: "Who guards the ford?" },
+      { role: "assistant", text: "Three goblins." },
+    );
+    act(() => turn?.end("ogre"));
+
+    await vi.waitFor(() => expect(titles()).toEqual(["Ogre ambush"]));
   });
 });
 

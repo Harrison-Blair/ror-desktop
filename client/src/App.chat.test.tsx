@@ -1,4 +1,4 @@
-import { act, render, screen, within } from "@testing-library/react";
+import { act, render, screen, waitFor, within } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import { beforeEach, describe, expect, it, vi } from "vitest";
 import App from "@/App";
@@ -27,6 +27,7 @@ vi.mock("@/lib/chat/chatApi", () => ({
   getChatSettings: vi.fn(async () => ({
     model: "glm-5.3",
     backend: "opencode-go",
+    effort: null,
     permissionMode: "manual",
   })),
   latestChat: vi.fn(async () => latest),
@@ -93,6 +94,17 @@ vi.mock("@/lib/chat/features", async (importOriginal) => {
 });
 
 const api = vi.mocked(chatApi);
+
+// A Codex model with low, medium and high effort, medium by default.
+const codexModel = (name: string): chatApi.CodexModel => ({
+  name,
+  efforts: [
+    { effort: "low", description: "Fast" },
+    { effort: "medium", description: "Balanced" },
+    { effort: "high", description: "Thorough" },
+  ],
+  defaultEffort: "medium",
+});
 
 beforeEach(() => {
   vi.clearAllMocks();
@@ -467,6 +479,7 @@ describe("Chat panel", () => {
             resolve({
               model: "glm-5.3",
               backend: "opencode-go",
+              effort: null,
               permissionMode: "auto",
             });
         }),
@@ -528,7 +541,10 @@ describe("Chat panel", () => {
   });
 
   it("the Codex group says Not signed in and disables its models when signed out", async () => {
-    codex = { state: "signedOut", models: ["gpt-6.1-sol", "gpt-5.6-terra"] };
+    codex = {
+      state: "signedOut",
+      models: [codexModel("gpt-6.1-sol"), codexModel("gpt-5.6-terra")],
+    };
     const user = await openChat();
     await user.click(screen.getByRole("button", { name: "Model: glm-5.3" }));
     const menu = screen.getByRole("dialog", { name: "Models" });
@@ -549,7 +565,10 @@ describe("Chat panel", () => {
 
   it("picks a Codex model when signed in and locks the chat to Codex", async () => {
     keySaved = true;
-    codex = { state: "ready", models: ["gpt-6.1-sol", "gpt-5.6-terra"] };
+    codex = {
+      state: "ready",
+      models: [codexModel("gpt-6.1-sol"), codexModel("gpt-5.6-terra")],
+    };
     const user = await openChat();
     await user.click(screen.getByRole("button", { name: "Model: glm-5.3" }));
     let menu = screen.getByRole("dialog", { name: "Models" });
@@ -557,7 +576,11 @@ describe("Chat panel", () => {
     await user.click(
       await within(menu).findByRole("button", { name: "gpt-6.1-sol" }),
     );
-    expect(api.saveChatModel).toHaveBeenCalledWith("codex", "gpt-6.1-sol");
+    expect(api.saveChatModel).toHaveBeenCalledWith(
+      "codex",
+      "gpt-6.1-sol",
+      "medium",
+    );
 
     await user.type(
       screen.getByRole("textbox", { name: "Message" }),
@@ -585,9 +608,142 @@ describe("Chat panel", () => {
     ).toBeEnabled();
   });
 
+  it("an OpenCode Go model shows no effort and sends none", async () => {
+    keySaved = true;
+    codex = { state: "ready", models: [codexModel("gpt-6.1-sol")] };
+    const user = await openChat();
+    expect(screen.queryByRole("combobox", { name: "Effort" })).toBeNull();
+    await user.type(
+      screen.getByRole("textbox", { name: "Message" }),
+      "Hi{Enter}",
+    );
+    expect(turn?.send).toMatchObject({ backend: "opencode-go", effort: null });
+  });
+
+  it("a Codex model offers its efforts, starts at its default, and saves a pick", async () => {
+    codex = {
+      state: "ready",
+      models: [
+        codexModel("gpt-6.1-sol"),
+        {
+          name: "gpt-5.6-terra",
+          efforts: [
+            { effort: "minimal", description: "Quickest" },
+            { effort: "xhigh", description: "Deepest" },
+          ],
+          defaultEffort: "xhigh",
+        },
+      ],
+    };
+    const user = await openChat();
+    await user.click(screen.getByRole("button", { name: "Model: glm-5.3" }));
+    let menu = screen.getByRole("dialog", { name: "Models" });
+    await user.click(
+      await within(menu).findByRole("button", { name: "gpt-6.1-sol" }),
+    );
+    expect(api.saveChatModel).toHaveBeenLastCalledWith(
+      "codex",
+      "gpt-6.1-sol",
+      "medium",
+    );
+    const effort = await screen.findByRole("combobox", { name: "Effort" });
+    expect(
+      within(effort)
+        .getAllByRole("option")
+        .map((o) => o.textContent),
+    ).toEqual(["low", "medium", "high"]);
+    expect(effort).toHaveValue("medium");
+
+    await user.selectOptions(effort, "high");
+    expect(effort).toHaveValue("high");
+    expect(api.saveChatModel).toHaveBeenLastCalledWith(
+      "codex",
+      "gpt-6.1-sol",
+      "high",
+    );
+    await user.type(
+      screen.getByRole("textbox", { name: "Message" }),
+      "Hi{Enter}",
+    );
+    expect(turn?.send).toMatchObject({
+      backend: "codex",
+      model: "gpt-6.1-sol",
+      effort: "high",
+    });
+    act(() => turn?.end());
+
+    // Another model starts at its own default.
+    await user.click(
+      screen.getByRole("button", { name: "Model: gpt-6.1-sol" }),
+    );
+    menu = screen.getByRole("dialog", { name: "Models" });
+    await user.click(
+      await within(menu).findByRole("button", { name: "gpt-5.6-terra" }),
+    );
+    expect(api.saveChatModel).toHaveBeenLastCalledWith(
+      "codex",
+      "gpt-5.6-terra",
+      "xhigh",
+    );
+    await waitFor(() =>
+      expect(
+        within(screen.getByRole("combobox", { name: "Effort" }))
+          .getAllByRole("option")
+          .map((o) => o.textContent),
+      ).toEqual(["minimal", "xhigh"]),
+    );
+    expect(screen.getByRole("combobox", { name: "Effort" })).toHaveValue(
+      "xhigh",
+    );
+    await user.type(
+      screen.getByRole("textbox", { name: "Message" }),
+      "Again{Enter}",
+    );
+    expect(turn?.send).toMatchObject({
+      model: "gpt-5.6-terra",
+      effort: "xhigh",
+    });
+  });
+
+  it("a saved effort the model no longer offers shows the model's default", async () => {
+    codex = { state: "ready", models: [codexModel("gpt-6.1-sol")] };
+    api.getChatSettings.mockResolvedValueOnce({
+      model: "gpt-6.1-sol",
+      backend: "codex",
+      effort: "ultra",
+      permissionMode: "manual",
+    });
+    const user = userEvent.setup();
+    render(<App />);
+    await user.click(screen.getByRole("button", { name: "Chat" }));
+    const effort = await screen.findByRole("combobox", { name: "Effort" });
+    expect(effort).toHaveValue("medium");
+  });
+
+  it("a reopened Codex chat continues at its own effort", async () => {
+    codex = { state: "ready", models: [codexModel("gpt-6.1-sol")] };
+    latest = {
+      id: "chat-9",
+      title: "Lair",
+      createdAt: 1,
+      updatedAt: 1,
+      backend: "codex",
+      model: "gpt-6.1-sol",
+      effort: "low",
+      archived: false,
+      messages: [{ role: "assistant", text: "A dragon." }],
+      usage: { inputTokens: 0, outputTokens: 0 },
+    };
+    const user = userEvent.setup();
+    render(<App />);
+    await user.click(screen.getByRole("button", { name: "Chat" }));
+    const effort = await screen.findByRole("combobox", { name: "Effort" });
+    expect(effort).toHaveValue("low");
+  });
+
   it("a chat on OpenCode Go shows the Codex models locked", async () => {
     keySaved = true;
-    codex = { state: "ready", models: ["gpt-6.1-sol"] };
+    codex = { state: "ready", models: [codexModel("gpt-6.1-sol")] };
     const user = await openChat();
     await user.type(
       screen.getByRole("textbox", { name: "Message" }),

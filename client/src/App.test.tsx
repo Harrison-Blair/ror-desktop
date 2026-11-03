@@ -166,29 +166,35 @@ describe("App frame", () => {
     expect(history().getAllByRole("listitem")).toHaveLength(1);
   });
 
-  it.each(["Session"])(
-    "%s is not implemented: clicking it shows an error and leaves Notes active",
-    async (name) => {
-      const user = renderApp();
+  it("Session shows its rail panel and Overview page without an error", async () => {
+    const user = renderApp();
 
-      await user.click(screen.getByRole("button", { name }));
+    await user.click(screen.getByRole("button", { name: "Session" }));
 
-      expect(
-        within(screen.getByRole("region", { name: "Notifications" })).getByRole(
-          "alert",
-        ),
-      ).toHaveTextContent(`${name} is not implemented yet.`);
-      expect(
-        screen.getByRole("button", { name, pressed: false }),
-      ).toBeInTheDocument();
-      expect(
-        screen.getByRole("button", { name: "Notes", pressed: true }),
-      ).toBeInTheDocument();
-      expect(
-        screen.getByRole("region", { name: "Notes rail panel" }),
-      ).toBeInTheDocument();
-    },
-  );
+    expect(
+      within(screen.getByRole("region", { name: "Notifications" })).queryByRole(
+        "alert",
+      ),
+    ).not.toBeInTheDocument();
+    expect(
+      screen.getByRole("button", { name: "Session", pressed: true }),
+    ).toBeInTheDocument();
+    const panel = within(
+      screen.getByRole("region", { name: "Session rail panel" }),
+    );
+    expect(panel.getByRole("heading", { name: "Session" })).toBeVisible();
+    expect(
+      panel.getByRole("button", { name: "Overview", pressed: true }),
+    ).toBeVisible();
+    expect(
+      await within(screen.getByRole("main")).findByRole("heading", {
+        name: "Overview",
+      }),
+    ).toBeVisible();
+    expect(
+      screen.queryByRole("region", { name: "Notes rail panel" }),
+    ).not.toBeInTheDocument();
+  });
 
   it("selecting the active rail item hides and then shows the rail panel", async () => {
     const user = renderApp();
@@ -381,14 +387,14 @@ describe("App frame", () => {
         "false",
       );
       expect(
-        screen.queryByRole("heading", { name: "Providers and keys" }),
+        screen.queryByRole("heading", { name: "API Keys" }),
       ).not.toBeInTheDocument();
       expect(await shownText("Ada.md")).toBe("Hello!");
 
       diskFull = false;
       await user.click(screen.getByRole("button", { name: "Settings" }));
       expect(
-        await screen.findByRole("heading", { name: "Providers and keys" }),
+        await screen.findByRole("heading", { name: "API Keys" }),
       ).toBeInTheDocument();
       expect(disk).toEqual({ "Ada.md": "Hello!" });
     });
@@ -400,7 +406,7 @@ describe("App frame", () => {
       await user.click(screen.getByRole("button", { name: "World" }));
       await waitFor(() => expect(disk).toEqual({ "Ada.md": "Hello!" }));
       expect(
-        await screen.findByRole("heading", { name: "Overview" }),
+        await screen.findByRole("heading", { name: "People of interest" }),
       ).toBeInTheDocument();
 
       await user.click(screen.getByRole("button", { name: "Notes" }));
@@ -439,7 +445,7 @@ describe("App frame", () => {
         "false",
       );
       expect(
-        screen.queryByRole("heading", { name: "Providers and keys" }),
+        screen.queryByRole("heading", { name: "API Keys" }),
       ).not.toBeInTheDocument();
     });
 
@@ -460,7 +466,7 @@ describe("App frame", () => {
         screen.getByRole("button", { name: "Notes", pressed: true }),
       ).toBeInTheDocument();
       expect(
-        screen.queryByRole("heading", { name: "Overview" }),
+        screen.queryByRole("heading", { name: "People of interest" }),
       ).not.toBeInTheDocument();
     });
 

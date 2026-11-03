@@ -26,11 +26,11 @@ pub struct Chat {
     pub updated_at: u64,
     pub backend: BackendId,
     pub model: String,
+    /// The reasoning effort the chat's last turn asked for, if any.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub effort: Option<String>,
     #[serde(default)]
     pub archived: bool,
-    /// The user named the chat, so it is never titled for them.
-    #[serde(default)]
-    pub renamed: bool,
     pub messages: Vec<Message>,
     #[serde(default)]
     pub usage: Usage,
@@ -98,8 +98,6 @@ pub fn now_ms() -> u64 {
         .map_or(0, |d| d.as_millis() as u64)
 }
 
-const TITLE_LENGTH: usize = 60;
-
 impl Chat {
     pub fn new(backend: BackendId, model: &str) -> Self {
         let now = now_ms();
@@ -110,20 +108,14 @@ impl Chat {
             updated_at: now,
             backend,
             model: model.to_string(),
+            effort: None,
             archived: false,
-            renamed: false,
             messages: Vec::new(),
             usage: Usage::default(),
         }
     }
 
     pub fn push(&mut self, message: Message) {
-        // The first line of the first message names the chat until it is
-        // titled.
-        if let (true, Message::User { text }) = (self.title.is_empty(), &message) {
-            let line = text.lines().next().unwrap_or("").trim();
-            self.title = line.chars().take(TITLE_LENGTH).collect();
-        }
         self.messages.push(message);
         self.updated_at = now_ms();
     }
@@ -144,13 +136,21 @@ pub fn save(dir: &Path, chat: &Chat) -> io::Result<()> {
     fs::create_dir_all(dir)?;
     let text = serde_json::to_vec_pretty(chat).map_err(io::Error::other)?;
     // Two app instances saving the same chat at once is a known, accepted risk.
-    let temp = file.with_extension("json.tmp");
+    replace(&file, &text)
+}
+
+// Writes `text` to a temporary file beside `file`, then renames it over
+// `file`.
+fn replace(file: &Path, text: &[u8]) -> io::Result<()> {
+    let mut temp = file.as_os_str().to_owned();
+    temp.push(".tmp");
+    let temp = PathBuf::from(temp);
     let result = fs::File::create(&temp)
         .and_then(|mut f| {
             owner_only(&f)?;
-            f.write_all(&text)
+            f.write_all(text)
         })
-        .and_then(|()| fs::rename(&temp, &file));
+        .and_then(|()| fs::rename(&temp, file));
     if result.is_err() {
         let _ = fs::remove_file(&temp);
     }
@@ -168,6 +168,33 @@ fn owner_only(file: &fs::File) -> io::Result<()> {
 #[cfg(not(unix))]
 fn owner_only(_file: &fs::File) -> io::Result<()> {
     Ok(())
+}
+
+// The last number a new chat was named with. Not a `.json` file, so the
+// chat scan never reads it.
+const LAST_NUMBER: &str = "last-number";
+
+/// A new chat, named with the next number. Numbers are never reused, even
+/// after their chat is deleted.
+pub fn new_chat(dir: &Path, backend: BackendId, model: &str) -> io::Result<Chat> {
+    let file = dir.join(LAST_NUMBER);
+    let last = match fs::read_to_string(&file) {
+        Ok(text) => text.trim().parse::<u64>().map_err(|_| {
+            io::Error::new(
+                io::ErrorKind::InvalidData,
+                "The chat number file is damaged.",
+            )
+        })?,
+        Err(e) if e.kind() == io::ErrorKind::NotFound => 0,
+        Err(e) => return Err(e),
+    };
+    let number = last + 1;
+    fs::create_dir_all(dir)?;
+    replace(&file, number.to_string().as_bytes())?;
+    Ok(Chat {
+        title: number.to_string(),
+        ..Chat::new(backend, model)
+    })
 }
 
 pub fn load(dir: &Path, id: &str) -> io::Result<Chat> {
@@ -249,7 +276,7 @@ fn change(dir: &Path, id: &str, apply: impl FnOnce(&mut Chat)) -> io::Result<()>
     save(dir, &chat)
 }
 
-/// Names the chat for the user. It is never titled for them after this.
+/// Names the chat for the user.
 pub fn rename(dir: &Path, id: &str, title: &str) -> io::Result<()> {
     let title = title.trim();
     if title.is_empty() {
@@ -260,7 +287,6 @@ pub fn rename(dir: &Path, id: &str, title: &str) -> io::Result<()> {
     }
     change(dir, id, |chat| {
         chat.title = title.to_string();
-        chat.renamed = true;
     })
 }
 
@@ -315,7 +341,6 @@ mod tests {
         let chat = chat_with_everything();
         save(&dir, &chat).unwrap();
         assert_eq!(load(&dir, &chat.id).unwrap(), chat);
-        assert_eq!(chat.title, "Roll for the ogre");
     }
 
     #[test]
@@ -339,6 +364,87 @@ mod tests {
             value["messages"][2],
             serde_json::json!({ "role": "tool", "callId": "call_1", "name": "dice_roll", "content": "17", "isError": false })
         );
+    }
+
+    #[test]
+    fn a_chat_effort_loads_back_and_an_old_chat_keeps_its_title_and_has_no_effort() {
+        let temp = tempfile::tempdir().unwrap();
+        let mut chat = chat_with_everything();
+        chat.effort = Some("high".into());
+        save(temp.path(), &chat).unwrap();
+        let text = fs::read_to_string(temp.path().join(format!("{}.json", chat.id))).unwrap();
+        let value: serde_json::Value = serde_json::from_str(&text).unwrap();
+        assert_eq!(value["effort"], "high");
+        assert_eq!(
+            load(temp.path(), &chat.id).unwrap().effort.as_deref(),
+            Some("high")
+        );
+
+        // A chat saved before chats had an effort or a number, and renamed
+        // by its user.
+        let id = uuid::Uuid::new_v4().to_string();
+        let old = serde_json::json!({
+            "id": id, "title": "Ogre ambush", "createdAt": 1, "updatedAt": 2,
+            "backend": "opencode-go", "model": "glm-5.3", "archived": false, "renamed": true,
+            "messages": [{ "role": "user", "text": "The ogre" }],
+            "usage": { "inputTokens": 0, "outputTokens": 0 },
+        });
+        fs::write(temp.path().join(format!("{id}.json")), old.to_string()).unwrap();
+        let old = load(temp.path(), &id).unwrap();
+        assert_eq!(old.effort, None);
+        assert_eq!(old.title, "Ogre ambush");
+        // Its name stays when it is saved again, and a new chat leaves it alone.
+        save(temp.path(), &old).unwrap();
+        new_chat(temp.path(), BackendId::OpencodeGo, "glm-5.3").unwrap();
+        assert_eq!(load(temp.path(), &id).unwrap().title, "Ogre ambush");
+    }
+
+    #[test]
+    fn new_chats_are_numbered_and_a_deleted_number_is_never_reused() {
+        let temp = tempfile::tempdir().unwrap();
+        let dir = temp.path().join("chats");
+        let new = |dir: &Path| {
+            let chat = new_chat(dir, BackendId::OpencodeGo, "glm-5.3").unwrap();
+            save(dir, &chat).unwrap();
+            chat
+        };
+        let first = new(&dir);
+        let second = new(&dir);
+        assert_eq!((first.title.as_str(), second.title.as_str()), ("1", "2"));
+
+        delete(&dir, &second.id).unwrap();
+        let third = new(&dir);
+        assert_eq!(third.title, "3");
+        assert_eq!(load(&dir, &first.id).unwrap().title, "1");
+        // The counter is not a chat.
+        assert_eq!(list(&dir, false, "").unwrap().len(), 2);
+    }
+
+    #[test]
+    fn the_chat_number_survives_a_restart() {
+        let temp = tempfile::tempdir().unwrap();
+        let dir = temp.path().to_path_buf();
+        new_chat(&dir, BackendId::OpencodeGo, "glm-5.3").unwrap();
+        new_chat(&dir, BackendId::Codex, "gpt-5.5").unwrap();
+        // Nothing is held in memory: a later call reads the saved counter,
+        // as the app does after a restart.
+        let after_restart = new_chat(&dir, BackendId::OpencodeGo, "glm-5.3").unwrap();
+        assert_eq!(after_restart.title, "3");
+        assert_eq!(fs::read_to_string(dir.join(LAST_NUMBER)).unwrap(), "3");
+    }
+
+    #[test]
+    fn a_first_message_does_not_rename_a_chat() {
+        let mut chat = new_chat(
+            tempfile::tempdir().unwrap().path(),
+            BackendId::OpencodeGo,
+            "glm-5.3",
+        )
+        .unwrap();
+        chat.push(Message::User {
+            text: "Roll for the ogre".into(),
+        });
+        assert_eq!(chat.title, "1");
     }
 
     #[test]
@@ -451,6 +557,7 @@ mod tests {
     // A chat updated at `at`, with one user and one assistant message.
     fn saved_chat(dir: &Path, at: u64, user: &str, assistant: &str) -> Chat {
         let mut chat = Chat::new(BackendId::OpencodeGo, "glm-5.3");
+        chat.title = user.into();
         chat.push(Message::User { text: user.into() });
         chat.push(Message::Assistant {
             text: assistant.into(),
@@ -550,13 +657,12 @@ mod tests {
     }
 
     #[test]
-    fn rename_sets_the_title_and_marks_the_chat_renamed() {
+    fn rename_sets_the_title() {
         let temp = tempfile::tempdir().unwrap();
         let chat = saved_chat(temp.path(), 10, "The ogre", "It snarls.");
         rename(temp.path(), &chat.id, "  Ogre ambush ").unwrap();
         let renamed = load(temp.path(), &chat.id).unwrap();
         assert_eq!(renamed.title, "Ogre ambush");
-        assert!(renamed.renamed);
         assert_eq!(renamed.messages, chat.messages);
 
         assert!(rename(temp.path(), &chat.id, "   ").is_err());

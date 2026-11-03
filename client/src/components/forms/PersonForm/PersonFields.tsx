@@ -105,7 +105,6 @@ const edited = (draft: Draft, section?: SheetSection): Partial<Draft> =>
 export function usePersonDraft({
   person,
   section,
-  gameDate,
   pending,
   onDirty,
   onSave,
@@ -114,7 +113,6 @@ export function usePersonDraft({
   person?: Character;
   // The open section of a saved person's sheet.
   section?: SheetSection;
-  gameDate: string;
   // An unsaved photo to start with.
   pending?: Pending;
   // Called with true while the draft has unsaved changes.
@@ -131,7 +129,7 @@ export function usePersonDraft({
   const [busy, setBusy] = useState(false);
   // What Save sends: the latest person with the section's edits.
   const full: Draft = { ...toDraft(person), ...edited(draft, section) };
-  const errors = shown ? validateForm(full, gameDate) : NO_ERRORS;
+  const errors = shown ? validateForm(full) : NO_ERRORS;
   // A pending save counts too, so leaving asks first.
   const dirty =
     busy ||
@@ -145,7 +143,7 @@ export function usePersonDraft({
   const save = async () => {
     if (saving.current) return;
     setShown(true);
-    const result = characterDraftToFields(full, gameDate);
+    const result = characterDraftToFields(full);
     if ("errors" in result) return;
     saving.current = true;
     setBusy(true);

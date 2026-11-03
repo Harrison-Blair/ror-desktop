@@ -140,62 +140,9 @@ impl Backend {
             Backend::Codex(session) => codex::run_turn(session, turn, host).await,
         }
     }
-
-    /// A short title for the chat from its first exchange, and the tokens
-    /// the request used. Uses no tools. Stop ends it with an error.
-    pub async fn title(
-        &self,
-        chat: &Chat,
-        cancel: &CancellationToken,
-    ) -> Result<(String, Usage), String> {
-        match self {
-            Backend::OpenAi(endpoint) => tokio::select! {
-                biased;
-                () = cancel.cancelled() => Err(STOPPED.to_string()),
-                result = openai::title(endpoint, chat) => result,
-            },
-            // Codex has a title turn to end when Stop comes.
-            Backend::Codex(session) => codex::title(session, chat, cancel).await,
-        }
-    }
 }
 
-// Whether a turn in the chat ended with the model's answer. A turn that
-// failed or stopped ends with a notice, even when it saved some text.
-fn has_answered_turn(chat: &Chat) -> bool {
-    let messages = &chat.messages;
-    messages.iter().enumerate().any(|(i, message)| {
-        matches!(message, Message::Assistant { .. })
-            && matches!(messages.get(i + 1), None | Some(Message::User { .. }))
-    })
-}
-
-/// Runs the turn. When it is the chat's first turn that ends with an
-/// answer, the chat is titled.
+/// Runs the turn `chat_send` asked for.
 pub async fn answer(backend: &Backend, turn: &mut Turn<'_>, host: &impl TurnHost) -> TurnEnd {
-    let answered = has_answered_turn(turn.chat);
-    let end = backend.run_turn(turn, host).await;
-    if end == TurnEnd::Done && !answered && has_answered_turn(turn.chat) {
-        auto_title(backend, turn, host).await;
-    }
-    end
-}
-
-// A chat the user renamed keeps its name, and a failed request keeps the
-// title it had.
-async fn auto_title(backend: &Backend, turn: &mut Turn<'_>, host: &impl TurnHost) {
-    if turn.chat.renamed {
-        return;
-    }
-    let cancel = turn.cancel.clone();
-    let Ok((title, usage)) = backend.title(turn.chat, &cancel).await else {
-        return;
-    };
-    turn.chat.title = title;
-    turn.chat.usage.input_tokens += usage.input_tokens;
-    turn.chat.usage.output_tokens += usage.output_tokens;
-    host.emit(ChatEvent::Usage {
-        usage: turn.chat.usage,
-    });
-    host.save(turn.chat);
+    backend.run_turn(turn, host).await
 }

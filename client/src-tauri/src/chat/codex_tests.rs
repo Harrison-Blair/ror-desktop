@@ -402,9 +402,21 @@ async fn run(
     host: &Host,
     cancel: CancellationToken,
 ) -> TurnEnd {
+    run_at(codex, chat, host, cancel, None).await
+}
+
+// Runs a turn that asks for reasoning effort `effort`.
+async fn run_at(
+    codex: &Arc<Codex>,
+    chat: &mut Chat,
+    host: &Host,
+    cancel: CancellationToken,
+    effort: Option<&str>,
+) -> TurnEnd {
     let backend = Backend::Codex(Session {
         codex: codex.clone(),
         model: "gpt-5.6-terra".into(),
+        effort: effort.map(String::from),
     });
     let mut turn = Turn {
         chat,
@@ -898,6 +910,17 @@ fn model(name: &str, hidden: bool) -> Value {
             "supportedReasoningEfforts": [{ "reasoningEffort": "medium", "description": "Balanced" }] })
 }
 
+// A model with low, medium and high effort, medium by default.
+fn model_with_efforts(name: &str) -> Value {
+    json!({ "id": name, "model": name, "displayName": name, "description": "", "hidden": false,
+            "isDefault": true, "defaultReasoningEffort": "medium",
+            "supportedReasoningEfforts": [
+                { "reasoningEffort": "low", "description": "Fast" },
+                { "reasoningEffort": "medium", "description": "Balanced" },
+                { "reasoningEffort": "high", "description": "Thorough" },
+            ] })
+}
+
 async fn answer_models(peer: &mut Peer) {
     let first = peer.expect("model/list").await;
     assert_eq!(first["params"]["cursor"], Value::Null);
@@ -910,7 +933,7 @@ async fn answer_models(peer: &mut Peer) {
     assert_eq!(second["params"]["cursor"], "2");
     peer.reply(
         &second,
-        json!({ "data": [model("gpt-5.6-terra", false)], "nextCursor": null }),
+        json!({ "data": [model_with_efforts("gpt-5.6-terra")], "nextCursor": null }),
     )
     .await;
 }
@@ -928,15 +951,35 @@ async fn codex_status_lists_the_visible_models_when_signed_in() {
     })]);
 
     let status = codex.status().await;
+    let effort = |effort: &str, description: &str| codex::Effort {
+        effort: effort.into(),
+        description: description.into(),
+    };
     assert_eq!(
         status,
         Status::Ready {
-            models: vec!["gpt-6.1-sol".into(), "gpt-5.6-terra".into()]
+            models: vec![
+                codex::Model {
+                    name: "gpt-6.1-sol".into(),
+                    efforts: vec![effort("medium", "Balanced")],
+                    default_effort: "medium".into(),
+                },
+                codex::Model {
+                    name: "gpt-5.6-terra".into(),
+                    efforts: vec![
+                        effort("low", "Fast"),
+                        effort("medium", "Balanced"),
+                        effort("high", "Thorough"),
+                    ],
+                    default_effort: "medium".into(),
+                },
+            ]
         }
     );
     assert_eq!(
-        serde_json::to_value(&status).unwrap(),
-        json!({ "state": "ready", "models": ["gpt-6.1-sol", "gpt-5.6-terra"] })
+        serde_json::to_value(&status).unwrap()["models"][0],
+        json!({ "name": "gpt-6.1-sol", "defaultEffort": "medium",
+                "efforts": [{ "effort": "medium", "description": "Balanced" }] })
     );
     codex.status().await;
     assert_eq!(fake.launches.load(Ordering::SeqCst), 1);
@@ -951,10 +994,10 @@ async fn codex_status_says_when_codex_is_signed_out_or_not_installed() {
         peer.hold().await;
     })]);
     let status = codex.status().await;
-    assert_eq!(
-        serde_json::to_value(&status).unwrap(),
-        json!({ "state": "signedOut", "models": ["gpt-6.1-sol", "gpt-5.6-terra"] })
-    );
+    let value = serde_json::to_value(&status).unwrap();
+    assert_eq!(value["state"], "signedOut");
+    assert_eq!(value["models"][0]["name"], "gpt-6.1-sol");
+    assert_eq!(value["models"][1]["name"], "gpt-5.6-terra");
 
     let (missing, _) = super::codex_tests::codex(vec![]);
     assert_eq!(
@@ -963,33 +1006,77 @@ async fn codex_status_says_when_codex_is_signed_out_or_not_installed() {
     );
 }
 
-#[tokio::test]
-async fn the_first_codex_reply_titles_the_chat_in_a_turn_without_tools() {
+// Runs one turn at `effort` against a fake whose models are those of
+// `answer_models`, and returns the turn/start request.
+async fn turn_start_at(effort: Option<&'static str>) -> Value {
     let seen = Arc::new(Mutex::new(Vec::new()));
     let record = seen.clone();
     let (codex, _) = codex(vec![script(move |mut peer| async move {
         peer.handshake().await;
-        peer.begin(false).await;
-        peer.delta("m1", "Ambush them at the ford.").await;
-        peer.usage(100, 10).await;
-        peer.completed("completed", Value::Null).await;
-        peer.expect("thread/unsubscribe").await;
-        // The title: a new thread without tools, with the first exchange.
+        peer.account(true).await;
+        // Only a turn with an effort checks the model's efforts.
+        if effort.is_some() {
+            answer_models(&mut peer).await;
+        }
         let thread = peer.expect("thread/start").await;
         peer.reply(&thread, thread_started(&thread)).await;
         let turn = peer.expect("turn/start").await;
         peer.reply(&turn, turn_started()).await;
-        peer.delta("m2", "\"Goblin Ambush at the Ford\"").await;
-        peer.usage(40, 5).await;
         peer.completed("completed", Value::Null).await;
-        record.lock().unwrap().extend([thread, turn]);
+        record.lock().unwrap().push(turn);
+        peer.hold().await;
+    })]);
+    let mut chat = new_chat("Who is in the lair?");
+    let host = Host::default();
+    let end = run_at(&codex, &mut chat, &host, CancellationToken::new(), effort).await;
+    assert_eq!(end, TurnEnd::Done);
+    recorded(&seen, 1).await.remove(0)
+}
+
+#[tokio::test]
+async fn a_codex_turn_sends_an_effort_the_model_offers() {
+    let turn = turn_start_at(Some("high")).await;
+    assert_eq!(turn["params"]["effort"], "high");
+}
+
+#[tokio::test]
+async fn a_codex_turn_with_an_effort_the_model_lacks_sends_its_default() {
+    let turn = turn_start_at(Some("xhigh")).await;
+    assert_eq!(turn["params"]["effort"], "medium");
+}
+
+#[tokio::test]
+async fn a_codex_turn_without_an_effort_sends_none() {
+    let turn = turn_start_at(None).await;
+    assert!(turn["params"].get("effort").is_none(), "{turn}");
+}
+
+#[tokio::test]
+async fn the_first_codex_reply_starts_no_title_turn() {
+    let after = Arc::new(Mutex::new(Vec::new()));
+    let record = after.clone();
+    let (codex, _) = codex(vec![script(move |mut peer| async move {
+        peer.handshake().await;
+        peer.begin(false).await;
+        peer.delta("m1", "Ambush them at the ford.").await;
+        peer.completed("completed", Value::Null).await;
+        peer.expect("thread/unsubscribe").await;
+        // Anything the app sends after the turn, such as a title thread.
+        while let Ok(Some(message)) =
+            tokio::time::timeout(std::time::Duration::from_millis(200), peer.next()).await
+        {
+            record.lock().unwrap().push(message["method"].clone());
+        }
+        record.lock().unwrap().push(json!("quiet"));
         peer.hold().await;
     })]);
     let mut chat = new_chat("How do I ambush goblins?");
+    chat.title = "1".into();
     let host = Host::default();
     let backend = Backend::Codex(Session {
         codex: codex.clone(),
         model: "gpt-5.6-terra".into(),
+        effort: None,
     });
     let mut turn = Turn {
         chat: &mut chat,
@@ -1001,21 +1088,8 @@ async fn the_first_codex_reply_titles_the_chat_in_a_turn_without_tools() {
     let end = within(agent::answer(&backend, &mut turn, &host)).await;
 
     assert_eq!(end, TurnEnd::Done);
-    assert_eq!(chat.title, "Goblin Ambush at the Ford");
-    assert_eq!(chat.usage.input_tokens, 140);
-    assert_eq!(chat.usage.output_tokens, 15);
-    assert_eq!(
-        host.saved.lock().unwrap().as_ref().unwrap().title,
-        chat.title
-    );
-    let seen = recorded(&seen, 2).await;
-    assert_eq!(seen[0]["params"]["dynamicTools"], json!([]));
-    assert_eq!(seen[0]["params"]["baseInstructions"], openai::TITLE_PROMPT);
-    assert_eq!(seen[0]["params"]["model"], "gpt-5.6-terra");
-    assert_eq!(
-        seen[1]["params"]["input"][0]["text"],
-        "User: How do I ambush goblins?\n\nAssistant: Ambush them at the ford."
-    );
+    assert_eq!(chat.title, "1");
+    assert_eq!(recorded(&after, 1).await, vec![json!("quiet")]);
 }
 
 #[tokio::test]
@@ -1057,58 +1131,6 @@ async fn stop_before_codex_answers_turn_start_interrupts_the_turn_once_it_starts
             text: agent::STOPPED.into(),
         })
     );
-    let seen = recorded(&seen, 2).await;
-    assert_eq!(
-        seen[0]["params"],
-        json!({ "threadId": THREAD, "turnId": TURN })
-    );
-    assert_eq!(seen[1]["params"], json!({ "threadId": THREAD }));
-}
-
-#[tokio::test]
-async fn stop_during_the_codex_title_ends_the_title_turn() {
-    let seen = Arc::new(Mutex::new(Vec::new()));
-    let record = seen.clone();
-    let cancel = CancellationToken::new();
-    let stop = cancel.clone();
-    let (codex, _) = codex(vec![script(move |mut peer| async move {
-        peer.handshake().await;
-        peer.begin(false).await;
-        peer.delta("m1", "Ambush them at the ford.").await;
-        peer.usage(100, 10).await;
-        peer.completed("completed", Value::Null).await;
-        peer.expect("thread/unsubscribe").await;
-        let thread = peer.expect("thread/start").await;
-        peer.reply(&thread, thread_started(&thread)).await;
-        let turn = peer.expect("turn/start").await;
-        // Stop while the title turn starts.
-        stop.cancel();
-        tokio::time::sleep(std::time::Duration::from_millis(50)).await;
-        peer.reply(&turn, turn_started()).await;
-        let interrupt = peer.expect("turn/interrupt").await;
-        let unsubscribe = peer.expect("thread/unsubscribe").await;
-        record.lock().unwrap().extend([interrupt, unsubscribe]);
-        peer.hold().await;
-    })]);
-    let mut chat = new_chat("How do I ambush goblins?");
-    let untitled = chat.title.clone();
-    let host = Host::default();
-    let backend = Backend::Codex(Session {
-        codex: codex.clone(),
-        model: "gpt-5.6-terra".into(),
-    });
-    let mut turn = Turn {
-        chat: &mut chat,
-        system: SYSTEM.into(),
-        tools: vec![roll_tool()],
-        cancel,
-    };
-
-    let end = within(agent::answer(&backend, &mut turn, &host)).await;
-
-    assert_eq!(end, TurnEnd::Done);
-    assert_eq!(chat.title, untitled);
-    assert_eq!(chat.usage.input_tokens, 100);
     let seen = recorded(&seen, 2).await;
     assert_eq!(
         seen[0]["params"],

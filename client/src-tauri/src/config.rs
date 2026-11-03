@@ -16,6 +16,9 @@ pub struct Config {
     /// The backend of `chat_model`.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub chat_backend: Option<BackendId>,
+    /// The reasoning effort chosen for `chat_model`, for Codex models.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub chat_effort: Option<String>,
     #[serde(default)]
     pub permission_mode: PermissionMode,
     /// The id of this device's character in People of interest.
@@ -215,11 +218,12 @@ mod tests {
     }
 
     #[test]
-    fn the_model_and_its_backend_round_trip() {
+    fn the_model_its_backend_and_its_effort_round_trip() {
         let dirs = dirs();
         update(&dirs.config_file, |c| {
             c.chat_model = Some("gpt-5.5".into());
             c.chat_backend = Some(BackendId::Codex);
+            c.chat_effort = Some("high".into());
         })
         .unwrap();
         let saved: serde_json::Value =
@@ -230,12 +234,14 @@ mod tests {
                 "notesDir": null,
                 "chatModel": "gpt-5.5",
                 "chatBackend": "codex",
+                "chatEffort": "high",
                 "permissionMode": "manual"
             })
         );
         let config = load(&dirs.config_file);
         assert_eq!(config.chat_model.as_deref(), Some("gpt-5.5"));
         assert_eq!(config.chat_backend, Some(BackendId::Codex));
+        assert_eq!(config.chat_effort.as_deref(), Some("high"));
     }
 
     #[test]
