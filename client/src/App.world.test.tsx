@@ -605,7 +605,7 @@ describe("Add and edit form", () => {
   });
 
   // Check 7
-  it("checks the death date against the birth date and the game date", async () => {
+  it("checks the death date against the birth date, not the game date", async () => {
     const user = await openWorld();
 
     await addPerson(user, {
@@ -620,10 +620,11 @@ describe("Add and edit form", () => {
 
     await user.clear(death);
     await user.type(death, "1 March 1962");
-    expect(death).toHaveAccessibleDescription(
-      "Death date is after the game date.",
+    expect(death).not.toHaveAccessibleDescription();
+    await user.click(main().getByRole("button", { name: "Save" }));
+    expect(api.createPerson).toHaveBeenCalledWith(
+      expect.objectContaining({ deathDate: "1962-03-01" }),
     );
-    expect(api.createPerson).not.toHaveBeenCalled();
   });
 
   // Check 8

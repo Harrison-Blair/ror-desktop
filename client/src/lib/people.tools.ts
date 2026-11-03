@@ -165,12 +165,8 @@ const JOB_INPUT_OF = {
 // The fields to save, or the form's errors as one message the agent can act
 // on. The errors of resume row `row`, the job a job tool changes, are named
 // by the tool's inputs; other rows' errors by their job id.
-function checkedFields(
-  draft: CharacterDraft,
-  gameDate: string,
-  row?: number,
-): CharacterFields {
-  const result = characterDraftToFields(draft, gameDate);
+function checkedFields(draft: CharacterDraft, row?: number): CharacterFields {
+  const result = characterDraftToFields(draft);
   if ("errors" in result) {
     const { errors } = result;
     const lines = [
@@ -353,7 +349,7 @@ export const peopleOpen: Tool = {
 
 async function newFields(input: Record<string, unknown>) {
   const { gameDate, statNames } = await getWorld();
-  const fields = checkedFields(applyInput(characterToDraft(), input), gameDate);
+  const fields = checkedFields(applyInput(characterToDraft(), input));
   return { fields, statNames, gameDate };
 }
 
@@ -382,10 +378,7 @@ export const peopleCreate: Tool = {
 async function editedFields(input: Record<string, unknown>) {
   const id = text(input, "id");
   const [{ person }, world] = await Promise.all([findPerson(id), getWorld()]);
-  const after = checkedFields(
-    applyInput(characterToDraft(person), input),
-    world.gameDate,
-  );
+  const after = checkedFields(applyInput(characterToDraft(person), input));
   return { person, after, world };
 }
 
@@ -499,7 +492,7 @@ async function changedResume(
   const [{ person }, world] = await Promise.all([findPerson(id), getWorld()]);
   const draft = characterToDraft(person);
   const { resume, row } = change(draft.resume, person, input);
-  const after = checkedFields({ ...draft, resume }, world.gameDate, row);
+  const after = checkedFields({ ...draft, resume }, row);
   return { person, after, world };
 }
 
