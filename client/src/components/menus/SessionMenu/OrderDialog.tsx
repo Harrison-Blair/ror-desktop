@@ -20,7 +20,8 @@ export function OrderDialog({
 }: {
   round: Round;
   characters: Character[];
-  onSave: (players: PlayerInput[], usual: boolean) => void;
+  // Resolves to why the save was refused, or null.
+  onSave: (players: PlayerInput[], usual: boolean) => Promise<string | null>;
   onCancel: () => void;
 }) {
   const id = useId();
@@ -36,6 +37,7 @@ export function OrderDialog({
   );
   const [step, setStep] = useState<"edit" | "scope">("edit");
   const [shown, setShown] = useState(false);
+  const [refused, setRefused] = useState<string | null>(null);
   const blank = rows.some((r) => !r.name.trim());
 
   const change = (key: string, part: Partial<Row>) =>
@@ -54,10 +56,12 @@ export function OrderDialog({
       else onCancel();
     }
   };
-  const save = (usual: boolean) =>
-    onSave(
-      rows.map(({ id, name, characterId }) => ({ id, name, characterId })),
-      usual,
+  const save = async (usual: boolean) =>
+    setRefused(
+      await onSave(
+        rows.map(({ id, name, characterId }) => ({ id, name, characterId })),
+        usual,
+      ),
     );
 
   return (
@@ -189,11 +193,19 @@ export function OrderDialog({
               Change this round only, or make this the usual order that the next
               rounds copy.
             </p>
+            {refused && (
+              <span className={styles.fieldError} role="alert">
+                {refused}
+              </span>
+            )}
             <div className={styles.dialogActs}>
               <button
                 type="button"
                 className={`${styles.btn} ${styles.quiet}`}
-                onClick={() => setStep("edit")}
+                onClick={() => {
+                  setRefused(null);
+                  setStep("edit");
+                }}
               >
                 Back
               </button>

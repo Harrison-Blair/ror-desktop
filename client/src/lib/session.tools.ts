@@ -6,7 +6,6 @@ import { lineDiff } from "@/lib/diff";
 import { type Character, listPeople } from "@/lib/peopleApi";
 import {
   clockLeft,
-  clockState,
   currentRound,
   formatClock,
   formatSpan,
@@ -89,7 +88,9 @@ export const getRound: Tool = {
     const usual = formatClock(snapshot.usualSeconds * 1000);
     const nowLabel =
       round.nowId === null
-        ? "nobody (the round is closed)"
+        ? round.status === "closed"
+          ? "nobody (the round is closed)"
+          : "nobody (no players yet)"
         : round.nowId === round.interterm.id
           ? INTERTERM_LABEL
           : turnLabel(
@@ -108,11 +109,11 @@ export const getRound: Tool = {
         const used = usedAt(turn, now);
         if (used > 0) parts.push(`used ${formatSpan(used)} of ${usual}`);
         if (turn.id === round.nowId && turn.clock.state !== "notStarted") {
-          const state = clockState(turn.clock, now);
+          const left = clockLeft(turn.clock, now);
           parts.push(
-            state === "atZero"
-              ? "timer at 0:00"
-              : `timer ${state}, ${formatClock(clockLeft(turn.clock, now))} left`,
+            left <= 0
+              ? `timer ${turn.clock.state}, ${formatSpan(-left)} over`
+              : `timer ${turn.clock.state}, ${formatClock(left)} left`,
           );
         }
         return parts.join(" · ");

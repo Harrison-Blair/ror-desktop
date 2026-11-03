@@ -3,13 +3,13 @@ import {
   type TableData,
   useNow,
 } from "@/components/menus/SessionMenu/useTable";
-import { clockLeft, clockState, formatClock, pillTurn } from "@/lib/session";
+import { clockLeft, formatLeft, isOver, pillTurn } from "@/lib/session";
 import styles from "./TimerPill.module.css";
 
 // The turn timer over the main panel, on every tab: the time and a
-// pause/play button. Shown while the "now" turn's timer runs, is paused or
-// is at zero; hidden before Start and during the interterm. A click on the
-// time opens Session › Overview.
+// pause/play button. Shown while the "now" turn's timer runs or is paused,
+// also in overtime ("+0:42", in the alert style); hidden before Start and
+// during the interterm. A click on the time opens Session › Overview.
 export function TimerPill({
   table,
   onOpen,
@@ -20,13 +20,14 @@ export function TimerPill({
   const turn = table.snapshot ? pillTurn(table.snapshot.rounds) : undefined;
   const now = useNow(turn?.clock.state === "running");
   if (!turn) return null;
-  const state = clockState(turn.clock, now);
+  const state = turn.clock.state;
+  const left = formatLeft(clockLeft(turn.clock, now));
   return (
     <div
       className={[
         styles.pill,
         state === "paused" ? styles.paused : "",
-        state === "atZero" ? styles.zero : "",
+        isOver(turn.clock, now) ? styles.zero : "",
       ].join(" ")}
       role="timer"
       aria-label="Turn timer"
@@ -34,10 +35,10 @@ export function TimerPill({
       <button
         type="button"
         className={styles.time}
-        aria-label={`${formatClock(clockLeft(turn.clock, now))}, open Session overview`}
+        aria-label={`${left}, open Session overview`}
         onClick={onOpen}
       >
-        {formatClock(clockLeft(turn.clock, now))}
+        {left}
       </button>
       {state === "running" && (
         <button

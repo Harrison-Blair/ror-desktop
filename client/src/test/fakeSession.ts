@@ -51,7 +51,8 @@ export const turn = (
   };
 };
 
-// An open round; `nowId` is the first waiting turn, else the interterm.
+// An open round; `nowId` is the first waiting turn, else the interterm, and
+// nobody with no players.
 export const round = (
   number: number,
   turns: Turn[],
@@ -75,8 +76,9 @@ export const round = (
     nowOverride: null,
     updatedAt: 0,
     nowId:
-      turns.find((t) => t.state === "waiting")?.id ??
-      (extra.status === "closed" ? null : interterm.id),
+      extra.status === "closed" || turns.length === 0
+        ? null
+        : (turns.find((t) => t.state === "waiting")?.id ?? interterm.id),
     ...extra,
   };
 };

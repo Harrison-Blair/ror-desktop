@@ -21,11 +21,12 @@ import type { Character, World } from "@/lib/peopleApi";
 import {
   characterName,
   clockLeft,
-  clockState,
   endTurnQuestion,
   formatClock,
+  formatLeft,
   formatSpan,
   INTERTERM_LABEL,
+  isOver,
   LENGTHS,
   lastLine,
   longDate,
@@ -218,16 +219,14 @@ export function Overview({
           characters={characters ?? []}
           onCancel={() => setOrdering(false)}
           onSave={async (players, usual) => {
-            if (
-              await table.act({
-                type: "saveOrder",
-                roundId: round.id,
-                players,
-                usual,
-              })
-            ) {
-              setOrdering(false);
-            }
+            const refused = await table.tryAct({
+              type: "saveOrder",
+              roundId: round.id,
+              players,
+              usual,
+            });
+            if (refused === null) setOrdering(false);
+            return refused;
           }}
         />
       )}
@@ -345,8 +344,9 @@ function NowCard({
   }
   if (current.kind !== "turn") return null;
   const { turn, index } = current;
-  const state = clockState(turn.clock, now);
+  const state = turn.clock.state;
   const left = clockLeft(turn.clock, now);
+  const over = isOver(turn.clock, now);
   const next = nextOf(round, characters);
   const character = characterName(turn.characterId, characters);
   const label = character ? `${turn.name} · ${character}` : turn.name;
@@ -354,14 +354,15 @@ function NowCard({
     table.act({ type, turnId: turn.id });
   const stateLine = {
     notStarted: "Not started",
-    running: `Running · ${formatClock(usualSeconds * 1000)} per turn`,
+    running: over
+      ? "Time is up"
+      : `Running · ${formatClock(usualSeconds * 1000)} per turn`,
     paused: "Paused · Enter sets the time left for this turn",
-    atZero: "Time is up",
   }[state];
 
   return (
     <section
-      className={`${styles.now} ${state === "atZero" ? styles.zero : ""}`}
+      className={`${styles.now} ${over ? styles.zero : ""}`}
       aria-label="Now"
     >
       <div className={styles.nowHead}>
@@ -387,7 +388,7 @@ function NowCard({
           />
         ) : (
           <span className={styles.time} role="timer" aria-label="Time left">
-            {formatClock(left)}
+            {formatLeft(left)}
           </span>
         )}
         <span className={styles.clockState}>{stateLine}</span>
@@ -403,7 +404,7 @@ function NowCard({
         <button
           type="button"
           className={btn(
-            state === "atZero" ? styles.alert : "",
+            over ? styles.alert : "",
             state === "notStarted" ? styles.quiet : "",
           )}
           onClick={() => endTurn(table, turn, now, ask)}
@@ -461,7 +462,7 @@ function TimeLeftInput({
   leftMs: number;
   onSet: (seconds: number) => void;
 }) {
-  const [draft, setDraft] = useState(formatClock(leftMs));
+  const [draft, setDraft] = useState(formatLeft(leftMs));
   const [invalid, setInvalid] = useState(false);
   return (
     <input
@@ -475,7 +476,7 @@ function TimeLeftInput({
       }}
       onKeyDown={(e) => {
         if (e.key === "Escape") {
-          setDraft(formatClock(leftMs));
+          setDraft(formatLeft(leftMs));
           setInvalid(false);
         }
         if (e.key !== "Enter") return;

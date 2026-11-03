@@ -2,14 +2,7 @@
 
 import { formatBoxDate, MONTHS } from "@/lib/people";
 import type { Character } from "@/lib/peopleApi";
-import type {
-  Clock,
-  ClockState,
-  Length,
-  Night,
-  Round,
-  Turn,
-} from "@/lib/sessionApi";
+import type { Clock, Length, Night, Round, Turn } from "@/lib/sessionApi";
 
 export const LENGTHS: { id: Length; label: string }[] = [
   { id: "month", label: "Month" },
@@ -46,17 +39,19 @@ export const period = (start: string, end: string) =>
 
 export const longDate = formatBoxDate;
 
-// The time left at `now`, never below zero.
+// The time left at `now`. Below zero is overtime.
 export const clockLeft = (clock: Clock, now: number) =>
   clock.state === "running" && clock.runningSince !== null
-    ? Math.max(0, clock.leftMs - Math.max(0, now - clock.runningSince))
+    ? clock.leftMs - Math.max(0, now - clock.runningSince)
     : clock.leftMs;
 
-// A running clock whose time ran out is at zero.
-export const clockState = (clock: Clock, now: number): ClockState =>
-  clock.state === "running" && clockLeft(clock, now) === 0
-    ? "atZero"
-    : clock.state;
+// True at or past 0:00, running or paused.
+export const isOver = (clock: Clock, now: number) =>
+  clock.state !== "notStarted" && clockLeft(clock, now) <= 0;
+
+// "08:42" while time is left, "+0:42" in overtime.
+export const formatLeft = (ms: number) =>
+  ms > 0 ? formatClock(ms) : `+${formatSpan(-ms)}`;
 
 // The time the turn's timer ran, up to `now`.
 export const usedAt = (turn: Turn, now: number) =>
@@ -158,7 +153,7 @@ export const nextRoundQuestion = (round: Round) => {
 // The End turn question, or null at zero.
 export const endTurnQuestion = (turn: Turn, now: number) => {
   const left = clockLeft(turn.clock, now);
-  if (left === 0) return null;
+  if (left <= 0) return null;
   return {
     title: `End ${turn.name}’s turn early?`,
     message: `${formatSpan(Math.ceil(left / 1000) * 1000)} is left on the timer. The turn note stays editable.`,

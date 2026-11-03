@@ -5,7 +5,7 @@ import type { World } from "@/lib/peopleApi";
 // milliseconds since 1970 on this device's clock. Dates are "YYYY-MM-DD".
 
 export type Length = "month" | "quarter" | "year";
-export type ClockState = "notStarted" | "running" | "paused" | "atZero";
+export type ClockState = "notStarted" | "running" | "paused";
 export type StepState = "waiting" | "ended";
 
 export type Player = {
@@ -16,6 +16,7 @@ export type Player = {
 };
 
 // While it runs, the time left is leftMs minus the time since runningSince.
+// Past 0:00 it counts on: a negative time left is overtime.
 export type Clock = {
   state: ClockState;
   leftMs: number;

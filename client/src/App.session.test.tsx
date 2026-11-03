@@ -179,7 +179,7 @@ describe("The now card", () => {
     expect(acts()).toEqual([{ type: "endTurn", turnId: "turn-ben" }]);
   });
 
-  it("ends a turn at 0:00 without asking, with End turn in red", async () => {
+  it("counts on past 0:00 and ends the turn without asking, with End turn in red", async () => {
     withRounds(
       roundFour({
         clock: clock({ state: "running", runningSince: Date.now() - 20 * MIN }),
@@ -187,12 +187,50 @@ describe("The now card", () => {
     );
     const user = await openSession();
     expect(nowCard().getByText("Time is up")).toBeVisible();
-    expect(nowCard().getByRole("timer")).toHaveTextContent("00:00");
+    expect(nowCard().getByRole("timer")).toHaveTextContent(/^\+5:0\d$/);
+    expect(main().getByRole("region", { name: "Now" })).toHaveClass(
+      sessionStyles.zero,
+    );
+    // Time used passes the usual length and shows in amber.
+    expect(roundBox().getByText(/^used 20:0\d of 15:00$/)).toHaveClass(
+      sessionStyles.over,
+    );
+    // Pause works in overtime.
+    expect(nowCard().getByRole("button", { name: "Pause" })).toBeVisible();
     const end = nowCard().getByRole("button", { name: "End turn" });
     expect(end).toHaveClass(sessionStyles.alert);
     await user.click(end);
     expect(screen.queryByRole("alertdialog")).not.toBeInTheDocument();
     expect(acts()).toEqual([{ type: "endTurn", turnId: "turn-ben" }]);
+  });
+
+  it("shows paused overtime in red and takes a new positive time", async () => {
+    withRounds(
+      roundFour({
+        usedMs: 15 * MIN + 42_000,
+        clock: clock({ state: "paused", leftMs: -42_000 }),
+      }),
+    );
+    const user = await openSession();
+    const left = nowCard().getByLabelText("Time left");
+    expect(left).toHaveValue("+0:42");
+    expect(main().getByRole("region", { name: "Now" })).toHaveClass(
+      sessionStyles.zero,
+    );
+    expect(roundBox().getByText("used 15:42 of 15:00")).toHaveClass(
+      sessionStyles.over,
+    );
+    // No question once past 0:00, also while paused.
+    await user.click(nowCard().getByRole("button", { name: "End turn" }));
+    expect(screen.queryByRole("alertdialog")).not.toBeInTheDocument();
+    await user.clear(left);
+    await user.type(left, "2:00{Enter}");
+    await user.click(nowCard().getByRole("button", { name: "Resume" }));
+    expect(acts()).toEqual([
+      { type: "endTurn", turnId: "turn-ben" },
+      { type: "setLeft", turnId: "turn-ben", seconds: 120 },
+      { type: "resume", turnId: "turn-ben" },
+    ]);
   });
 
   it("sets the time left of a paused turn with Enter", async () => {
@@ -210,6 +248,16 @@ describe("The now card", () => {
   it("shows No players yet with Add players", async () => {
     const user = await openSession();
     expect(nowCard().getByText("No players yet")).toBeVisible();
+    // Nobody is now: the interterm waits and Next round is not filled.
+    const rows = main()
+      .getByRole("region", { name: "Round" })
+      .querySelectorAll(`.${sessionStyles.row}`);
+    expect([...rows].map((r) => r.textContent)).toEqual([
+      "1GM · IntertermWaitinguntimed Open",
+    ]);
+    expect(
+      roundBox().getByRole("button", { name: "Next round" }),
+    ).not.toHaveClass(sessionStyles.primary);
     await user.click(nowCard().getByRole("button", { name: "Add players" }));
     await user.type(
       screen.getByRole("dialog").querySelector("input") as HTMLElement,
@@ -355,6 +403,33 @@ describe("The round", () => {
     ]);
   });
 
+  it("Edit order shows why a removal is refused and stays open", async () => {
+    withRounds(roundFour());
+    sessionApi.sessionAct.mockRejectedValueOnce(
+      "Ana’s turn has ended. Remove Ana from the usual order instead.",
+    );
+    const user = await openSession();
+    await user.click(roundBox().getByRole("button", { name: "Edit order" }));
+    const order = within(screen.getByRole("dialog"));
+    await user.click(order.getByRole("button", { name: "Remove player 1" }));
+    await user.click(order.getByRole("button", { name: "Save" }));
+    await user.click(order.getByRole("button", { name: "This round only" }));
+    expect(await order.findByRole("alert")).toHaveTextContent(
+      "Ana’s turn has ended. Remove Ana from the usual order instead.",
+    );
+    expect(screen.getByRole("dialog")).toBeVisible();
+    // The reason shows in the dialog, not as a toast.
+    expect(
+      within(screen.getByRole("region", { name: "Notifications" })).queryByRole(
+        "alert",
+      ),
+    ).not.toBeInTheDocument();
+    await user.click(
+      order.getByRole("button", { name: "The usual order too" }),
+    );
+    expect(screen.queryByRole("dialog")).not.toBeInTheDocument();
+  });
+
   it("Edit order saves for this round only", async () => {
     withRounds(roundFour());
     const user = await openSession();
@@ -479,6 +554,50 @@ describe("The play night line", () => {
     ).toBeVisible();
     await user.click(line.getByRole("button", { name: "Start session" }));
     expect(acts()).toEqual([{ type: "startNight" }]);
+  });
+
+  it("shows Start session once the running session ends idle", async () => {
+    session.snapshot.nights = [
+      night(12, {
+        startedAt: Date.now() - 7 * 60 * MIN,
+        endedAt: null,
+        lastActivityAt: Date.now() - 6 * 60 * MIN + 500,
+      }),
+    ];
+    await openSession();
+    const line = within(main().getByRole("region", { name: "Play night" }));
+    expect(line.getByRole("button", { name: "End session" })).toBeVisible();
+    // The app ends the night at its idle deadline.
+    session.snapshot.nights = [
+      night(12, { endedAt: Date.now() - 6 * 60 * MIN, endedIdle: true }),
+    ];
+    expect(
+      await line.findByRole(
+        "button",
+        { name: "Start session" },
+        {
+          timeout: 3000,
+        },
+      ),
+    ).toBeVisible();
+  });
+
+  it("shows Start session when End session finds the session already ended", async () => {
+    session.snapshot.nights = [
+      night(12, {
+        startedAt: Date.now() - 85 * MIN,
+        endedAt: null,
+        lastActivityAt: Date.now(),
+      }),
+    ];
+    const user = await openSession();
+    session.snapshot.nights = [night(12, { endedIdle: true })];
+    sessionApi.sessionAct.mockRejectedValueOnce("No session is running.");
+    const line = within(main().getByRole("region", { name: "Play night" }));
+    await user.click(line.getByRole("button", { name: "End session" }));
+    expect(
+      await line.findByRole("button", { name: "Start session" }),
+    ).toBeVisible();
   });
 
   it("shows the running session with Recap and End session", async () => {
@@ -670,9 +789,10 @@ describe("The timer pill", () => {
     render(<App />);
     const zero = await screen.findByRole("timer", { name: "Turn timer" });
     expect(zero).toHaveClass(pillStyles.zero);
-    expect(zero).toHaveTextContent("00:00");
+    expect(zero).toHaveTextContent(/^\+5:0\d$/);
+    // Pause works in overtime.
     expect(
-      within(zero).queryByRole("button", { name: /timer$/ }),
-    ).not.toBeInTheDocument();
+      within(zero).getByRole("button", { name: "Pause timer" }),
+    ).toBeVisible();
   });
 });

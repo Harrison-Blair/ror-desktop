@@ -15,7 +15,12 @@ export type TableData = {
   reload: () => Promise<void>;
   // Runs an action. Resolves false when it failed; a toast says why.
   act: (action: Action) => Promise<boolean>;
+  // Runs an action. Resolves to why it failed, or null, with no toast.
+  tryAct: (action: Action) => Promise<string | null>;
 };
+
+// A play night ends by itself after this long with no activity (table.rs).
+export const IDLE_MS = 6 * 60 * 60 * 1000;
 
 // Kept in the app shell, so the timer pill and the Session pages share one
 // copy. `onWorld` gets the World when an action changed it.
@@ -45,7 +50,7 @@ export function useTable(onWorld: (world: World) => void): TableData {
     reload();
   }, [reload]);
 
-  const act = useCallback(
+  const tryAct = useCallback(
     async (action: Action) => {
       const mine = ++version.current;
       try {
@@ -55,16 +60,38 @@ export function useTable(onWorld: (world: World) => void): TableData {
           setSnapshot(next);
           setError(undefined);
         }
-        return true;
+        return null;
       } catch (e) {
-        notify({ kind: "error", message: errorMessage(e) });
-        return false;
+        // The table may have moved on, such as a night that ended idle.
+        reload();
+        return errorMessage(e);
       }
     },
-    [notify],
+    [reload],
   );
 
-  return { snapshot, error, reload, act };
+  const act = useCallback(
+    async (action: Action) => {
+      const failed = await tryAct(action);
+      if (failed !== null) notify({ kind: "error", message: failed });
+      return failed === null;
+    },
+    [tryAct, notify],
+  );
+
+  // A running night ends six hours after its last activity. Load again
+  // then; a note edit since then shows as a later deadline.
+  const idleAt = snapshot?.nights.find(
+    (n) => n.endedAt === null,
+  )?.lastActivityAt;
+  useEffect(() => {
+    if (idleAt === undefined) return;
+    const wait = Math.max(0, idleAt + IDLE_MS - Date.now()) + 1000;
+    const id = setTimeout(reload, wait);
+    return () => clearTimeout(id);
+  }, [idleAt, reload]);
+
+  return { snapshot, error, reload, act, tryAct };
 }
 
 // The time now, every quarter second while `ticking`.

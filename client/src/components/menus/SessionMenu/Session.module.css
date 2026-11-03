@@ -316,6 +316,10 @@
   border-radius: var(--radius-1);
 }
 
+.now.zero .timeEdit {
+  color: var(--error);
+}
+
 /* Round box */
 .box {
   display: flex;

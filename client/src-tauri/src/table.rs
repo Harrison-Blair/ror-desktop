@@ -90,11 +90,14 @@ pub enum ClockState {
     NotStarted,
     Running,
     Paused,
+    /// Only in files saved before overtime counted on. Loading makes it
+    /// Paused.
     AtZero,
 }
 
 /// A turn's timer. While it runs, the time left is `leftMs` minus the time
-/// since `runningSince`.
+/// since `runningSince`. Past 0:00 it counts on: a negative time left is
+/// overtime.
 #[derive(Clone, Debug, PartialEq, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]
 pub struct Clock {
@@ -112,26 +115,12 @@ impl Clock {
         }
     }
 
-    /// The running time up to `now`, at most the time left.
+    /// The running time up to `now`.
     fn ran(&self, now: i64) -> i64 {
         match (self.state, self.running_since) {
-            (ClockState::Running, Some(since)) => (now - since).clamp(0, self.left_ms),
+            (ClockState::Running, Some(since)) => (now - since).max(0),
             _ => 0,
         }
-    }
-
-    /// A running clock whose time ran out by `now` stops at zero.
-    fn settle(&mut self, used_ms: &mut i64, now: i64) -> bool {
-        if self.state == ClockState::Running && self.ran(now) >= self.left_ms {
-            *used_ms += self.left_ms;
-            *self = Clock {
-                state: ClockState::AtZero,
-                left_ms: 0,
-                running_since: None,
-            };
-            return true;
-        }
-        false
     }
 
     /// Stops a running clock at `now` and adds the time it ran to `used`.
@@ -143,11 +132,7 @@ impl Clock {
         *used_ms += ran;
         self.left_ms -= ran;
         self.running_since = None;
-        self.state = if self.left_ms == 0 {
-            ClockState::AtZero
-        } else {
-            ClockState::Paused
-        };
+        self.state = ClockState::Paused;
     }
 }
 
@@ -358,9 +343,9 @@ fn new_round(table: &Table, number: u32, start: &str, length: Length, now: i64) 
 
 /// Who is "now" in the round: the waiting turn made "now" by hand, else the
 /// first waiting turn, else the interterm while it waits. None for a closed
-/// round.
+/// round, and for a round with no players.
 pub fn now_id(round: &Round) -> Option<String> {
-    if round.status == RoundStatus::Closed {
+    if round.status == RoundStatus::Closed || round.turns.is_empty() {
         return None;
     }
     let waiting = |id: &str| {
@@ -388,14 +373,14 @@ impl Table {
         self.nights.iter_mut().find(|n| n.ended_at.is_none())
     }
 
-    /// Things that happen by the clock: timers reach zero, an idle night
-    /// ends. True when something changed.
+    /// Things that happen by the clock: an idle night ends. Also turns an
+    /// old at-zero clock into a paused one. True when something changed.
     fn settle(&mut self, now: i64) -> bool {
         let mut changed = false;
         for round in &mut self.rounds {
             for turn in &mut round.turns {
-                if turn.clock.settle(&mut turn.used_ms, now) {
-                    turn.updated_at = now;
+                if turn.clock.state == ClockState::AtZero {
+                    turn.clock.state = ClockState::Paused;
                     changed = true;
                 }
             }
@@ -461,6 +446,35 @@ fn pause_others(round: &mut Round, keep: &str, now: i64) {
             t.clock.stop(&mut t.used_ms, now);
             t.updated_at = now;
         }
+    }
+}
+
+/// The turn that is "now", when its timer has started (running, paused or
+/// in overtime). A reorder keeps such a turn "now" wherever it lands.
+fn timed_now(round: &Round) -> Option<String> {
+    let id = now_id(round)?;
+    round
+        .turns
+        .iter()
+        .any(|t| t.id == id && t.clock.state != ClockState::NotStarted)
+        .then_some(id)
+}
+
+/// After a reorder: the timed turn that was "now" stays "now".
+fn keep_now(round: &mut Round, timed: Option<String>) {
+    if let Some(id) = timed {
+        if round.turns.iter().any(|t| t.id == id) {
+            round.now_override = Some(id);
+        }
+    }
+}
+
+/// Whether a round note has text on disk.
+fn note_has_text(paths: &Paths, note_id: &str) -> Result<bool> {
+    match fs::read_to_string(notes_dir(paths).join(format!("{note_id}.md"))) {
+        Ok(text) => Ok(!text.trim().is_empty()),
+        Err(e) if e.kind() == io::ErrorKind::NotFound => Ok(false),
+        Err(e) => Err(format!("Couldn't read a turn note: {e}.")),
     }
 }
 
@@ -722,13 +736,10 @@ fn apply(
             }
             pause_others(round, &turn_id, now);
             let turn = &mut round.turns[t];
+            // Paused with the time left or the overtime it had at End.
             turn.state = StepState::Waiting;
             turn.clock.running_since = None;
-            turn.clock.state = if turn.clock.left_ms == 0 {
-                ClockState::AtZero
-            } else {
-                ClockState::Paused
-            };
+            turn.clock.state = ClockState::Paused;
             turn.updated_at = now;
             round.now_override = Some(turn_id);
             round.updated_at = now;
@@ -812,7 +823,9 @@ fn apply(
         Action::Shuffle { round_id } => {
             let round = table.round_mut(&round_id)?;
             open_round(round)?;
+            let timed = timed_now(round);
             shuffle(&mut round.turns);
+            keep_now(round, timed);
             round.updated_at = now;
             vec![round_id]
         }
@@ -859,6 +872,7 @@ fn apply(
                 })
                 .collect();
             let round = table.round_mut(&round_id)?;
+            let timed = timed_now(round);
             let mut old_turns = std::mem::take(&mut round.turns);
             for player in &list {
                 match old_turns.iter().position(|t| t.player_id == player.id) {
@@ -874,6 +888,29 @@ fn apply(
                     None => round.turns.push(new_turn(player, usual, now)),
                 }
             }
+            // A removed turn that has ended or has a note is history: this
+            // round only refuses to drop it, and the usual order too keeps
+            // it in this round. A note is never left unlinked.
+            for turn in old_turns {
+                let reason = if turn.state == StepState::Ended {
+                    Some("has ended")
+                } else if note_has_text(paths, &turn.note_id)? {
+                    Some("has a note")
+                } else {
+                    None
+                };
+                match reason {
+                    Some(reason) if !also_usual => {
+                        return Err(format!(
+                            "{name}’s turn {reason}. Remove {name} from the usual order instead.",
+                            name = turn.name
+                        ));
+                    }
+                    Some(_) => round.turns.push(turn),
+                    None => {}
+                }
+            }
+            keep_now(round, timed);
             round.updated_at = now;
             if also_usual {
                 table.players = list;
@@ -1186,7 +1223,8 @@ mod tests {
         let round = &s.rounds[0];
         assert_eq!(round.round.start, "1962-02-10");
         assert!(round.round.turns.is_empty());
-        assert_eq!(round.now_id.as_ref(), Some(&round.round.interterm.id));
+        // Nobody is now: the interterm waits.
+        assert_eq!(round.now_id, None);
         assert_eq!(s.usual_seconds, 900);
     }
 
@@ -1355,17 +1393,306 @@ mod tests {
         assert_eq!(turn(&s, "Ana").clock.state, ClockState::Paused);
         assert_eq!(turn(&s, "Ana").clock.left_ms, 3 * MIN);
         run(&paths, Action::Resume { turn_id: id() }, T0 + 40 * MIN);
-        // It runs out 3 minutes later and stops at zero; the extra time is not used time.
+        // Past 0:00 it counts on: 3 minutes left, then 7 minutes over.
         let s = get(&paths, T0 + 50 * MIN).unwrap();
-        assert_eq!(turn(&s, "Ana").clock.state, ClockState::AtZero);
+        assert_eq!(turn(&s, "Ana").clock.state, ClockState::Running);
+        let s = run(&paths, Action::Pause { turn_id: id() }, T0 + 50 * MIN);
+        assert_eq!(turn(&s, "Ana").clock.state, ClockState::Paused);
         assert_eq!(
             (turn(&s, "Ana").used_ms, turn(&s, "Ana").clock.left_ms),
-            (6 * MIN, 0)
+            (13 * MIN, -7 * MIN)
+        );
+        run(&paths, Action::Resume { turn_id: id() }, T0 + 55 * MIN);
+        let s = run(&paths, Action::EndTurn { turn_id: id() }, T0 + 56 * MIN);
+        assert_eq!(
+            (turn(&s, "Ana").used_ms, turn(&s, "Ana").clock.left_ms),
+            (14 * MIN, -8 * MIN)
+        );
+        // Reopen after 0:00: paused with the overtime it had, editable.
+        let s = run(&paths, Action::ReopenTurn { turn_id: id() }, T0 + 60 * MIN);
+        assert_eq!(turn(&s, "Ana").clock.state, ClockState::Paused);
+        assert_eq!(turn(&s, "Ana").clock.left_ms, -8 * MIN);
+        let s = run(
+            &paths,
+            Action::SetLeft {
+                turn_id: id(),
+                seconds: 120,
+            },
+            T0 + 61 * MIN,
+        );
+        assert_eq!(
+            (turn(&s, "Ana").used_ms, turn(&s, "Ana").clock.left_ms),
+            (14 * MIN, 2 * MIN)
         );
         // Reset goes back to the usual length and keeps the time used.
-        let s = run(&paths, Action::Reset { turn_id: id() }, T0 + 51 * MIN);
+        let s = run(&paths, Action::Reset { turn_id: id() }, T0 + 62 * MIN);
         assert_eq!(turn(&s, "Ana").clock, Clock::fresh(900));
-        assert_eq!(turn(&s, "Ana").used_ms, 6 * MIN);
+        assert_eq!(turn(&s, "Ana").used_ms, 14 * MIN);
+    }
+
+    #[test]
+    fn a_turn_ended_at_zero_reopens_paused_and_resumes() {
+        let (_temp, paths) = setup();
+        with_players(&paths);
+        let s = get(&paths, T0).unwrap();
+        let ana = turn_id(&s, "Ana");
+        run(
+            &paths,
+            Action::Start {
+                turn_id: ana.clone(),
+            },
+            T0,
+        );
+        run(
+            &paths,
+            Action::EndTurn {
+                turn_id: ana.clone(),
+            },
+            T0 + 15 * MIN,
+        );
+        let s = run(
+            &paths,
+            Action::ReopenTurn {
+                turn_id: ana.clone(),
+            },
+            T0 + 20 * MIN,
+        );
+        assert_eq!(turn(&s, "Ana").clock.state, ClockState::Paused);
+        assert_eq!(turn(&s, "Ana").clock.left_ms, 0);
+        let s = run(&paths, Action::Resume { turn_id: ana }, T0 + 21 * MIN);
+        assert_eq!(turn(&s, "Ana").clock.state, ClockState::Running);
+    }
+
+    #[test]
+    fn an_old_at_zero_clock_loads_as_paused() {
+        let (_temp, paths) = setup();
+        with_players(&paths);
+        get(&paths, T0).unwrap();
+        let mut table: Table =
+            serde_json::from_str(&fs::read_to_string(table_file(&paths)).unwrap()).unwrap();
+        table.rounds[0].turns[0].clock = Clock {
+            state: ClockState::AtZero,
+            left_ms: 0,
+            running_since: None,
+        };
+        save(&paths, &table).unwrap();
+        let s = get(&paths, T0).unwrap();
+        assert_eq!(turn(&s, "Ana").clock.state, ClockState::Paused);
+    }
+
+    /// The names of the round's turns in order, and who is now.
+    fn order(s: &Snapshot) -> (Vec<String>, String) {
+        let names = current(s)
+            .round
+            .turns
+            .iter()
+            .map(|t| t.name.clone())
+            .collect();
+        (names, now_name(s))
+    }
+
+    #[test]
+    fn shuffle_keeps_a_timed_turn_now() {
+        let (_temp, paths) = setup();
+        with_players(&paths);
+        let s = get(&paths, T0).unwrap();
+        let round_id = current(&s).round.id.clone();
+        run(
+            &paths,
+            Action::Start {
+                turn_id: turn_id(&s, "Ana"),
+            },
+            T0,
+        );
+        // Twenty shuffles leave Ana first by chance only once in 3^20.
+        for _ in 0..20 {
+            let s = run(
+                &paths,
+                Action::Shuffle {
+                    round_id: round_id.clone(),
+                },
+                T0,
+            );
+            assert_eq!(now_name(&s), "Ana", "{:?}", order(&s));
+        }
+        let s = get(&paths, T0).unwrap();
+        assert_eq!(
+            act(
+                &paths,
+                Action::Start {
+                    turn_id: turn_id(&s, "Ben")
+                },
+                T0
+            ),
+            Err("Only the turn that is now has a running timer.".to_string())
+        );
+    }
+
+    #[test]
+    fn edit_order_keeps_a_timed_turn_now() {
+        let (_temp, paths) = setup();
+        with_players(&paths);
+        let s = get(&paths, T0).unwrap();
+        let round_id = current(&s).round.id.clone();
+        run(
+            &paths,
+            Action::Start {
+                turn_id: turn_id(&s, "Ana"),
+            },
+            T0,
+        );
+        run(
+            &paths,
+            Action::Pause {
+                turn_id: turn_id(&s, "Ana"),
+            },
+            T0 + MIN,
+        );
+        let s = run(
+            &paths,
+            Action::SaveOrder {
+                round_id,
+                players: ["p-ben", "p-cleo", "p-ana"]
+                    .iter()
+                    .map(|id| {
+                        let t = current(&s)
+                            .round
+                            .turns
+                            .iter()
+                            .find(|t| &t.player_id == id)
+                            .unwrap();
+                        PlayerInput {
+                            id: Some(t.player_id.clone()),
+                            name: t.name.clone(),
+                            character_id: t.character_id.clone(),
+                        }
+                    })
+                    .collect(),
+                usual: false,
+            },
+            T0 + 2 * MIN,
+        );
+        assert_eq!(
+            order(&s),
+            (
+                vec!["Ben".into(), "Cleo".into(), "Ana".into()],
+                "Ana".into()
+            )
+        );
+    }
+
+    #[test]
+    fn a_reorder_with_no_timer_started_follows_the_new_order() {
+        let (_temp, paths) = setup();
+        with_players(&paths);
+        let s = get(&paths, T0).unwrap();
+        let round_id = current(&s).round.id.clone();
+        let s = run(
+            &paths,
+            Action::SaveOrder {
+                round_id,
+                players: vec![
+                    PlayerInput {
+                        id: Some("p-cleo".into()),
+                        name: "Cleo".into(),
+                        character_id: None,
+                    },
+                    PlayerInput {
+                        id: Some("p-ana".into()),
+                        name: "Ana".into(),
+                        character_id: Some("marie".into()),
+                    },
+                    PlayerInput {
+                        id: Some("p-ben".into()),
+                        name: "Ben".into(),
+                        character_id: Some("karl".into()),
+                    },
+                ],
+                usual: false,
+            },
+            T0,
+        );
+        assert_eq!(now_name(&s), "Cleo");
+    }
+
+    /// Saves the order with only the named players.
+    fn keep_only(
+        paths: &Paths,
+        names: &[&str],
+        usual: bool,
+    ) -> std::result::Result<Snapshot, String> {
+        let s = get(paths, T0).unwrap();
+        let players = current(&s)
+            .round
+            .turns
+            .iter()
+            .filter(|t| names.contains(&t.name.as_str()))
+            .map(|t| PlayerInput {
+                id: Some(t.player_id.clone()),
+                name: t.name.clone(),
+                character_id: t.character_id.clone(),
+            })
+            .collect();
+        act(
+            paths,
+            Action::SaveOrder {
+                round_id: current(&s).round.id.clone(),
+                players,
+                usual,
+            },
+            T0,
+        )
+    }
+
+    #[test]
+    fn this_round_only_refuses_to_remove_a_turn_with_history() {
+        let (_temp, paths) = setup();
+        with_players(&paths);
+        let s = get(&paths, T0).unwrap();
+        run(
+            &paths,
+            Action::EndTurn {
+                turn_id: turn_id(&s, "Ana"),
+            },
+            T0,
+        );
+        write_note(&paths, &turn(&s, "Ben").note_id, "Ben plans.", T0).unwrap();
+        write_note(&paths, &turn(&s, "Cleo").note_id, "  \n", T0).unwrap();
+        assert_eq!(
+            keep_only(&paths, &["Ben", "Cleo"], false).map(|_| ()),
+            Err("Ana’s turn has ended. Remove Ana from the usual order instead.".to_string())
+        );
+        assert_eq!(
+            keep_only(&paths, &["Ana", "Cleo"], false).map(|_| ()),
+            Err("Ben’s turn has a note. Remove Ben from the usual order instead.".to_string())
+        );
+        // A waiting turn with an empty note can go.
+        let s = keep_only(&paths, &["Ana", "Ben"], false).unwrap();
+        assert_eq!(order(&s).0, ["Ana", "Ben"]);
+        assert_eq!(s.players.len(), 3);
+    }
+
+    #[test]
+    fn the_usual_order_too_keeps_turns_with_history_in_this_round() {
+        let (_temp, paths) = setup();
+        with_players(&paths);
+        let s = get(&paths, T0).unwrap();
+        run(
+            &paths,
+            Action::EndTurn {
+                turn_id: turn_id(&s, "Ana"),
+            },
+            T0,
+        );
+        write_note(&paths, &turn(&s, "Ben").note_id, "Ben plans.", T0).unwrap();
+        let s = keep_only(&paths, &[], true).unwrap();
+        assert!(s.players.is_empty());
+        assert_eq!(order(&s).0, ["Ana", "Ben"]);
+        // The kept note still opens.
+        assert_eq!(
+            read_note(&paths, &turn(&s, "Ben").note_id, T0).unwrap(),
+            "Ben plans."
+        );
     }
 
     #[test]
@@ -1624,7 +1951,7 @@ mod tests {
     fn players_added_with_no_players_get_waiting_turns() {
         let (_temp, paths) = setup();
         let s = get(&paths, T0).unwrap();
-        assert_eq!(now_name(&s), "Interterm");
+        assert_eq!(current(&s).now_id, None);
         let s = run(
             &paths,
             Action::SaveOrder {

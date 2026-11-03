@@ -132,6 +132,24 @@ describe("get_round", () => {
     );
   });
 
+  it("reads overtime and a round with no players", async () => {
+    session.snapshot.rounds = [
+      round(1, [
+        turn("Ana", "marie-dubois", {
+          usedMs: 15 * MIN + 42_000,
+          clock: clock({ state: "paused", leftMs: -42_000 }),
+        }),
+      ]),
+    ];
+    expect((await call("get_round", {})).content).toContain(
+      "1. Ana · Marie Dubois · now · used 15:42 of 15:00 · timer paused, 0:42 over",
+    );
+    session.snapshot.rounds = [round(1, [])];
+    expect((await call("get_round", {})).content.split("\n")[1]).toBe(
+      "Now: nobody (no players yet)",
+    );
+  });
+
   it("refuses a round that doesn't exist", async () => {
     expect(await call("get_round", { round: 9 })).toEqual(
       error("There is no round 9. The rounds are 1 to 2."),
