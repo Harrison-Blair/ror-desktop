@@ -1,6 +1,15 @@
 import styles from "./WorldMenu.module.css";
 
-export type WorldSection = "overview" | "people";
+const SECTIONS = {
+  overview: "Overview",
+  timeline: "Timeline",
+  divergences: "Divergences",
+  people: "People of interest",
+  research: "Research",
+  settings: "Settings",
+} as const;
+
+export type WorldSection = keyof typeof SECTIONS;
 
 // The World rail sections.
 export function WorldMenu({
@@ -12,7 +21,7 @@ export function WorldMenu({
 }) {
   return (
     <>
-      {(["overview", "people"] as const).map((item) => (
+      {(Object.keys(SECTIONS) as WorldSection[]).map((item) => (
         <button
           key={item}
           type="button"
@@ -20,7 +29,7 @@ export function WorldMenu({
           aria-pressed={section === item}
           onClick={() => onSelect(item)}
         >
-          {item === "overview" ? "Overview" : "People of interest"}
+          {SECTIONS[item]}
         </button>
       ))}
     </>

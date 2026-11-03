@@ -620,7 +620,7 @@ describe("Game date save", () => {
     store.characters = [ada(), otto()];
     render(<App />);
     const user = userEvent.setup();
-    await user.click(screen.getByRole("button", { name: "World" }));
+    await user.click(screen.getByRole("button", { name: "Session" }));
     const date = await main().findByLabelText("Game date");
     await user.clear(date);
     await user.type(date, "1 June 1954");
@@ -636,7 +636,7 @@ describe("Game date save", () => {
     api.updateWorld.mockRejectedValueOnce("Disk full.");
     render(<App />);
     const user = userEvent.setup();
-    await user.click(screen.getByRole("button", { name: "World" }));
+    await user.click(screen.getByRole("button", { name: "Session" }));
     const date = await main().findByLabelText("Game date");
     await user.click(main().getByRole("button", { name: "Save" }));
 
