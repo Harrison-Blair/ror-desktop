@@ -93,7 +93,9 @@ export function ChatHistory({ chat }: { chat: ChatController }) {
     notify({ kind: "error", message: errorMessage(e) });
   const refresh = () => setVersion((v) => v + 1);
 
-  // biome-ignore lint/correctness/useExhaustiveDependencies: `version` reads the list again
+  // A turn that ends has saved its chat's messages, which search reads, so
+  // the list is read again.
+  // biome-ignore lint/correctness/useExhaustiveDependencies: see above
   useEffect(() => {
     let current = true;
     listChats(archived, query).then(
@@ -105,7 +107,7 @@ export function ChatHistory({ chat }: { chat: ChatController }) {
     return () => {
       current = false;
     };
-  }, [archived, query, version, notify]);
+  }, [archived, query, version, chat.running, notify]);
 
   const open = (id: string) => {
     chat.open(id);
