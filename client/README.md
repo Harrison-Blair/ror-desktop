@@ -7,7 +7,6 @@ campaign notes, people, dice, and an optional chat assistant. It is built with
 ## Quick start: Linux
 
 Install these dependencies first:
-
 - [Git](https://git-scm.com/downloads) to download the source.
 - [Node.js LTS](https://nodejs.org/en/download), version 22.12 or newer, and npm.
 - [Rust stable and Cargo](https://www.rust-lang.org/tools/install).
@@ -28,7 +27,6 @@ terminal running while you use it.
 ## Quick start: Windows
 
 Install these dependencies first:
-
 - [Git for Windows](https://git-scm.com/download/win) to download the source.
 - [Node.js LTS](https://nodejs.org/en/download), version 22.12 or newer, and npm.
 - [Rust stable and Cargo](https://www.rust-lang.org/tools/install), using MSVC.
