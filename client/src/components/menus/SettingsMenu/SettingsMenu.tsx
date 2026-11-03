@@ -4,7 +4,7 @@ import styles from "./SettingsMenu.module.css";
 export type SettingsPage = "providers";
 
 const pages: { id: SettingsPage; label: string }[] = [
-  { id: "providers", label: "Providers and keys" },
+  { id: "providers", label: "API Keys" },
 ];
 
 // Lists the settings pages.

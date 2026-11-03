@@ -387,14 +387,14 @@ describe("App frame", () => {
         "false",
       );
       expect(
-        screen.queryByRole("heading", { name: "Providers and keys" }),
+        screen.queryByRole("heading", { name: "API Keys" }),
       ).not.toBeInTheDocument();
       expect(await shownText("Ada.md")).toBe("Hello!");
 
       diskFull = false;
       await user.click(screen.getByRole("button", { name: "Settings" }));
       expect(
-        await screen.findByRole("heading", { name: "Providers and keys" }),
+        await screen.findByRole("heading", { name: "API Keys" }),
       ).toBeInTheDocument();
       expect(disk).toEqual({ "Ada.md": "Hello!" });
     });
@@ -406,7 +406,7 @@ describe("App frame", () => {
       await user.click(screen.getByRole("button", { name: "World" }));
       await waitFor(() => expect(disk).toEqual({ "Ada.md": "Hello!" }));
       expect(
-        await screen.findByRole("heading", { name: "Overview" }),
+        await screen.findByRole("heading", { name: "People of interest" }),
       ).toBeInTheDocument();
 
       await user.click(screen.getByRole("button", { name: "Notes" }));
@@ -445,7 +445,7 @@ describe("App frame", () => {
         "false",
       );
       expect(
-        screen.queryByRole("heading", { name: "Providers and keys" }),
+        screen.queryByRole("heading", { name: "API Keys" }),
       ).not.toBeInTheDocument();
     });
 
@@ -466,7 +466,7 @@ describe("App frame", () => {
         screen.getByRole("button", { name: "Notes", pressed: true }),
       ).toBeInTheDocument();
       expect(
-        screen.queryByRole("heading", { name: "Overview" }),
+        screen.queryByRole("heading", { name: "People of interest" }),
       ).not.toBeInTheDocument();
     });
 

@@ -86,10 +86,10 @@ describe("Settings", () => {
       name: "Settings rail panel",
     });
     expect(
-      within(railPanel).getByRole("button", { name: "Providers and keys" }),
+      within(railPanel).getByRole("button", { name: "API Keys" }),
     ).toHaveAttribute("aria-pressed", "true");
     expect(
-      within(page()).getByRole("heading", { name: "Providers and keys" }),
+      within(page()).getByRole("heading", { name: "API Keys" }),
     ).toBeInTheDocument();
     expect(
       within(page()).getByText(
@@ -115,7 +115,7 @@ describe("Settings", () => {
       screen.getByRole("region", { name: "Notes rail panel" }),
     ).toBeInTheDocument();
     expect(
-      within(page()).queryByRole("heading", { name: "Providers and keys" }),
+      within(page()).queryByRole("heading", { name: "API Keys" }),
     ).not.toBeInTheDocument();
 
     await user.click(screen.getByRole("button", { name: "Settings" }));
@@ -455,7 +455,7 @@ describe("Model menu", () => {
     expect(within(menu).queryAllByRole("textbox")).toHaveLength(0);
     expect(menu.querySelector("input")).toBeNull();
     expect(within(menu).queryByRole("link")).not.toBeInTheDocument();
-    expect(within(menu).queryByText(/Providers and keys/)).toBeNull();
+    expect(within(menu).queryByText(/API Keys/)).toBeNull();
   });
 
   it("a provider without a key shows No key and points to Settings in text", async () => {

@@ -310,7 +310,7 @@ export function ProvidersSettings() {
   return (
     <div className={styles.settings}>
       <div className={styles.pageHead}>
-        <h1 className={styles.h1}>Providers and keys</h1>
+        <h1 className={styles.h1}>API Keys</h1>
         <p className={styles.caption}>
           Keys are kept in a file in the app config folder. The chat model menu
           lists the models of each provider you set up here.

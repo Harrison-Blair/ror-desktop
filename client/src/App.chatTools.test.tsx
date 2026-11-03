@@ -247,7 +247,6 @@ describe("people tools in the app", () => {
   const main = () => within(screen.getByRole("main"));
   const openWorld = async (user: UserEvent) => {
     await user.click(screen.getByRole("button", { name: "World" }));
-    await main().findByRole("heading", { name: "Overview" });
     await user.click(
       within(
         screen.getByRole("region", { name: "World rail panel" }),

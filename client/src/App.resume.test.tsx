@@ -104,7 +104,6 @@ async function openWorld() {
   render(<App />);
   const user = userEvent.setup();
   await user.click(screen.getByRole("button", { name: "World" }));
-  await main().findByRole("heading", { name: "Overview" });
   await user.click(
     railPanel().getByRole("button", { name: "People of interest" }),
   );
@@ -530,14 +529,14 @@ describe("Resume editor", () => {
     await user.click(main().getByRole("button", { name: "Edit resume" }));
     await user.click(main().getByRole("button", { name: "Add job" }));
 
-    await user.click(railPanel().getByRole("button", { name: "Overview" }));
+    await user.click(railPanel().getByRole("button", { name: "Settings" }));
     await user.click(discard().getByRole("button", { name: "Cancel" }));
     expect(main().getByRole("group", { name: "New job" })).toBeInTheDocument();
 
-    await user.click(railPanel().getByRole("button", { name: "Overview" }));
+    await user.click(railPanel().getByRole("button", { name: "Settings" }));
     await user.click(discard().getByRole("button", { name: "Discard" }));
     expect(
-      await main().findByRole("heading", { name: "Overview" }),
+      await main().findByRole("heading", { name: "Stat labels" }),
     ).toBeInTheDocument();
     expect(api.updatePerson).not.toHaveBeenCalled();
   });

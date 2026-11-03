@@ -37,7 +37,7 @@ export function useWorldPage(options: WorldPageOptions): WorldPage {
 }
 
 function useWorldView({ active, confirmDiscard }: WorldPageOptions) {
-  const [section, setSection] = useState<WorldSection>("overview");
+  const [section, setSection] = useState<WorldSection>("people");
   const [settingsVersion, setSettingsVersion] = useState(0);
   const [peopleView, setPeopleView] = useState<PeopleView>({ screen: "list" });
   const [prefs, setPrefs] = useState<ListPrefs>(DEFAULT_PREFS);

@@ -72,7 +72,6 @@ async function openWorld() {
   render(<App />);
   const user = userEvent.setup();
   await user.click(screen.getByRole("button", { name: "World" }));
-  await main().findByRole("heading", { name: "Overview" });
   await user.click(
     railPanel().getByRole("button", { name: "People of interest" }),
   );
@@ -125,35 +124,22 @@ const holdWorldLoad = () => {
 };
 
 describe("World sections", () => {
-  it("lists the six sections in order and starts on a blank Overview", async () => {
+  it("lists the two sections and starts on People of interest", async () => {
     render(<App />);
     const user = userEvent.setup();
     await user.click(screen.getByRole("button", { name: "World" }));
-    await main().findByRole("heading", { name: "Overview" });
+    await main().findByRole("heading", { name: "People of interest" });
     expect(
       railPanel()
         .getAllByRole("button")
         .map((button) => button.textContent),
-    ).toEqual([
-      "Overview",
-      "Timeline",
-      "Divergences",
-      "People of interest",
-      "Research",
-      "Settings",
-    ]);
+    ).toEqual(["People of interest", "Settings"]);
     expect(
-      railPanel().getByRole("button", { name: "Overview", pressed: true }),
+      railPanel().getByRole("button", {
+        name: "People of interest",
+        pressed: true,
+      }),
     ).toBeVisible();
-    for (const name of ["Overview", "Timeline", "Divergences", "Research"]) {
-      await user.click(railPanel().getByRole("button", { name }));
-      expect(
-        railPanel().getByRole("button", { name, pressed: true }),
-      ).toBeVisible();
-      // The heading and nothing else.
-      expect(main().getByRole("heading", { level: 1 })).toHaveTextContent(name);
-      expect(screen.getByRole("main").textContent).toBe(name);
-    }
   });
 });
 
@@ -809,7 +795,7 @@ describe("Leaving your character's form in Notes", () => {
       ).getByRole("button", { name: "Discard" }),
     );
     expect(
-      await main().findByRole("heading", { name: "Overview" }),
+      await main().findByRole("heading", { name: "People of interest" }),
     ).toBeInTheDocument();
 
     await user.click(screen.getByRole("button", { name: "Notes" }));

@@ -1,11 +1,7 @@
 import styles from "./WorldMenu.module.css";
 
 const SECTIONS = {
-  overview: "Overview",
-  timeline: "Timeline",
-  divergences: "Divergences",
   people: "People of interest",
-  research: "Research",
   settings: "Settings",
 } as const;
 
