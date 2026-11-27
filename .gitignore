@@ -7,6 +7,9 @@
 !/AGENTS.md
 !/README.md
 
+# Allow project documentation.
+!/docs/
+
 # Allow project directories recursively.
 !/client/
 !/server/
