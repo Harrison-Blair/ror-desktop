@@ -41,6 +41,8 @@ ste-lint.py --glossary <skill>/references/base-glossary.md --glossary docs/gloss
 | action | One thing that a character does in a turn. | |
 | major action | An action that counts toward the soft limit of about 3 actions in a turn. | |
 | standing order | An order that continues every round until the player changes it. | |
+| campaign map | The Google Earth map of the campaign that the group shares. | |
+| mark | One area, line, or point on the campaign map, with a name. | placemark |
 
 ## Rules
 

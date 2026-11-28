@@ -24,6 +24,7 @@ The game master currently holds a large amount in memory:
 - Most often, their notes and their current open tasks.
 - A to-do list of goals and future plans, for players who keep one.
 - The character sheet. Today it is a graphic from the game master that shows the picture, the name, and the stats.
+- The campaign map in Google Earth. [Campaign map](../../gameplay/world/map.md) describes it.
 
 ## Candidate areas
 

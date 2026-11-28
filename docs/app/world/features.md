@@ -200,3 +200,19 @@ This catalogue lists each world feature of the app: features that exist and feat
 - **Status:** not started. The sheet shows the job history only (W-04).
 - **Open questions:** Are places records, like people, or only names that the notes mention?
 - **Not handled:** none
+
+## W-17 Campaign map
+
+- **Kind:** idea
+- **Need:** [What players look at during a turn](../product/needs.md#what-players-look-at-during-a-turn)
+- **Gameplay link:** [Campaign map](../../gameplay/world/map.md)
+- **Behavior:** Today the group keeps the campaign map in Google Earth, outside the app.
+- **Data:** none today.
+- **Dependencies:** none
+- **Status:** not started. No chat tools.
+- **Open questions:**
+  - Does the app import a KML file, or link to the Google Earth project?
+  - Can a mark link to people and notes?
+  - Does Session show the map?
+  - Is map data shared after P-07 Sync?
+- **Not handled:** none
