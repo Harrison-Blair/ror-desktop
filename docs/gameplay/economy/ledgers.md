@@ -17,4 +17,6 @@ The player calculates each income from quantities and campaign prices. The game 
 
 A character can keep different amounts of an asset in different locations. Ownership and location can differ. For example, a company can own a cargo while part of it is at sea and the rest is ashore. If the cargo at sea is lost, the company still has the portion ashore.
 
+The [campaign map](../world/map.md) shows where characters built things and which places they are involved in.
+
 Some players record where items go. Others remember the locations and keep only the purchase record.

@@ -8,7 +8,7 @@ Each domain has one `features.md` file. Each file lists the features that exist 
 
 | Catalogue | IDs | Contents |
 | --- | --- | --- |
-| [World](world/features.md) | W-01 to W-16 | People, character sheets, stats, the game date, mentions, backlinks, governments, companies, international organizations, relationships |
+| [World](world/features.md) | W-01 to W-17 | People, character sheets, stats, the game date, mentions, backlinks, governments, companies, international organizations, relationships, the campaign map |
 | [Sessions](sessions/features.md) | S-01 to S-15, without S-11 | Sessions, turn order, turns, the turn timer, rounds, turn notes, dice, timelines, transcription |
 | [Economy](economy/features.md) | E-01 to E-09 | Ledgers, trades, payment schedules, currencies, the economy system, calculations |
 | [Knowledge](knowledge/features.md) | K-01 to K-13 | Notes, the editor, search, the chat agent, research, projects, visibility, open tasks and standing orders |

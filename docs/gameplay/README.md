@@ -9,6 +9,7 @@ These documents describe how the group plays the game. They describe play when t
 | [Setting](world/setting.md) | The sandbox campaign, the start date, real history during play, and what the game master decides |
 | [Characters](world/characters.md) | Starting a character, character development, death, and the next character |
 | [Stats](world/stats.md) | The 8 stat pairs and their values |
+| [Campaign map](world/map.md) | The Google Earth map of the campaign, its marks, who edits it, and the KML export |
 
 ## Sessions
 

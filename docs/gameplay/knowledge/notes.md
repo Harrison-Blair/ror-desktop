@@ -14,7 +14,7 @@ The group usually sits together and listens to each player's turn.
 
 The group can read a player's notes by default. For example, one character funds another character to make products. The player who makes the products can read the buyer's notes to see what the buyer ordered. Today, the buyer and the producer each keep a note about the same order.
 
-A player can mark a note private. Other players cannot read a private note.
+A player can make a note private. Other players cannot read a private note.
 
 The game master can read every player note, including private notes.
 

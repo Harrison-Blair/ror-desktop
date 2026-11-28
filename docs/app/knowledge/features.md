@@ -19,7 +19,7 @@ This catalogue lists each knowledge feature of the app: notes, the chat agent, r
 - **Kind:** feature
 - **Need:** [Note taking](../product/needs.md#where-play-loses-time)
 - **Gameplay link:** [Notes](../../gameplay/knowledge/notes.md)
-- **Behavior:** The editor shows a live preview. It hides Markdown marks away from the line of the cursor. A "Raw source" switch shows plain Markdown. The editor saves 500 ms after the last key. If a save fails, the editor keeps the text and tries again at the next edit.
+- **Behavior:** The editor shows a live preview. It hides Markdown symbols away from the line of the cursor. A "Raw source" switch shows plain Markdown. The editor saves 500 ms after the last key. If a save fails, the editor keeps the text and tries again at the next edit.
 - **Data:** Local. The note file in the notes folder.
 - **Dependencies:** K-01
 - **Status:** done. `client/src/components/MarkdownEditor/MarkdownEditor.tsx:73`, `client/src/components/menus/EditorMenu/EditorMenu.tsx:130`. Chat tools `notes_read` (read), `notes_edit`, `notes_write` (write).
@@ -125,7 +125,7 @@ This catalogue lists each knowledge feature of the app: notes, the chat agent, r
 - **Gameplay link:** [Who can read notes](../../gameplay/knowledge/notes.md#who-can-read-notes)
 - **Behavior:**
   - The group can read the note of a player by default.
-  - A player can mark a note private. Other players cannot read a private note.
+  - A player can make a note private. Other players cannot read a private note.
   - The game master can read and edit every player note, including private notes.
   - A note of the game master is hidden until the game master shares it. Sharing shows the whole note to the whole group.
   - A user who can read a note can also edit it.
