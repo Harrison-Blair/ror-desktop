@@ -150,7 +150,7 @@ The code calls a session a `Night`. The interface lists sessions under Session â
 - **Status:** partial. "Read whole round" shows the notes of one round in turn order (S-08). The app has no timeline across rounds.
 - **Open questions:**
   - Does S-12 Interterm event log become part of the historical timeline?
-  - The game master announces each change to real history in the interterm. Today, players must remember it or note it. Does the historical timeline mark where the campaign differs from real history?
+  - The game master announces each change to real history in the interterm. Today, players must remember it or note it. Does the historical timeline show where the campaign differs from real history?
 - **Not handled:** none
 
 ## S-14 Session transcription
